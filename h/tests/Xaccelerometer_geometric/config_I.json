@@ -1,0 +1,16 @@
+{
+    "INPUT_COLS": ["Overetch", "Offset", "Thickness"],
+    "DATASET_PATH": "./data/C_normalized.csv",
+    "CONFIGURATION" : "I",
+    "MODEL_PATH": "./models/model_I.keras",
+    "N_EPOCHS": 1000,
+    "BATCH_SIZE": 2400,
+    "LEARNING_RATE": 0.001,
+    "DECAY_RATE": 0.01,
+    "TEST_SIZE": 0.2,
+    "RANDOM_STATE": 2,
+    "N_NEURONS": 64,
+    "N_LAYERS": 6,
+    "ACTIVATION": "tanh",
+    "PLOT_TRAIN": true
+}
