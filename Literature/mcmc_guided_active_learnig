@@ -1,0 +1,106 @@
+
+- An inference problem with scalable dimensionality is introduced. 
+- A priori trained surrogate models prove inaccurate even for moderate dimensionality. 
+- Active learning based on MCMC path and GP uncertainty gives superior performance. 
+- Even a highly-tailored pre-trained surrogate model does not guarantee MCMC convergence. 
+- Costs of forward model evaluations outweigh benefits of advanced MCMC algorithms.
+
+**Abstract:** The work presents a comprehensive comparative study regarding: 1) a priori training of the surrogate modeling introduces large error in the posterior estimation also in low dimension 2) a simple active learning strategy based on the path of the MCMC is introduced 3) determine the data requirements. It is shown that MCMC algorithm has a minor role in MCMC convergence, while the forward model is the bottleneck. 
+
+## Introduction
+
+One approach to reducing the number of computationally expensive forward passes is to employ sampling algorithms that more efficiently generate uncorrelated samples from the posterior distribution. First-order methods such as the Metropolis-Adjusted Langevin Algorithm (MALA), Hamiltonian Monte Carlo (HMC), and their second-order manifold variants, as well as algorithms based on piecewise deterministic Markov processes, are known to maintain high sampling efficiency in high-dimensional settings.
+
+Drovandi et al. and Del Val et al. employ Gaussian processes (GPs) to efficiently infer stochastic rate constants in gene networks and material parameters governing catalytic recombination by directly modelling the likelihood function. However, targeting the likelihood function introduces several complexities. The likelihood encapsulates all model non-linearities simultaneously, making it potentially a more challenging quantity to approximate than individual model predictions. Furthermore, the likelihood function includes additional parameters—such as observation noise—that may not be known a priori. These parameters of the observation model can be inferred alongside the primary model parameters, but doing so increases the dimensionality of the input space for the surrogate model. Despite these challenges, we prioritize the likelihood-based approach in this study. This decision is motivated by its broader applicability across scientific domains, offering a more generalizable framework for modelling compared to methods tailored to specific physical systems.
+
+Especially for active learning strategies, the interplay between the surrogate model and the sampling algorithm is crucial: the sampler determines where the surrogate model is queried and the surrogate model in turn affects the acceptance probability and the subsequent proposal generation. 
+
+1. How does the choice of data collection strategy impact the accuracy of the surrogate model? 
+2. Do superior MCMC algorithms construct better surrogate models? 
+3.  After training the surrogate model, how does the sampling algorithm for the generation of posterior samples impact accuracy and performance?
+
+**MALA:** Metropolis-Adjust Langevin Algorithm 
+Derives its proposal mechanism from a discretized Langevin diffusion. It can be seen as a randm walk with a drift erm that is proportional to the gradient of the log-density: $$
+\boldsymbol{\theta}^*=\boldsymbol{\theta}^n+\frac{s^2}{2} \boldsymbol{M} \nabla \ln f\left(\boldsymbol{\theta}^n\right)+s \sqrt{\boldsymbol{M}} \boldsymbol{z}^n .
+$$which gives rise to the Gaussian proposal distribution: $$ q\left(\boldsymbol{\theta}^* \mid \boldsymbol{\theta}^n\right)=\mathcal{N}\left(\boldsymbol{\theta}^* \left\lvert\, \boldsymbol{\theta}^n+\frac{s^2}{2} \boldsymbol{M} \nabla \ln f\left(\boldsymbol{\theta}^n\right)\right., s^2 \boldsymbol{M}\right).$$
+
+## 3. MCMC-Guided Active Learning
+
+In this section, we introduce an algorithm that employs **MCMC-guided sampling** as a straightforward active learning strategy for constructing surrogate models. This approach leverages the **predictive uncertainty** inherent in the Gaussian Process (GP) surrogate model, coupled with the trajectory of the MCMC algorithm, drawing inspiration from the active learning framework presented in Rocha et al. [42].
+
+#### Initialization
+
+Initially, we generate a set of $N_0$ samples from the posterior distribution using the **forward model**. This set forms the **initial training dataset** $\mathcal{D}_{GP}$ for our GP surrogate model.
+
+Upon this dataset:
+- We fit the GP model by **estimating its hyperparameters**.
+- We record the initial **log marginal likelihood**, denoted as $L_{\text{old}}$.
+
+#### MCMC with Uncertainty-Guided Sampling
+
+After the initialization phase is complete, the MCMC algorithm generates new proposals guided by the GP model. Let:
+
+- $k(\theta^*)$: the covariance vector between the training data and the new point $\theta^*$,
+- $K$: the covariance matrix of the training data.
+
+The **predictive variance** of the GP at $\theta^*$ is given by:
+
+$$
+V[L(\theta^*)] = k(\theta^*, \theta^*) - k(\theta^*)^\top (K + \sigma^2 I)^{-1} k(\theta^*)
+\tag{38}
+$$
+
+If this variance remains **below** a specified threshold $\gamma_v$, we accept the GP's prediction at $\theta^*$ and proceed without further evaluation.
+
+If the variance **exceeds** $\gamma_v$, we:
+1. Evaluate the **forward model**: $y^* = M(\theta^*)$,
+2. Compute the **likelihood** $L(\theta^*)$,
+3. Add the new observation $(\theta^*, L(\theta^*))$ to the training dataset,
+4. Update the GP’s **posterior covariance matrix**, and
+5. Recalculate the **log marginal likelihood**, now denoted $L_{\text{new}}$.
+
+If the ratio $|L_{\text{new}} / L_{\text{old}}|$ exceeds a threshold $\gamma_L$, this indicates a significant change in the GP model's understanding, prompting **re-estimation of the GP hyperparameters**. We define:
+
+- $\gamma_v$: **reject threshold**
+- $\gamma_L$: **retrain threshold**
+
+The above process iterates until the **burn-in phase** $N_b$ is completed. After this, the GP hyperparameters are **fixed**, since they critically affect predictive accuracy (see Section 5.2).
+
+#### Modified MCMC Proposals and Acceptance Probabilities
+
+Replacing the forward model with the GP surrogate model leads to a **modified proposal distribution** for MALA:
+
+$$
+\tilde{p}(\theta^*|\theta) = \mathcal{N} \left(
+\theta^* \mid \theta_n + \frac{s^2}{2} M^{-1} \nabla_\theta ( \mathbb{E}[L(\theta_n)] + \ln p(\theta_n) ), \; s^2 M
+\right)
+\tag{39}
+$$
+
+The corresponding **modified MALA acceptance probability** becomes:
+
+$$
+\tilde{a}(\theta_n, \theta^*) = \min \left\{ 1,
+\frac{ \exp(\mathbb{E}[L(\theta^*)]) \, p(\theta^*) \, \tilde{q}(\theta^*|\theta_n) }
+     { \exp(\mathbb{E}[L(\theta_n)]) \, p(\theta_n) \, \tilde{q}(\theta_n|\theta^*) }
+\right\}
+\tag{40}
+$$
+
+For the **RWM algorithm**, the proposal remains unchanged, but the acceptance probability is modified:
+
+$$
+\tilde{a}(\theta_n, \theta^*) = \min \left\{ 1,
+\frac{ \exp(\mathbb{E}[L(\theta^*)]) \, p(\theta^*) }
+     { \exp(\mathbb{E}[L(\theta_n)]) \, p(\theta_n) }
+\right\}
+\tag{41}
+$$
+
+#### Bias and Surrogate Refinement
+
+These modified acceptance probabilities introduce **bias** due to the surrogate model, which is a central topic of this work. As the GP surrogate improves via new data, its **predictive variance decreases**, signaling **increased model fidelity**. As a result, the **need for costly forward evaluations diminishes**.
+
+This active learning strategy strategically enriches the training dataset, especially in regions **underexplored** by the MCMC algorithm, without altering the response surface in **already explored** regions.
+
+A detailed implementation is provided in **Algorithm 1**.
