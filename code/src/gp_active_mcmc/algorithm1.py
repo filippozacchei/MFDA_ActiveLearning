@@ -1,6 +1,5 @@
 from __future__ import annotations
 import numpy as np
-from .utils import in_box
 from .proposals import rwm_proposal
 
 
@@ -15,8 +14,6 @@ def run_algorithm1_rwm(
     rng: np.random.Generator,
     theta0: np.ndarray,
     cov: np.ndarray,
-    bounds_low: np.ndarray,
-    bounds_high: np.ndarray,
     n_total: int,
     gamma_var: float,
     gamma_L_ratio: float,
@@ -24,14 +21,17 @@ def run_algorithm1_rwm(
     step_scale: float,
     gp,
     loglike_true_fn,
+    prior=None,
+    constraint_fn=None,   # optional hard constraint (physics)
 ) -> dict:
-    """
-    gp: object with methods
-        - predict_loglike(theta) -> (mu, var) in original loglike units
-        - update(theta, logL_true, gamma_L_ratio, n_retrain_max)
 
-    loglike_true_fn(theta) -> float  (forward model + likelihood)
-    """
+    if prior is None:
+        class _Flat:
+            def logpdf(self, theta): return 0.0
+        prior = _Flat()
+
+    if constraint_fn is None:
+        constraint_fn = lambda th: True
 
     d = theta0.size
     chain = np.zeros((n_total + 1, d), dtype=float)
@@ -40,14 +40,23 @@ def run_algorithm1_rwm(
     acc = 0
 
     chain[0] = theta0
-    logpost_old = loglike_true_fn(theta0)  # assumes uniform prior inside bounds
+
+    lp0 = prior.logpdf(theta0)
+    if np.isneginf(lp0) or (not constraint_fn(theta0)):
+        raise ValueError("theta0 is outside prior support or violates constraints.")
+
+    logpost_old = loglike_true_fn(theta0) + lp0
 
     for n in range(n_total):
         theta_n = chain[n].copy()
         theta_star = rwm_proposal(rng, theta_n, cov, step_scale)
 
-        # prior support (box)
-        if not in_box(theta_star, bounds_low, bounds_high):
+        if not constraint_fn(theta_star):
+            chain[n + 1] = theta_n
+            continue
+
+        lp_star = prior.logpdf(theta_star)
+        if np.isneginf(lp_star):
             chain[n + 1] = theta_n
             continue
 
@@ -55,14 +64,13 @@ def run_algorithm1_rwm(
         gp_var_hist[n] = var_star
 
         if var_star < gamma_var:
-            # accept GP prediction for log-likelihood
-            logpost_star = mu_star
+            loglike_star = mu_star
         else:
-            # evaluate forward model, update GP
-            logL_star_true = loglike_true_fn(theta_star)
-            gp.update(theta_star, logL_star_true, gamma_L_ratio, n_retrain_max)
-            logpost_star = logL_star_true
+            loglike_star = loglike_true_fn(theta_star)
+            gp.update(theta_star, loglike_star, gamma_L_ratio, n_retrain_max)
             used_forward[n] = True
+
+        logpost_star = loglike_star + lp_star
 
         alpha = mh_accept_prob(logpost_star, logpost_old)
         if rng.uniform(0.0, 1.0) < alpha:

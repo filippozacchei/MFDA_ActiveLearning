@@ -10,7 +10,3 @@ def jitter_psd(mat: np.ndarray, eps: float = 1e-10) -> np.ndarray:
     """Add diagonal jitter to improve numerical stability."""
     d = mat.shape[0]
     return mat + eps * np.eye(d)
-
-
-def in_box(theta: np.ndarray, low: np.ndarray, high: np.ndarray) -> bool:
-    return bool(np.all(theta >= low) and np.all(theta <= high))

@@ -81,7 +81,7 @@ def main() -> None:
         plt.show()
 
         plt.figure()
-        plt.hist(chain[int(0.3 * len(chain)):, j], bins=40, density=True)
+        plt.hist(chain[int(0.3 * len    (chain)):, j], bins=40, density=True)
         plt.axvline(theta_true[j], linestyle="--")
         plt.title(f"Posterior (rough): {name}")
         plt.grid(True)

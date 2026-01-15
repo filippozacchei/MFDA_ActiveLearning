@@ -1,19 +1,5 @@
 from __future__ import annotations
 from dataclasses import dataclass
-import numpy as np
-
-
-@dataclass(frozen=True)
-class BoxBounds:
-    low: np.ndarray   # (d,)
-    high: np.ndarray  # (d,)
-
-    def __post_init__(self) -> None:
-        if self.low.shape != self.high.shape:
-            raise ValueError("Bounds low/high must have same shape.")
-        if not (self.low < self.high).all():
-            raise ValueError("Each low bound must be strictly less than high bound.")
-
 
 @dataclass(frozen=True)
 class AlgorithmConfig:
