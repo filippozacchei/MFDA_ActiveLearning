@@ -32,6 +32,7 @@ def predict_coeffs(gps, theta):
 
 def predict_series(pod, gps, theta):
     """
+    POD+GP prediction.
     Returns:
       y_hat: (T,)
       y_var: (T,) approx variance, assuming coefficient independence
@@ -41,6 +42,16 @@ def predict_series(pod, gps, theta):
     Phi = pod.phi_  # (T, r)
     y_var = (Phi**2) @ var_a
     return y_hat, y_var
+
+
+def pod_only_reconstruction(pod, y_true):
+    """
+    POD-only reconstruction using true coefficients (no GP).
+    Returns reconstructed series.
+    """
+    a_true = pod.project(y_true.reshape(1, -1))  # (1, r)
+    y_pod = pod.reconstruct(a_true)[0]
+    return y_pod
 
 
 def rmse(y_hat, y_true):
@@ -76,10 +87,6 @@ def plot_uncertainty_slice_with_points(
     names=("A", "f", "tau"),
     highlight=None,  # dict: {"best": theta, "median": theta, "worst": theta}
 ):
-    """
-    Heatmap of mean_t predictive std over a 2D slice (idx_x, idx_y), with
-    train/test points and optional highlighted thetas.
-    """
     X_all = np.vstack([X_tr, X_te])
     x_min, x_max = np.percentile(X_all[:, idx_x], [1, 99])
     y_min, y_max = np.percentile(X_all[:, idx_y], [1, 99])
@@ -99,22 +106,15 @@ def plot_uncertainty_slice_with_points(
             U[iy, ix] = np.mean(y_std)
 
     plt.figure()
-    plt.imshow(
-        U, origin="lower", aspect="auto",
-        extent=[x_min, x_max, y_min, y_max]
-    )
+    plt.imshow(U, origin="lower", aspect="auto", extent=[x_min, x_max, y_min, y_max])
     plt.colorbar(label="mean_t predictive std")
     plt.scatter(X_tr[:, idx_x], X_tr[:, idx_y], s=16, alpha=0.5, label="train")
     plt.scatter(X_te[:, idx_x], X_te[:, idx_y], s=20, alpha=0.7, label="test")
 
     if highlight is not None:
         for lab, th in highlight.items():
-            plt.scatter(
-                th[idx_x], th[idx_y],
-                s=130, marker="X", linewidths=1.5,
-                edgecolors="k",
-                label=lab
-            )
+            plt.scatter(th[idx_x], th[idx_y], s=130, marker="X",
+                        linewidths=1.5, edgecolors="k", label=lab)
 
     plt.xlabel(names[idx_x])
     plt.ylabel(names[idx_y])
@@ -137,10 +137,6 @@ def plot_error_vs_uncertainty(test_u, test_rmse):
 
 
 def binned_reliability(test_u, test_rmse, n_bins=5):
-    """
-    Bin by predicted uncertainty and report average RMSE per bin.
-    Useful to assess monotonicity: higher predicted uncertainty -> higher error.
-    """
     idx = np.argsort(test_u)
     u_sorted = test_u[idx]
     e_sorted = test_rmse[idx]
@@ -169,7 +165,7 @@ def main():
     theta_mean = np.array([0.8, 150.0, 0.010])
     theta_cov = np.diag([0.20**2, 30.0**2, 0.003**2])
 
-    N = 1000
+    N = 100
     X = make_design_gaussian(rng, theta_mean, theta_cov, N)
     Y = np.array([toy_forward(X[i], t) for i in range(N)])
 
@@ -178,10 +174,8 @@ def main():
     r = 10
     pod, gps = fit_pod_gp(X_tr, Y_tr, r)
 
-    # 1) One set of pair plots with train/test overlaid
     plot_pair_scatter_train_test(X_tr, X_te, names=("A", "f", "tau"))
 
-    # Evaluate test errors + uncertainty summaries + coverage
     z50, z90, z95 = 0.67449, 1.64485, 1.95996
     test_rmse = np.zeros(X_te.shape[0], dtype=float)
     test_u = np.zeros(X_te.shape[0], dtype=float)
@@ -209,20 +203,30 @@ def main():
     print(f"Coverage 90% mean: {cov90.mean():.3f}")
     print(f"Coverage 95% mean: {cov95.mean():.3f}")
 
-    # best/median/worst indices (in test set)
     idx_best = int(np.argmin(test_rmse))
     idx_worst = int(np.argmax(test_rmse))
     idx_med = int(np.argsort(test_rmse)[len(test_rmse) // 2])
+    
+    theta_w = X_te[idx_worst]
+    y_w = Y_te[idx_worst]
+
+    a_true = pod.project(y_w.reshape(1, -1))[0]      # (r,)
+    a_mu, a_var = predict_coeffs(gps, theta_w)       # (r,), (r,)
+
+    abs_err = np.abs(a_mu - a_true)
+    k_sorted = np.argsort(abs_err)[::-1]
+
+    print("Worst-case coeff errors (top 5):")
+    for kk in k_sorted[:5]:
+        print(
+            f"k={kk:2d}  abs_err={abs_err[kk]:.4e}  pred_std={np.sqrt(a_var[kk]):.4e}  "
+            f"true={a_true[kk]:.4e}  pred={a_mu[kk]:.4e}"
+        )
 
     for lab, idx in [("best", idx_best), ("median", idx_med), ("worst", idx_worst)]:
         print(lab, "theta=", X_te[idx], "RMSE=", test_rmse[idx], "mean_std=", test_u[idx])
 
-    # 2) One uncertainty slice with train/test and highlighted cases
-    highlight = {
-        "best": X_te[idx_best],
-        "median": X_te[idx_med],
-        "worst": X_te[idx_worst],
-    }
+    highlight = {"best": X_te[idx_best], "median": X_te[idx_med], "worst": X_te[idx_worst]}
     plot_uncertainty_slice_with_points(
         pod, gps,
         X_tr=X_tr, X_te=X_te,
@@ -233,20 +237,24 @@ def main():
         highlight=highlight,
     )
 
-    # 3) Error vs uncertainty + binned reliability
     plot_error_vs_uncertainty(test_u, test_rmse)
     binned_reliability(test_u, test_rmse, n_bins=5)
 
-    # 4) Trajectories for best/median/worst (same points as highlighted)
+    # Trajectories: add POD-only reconstruction as requested
     for label, idx in [("best", idx_best), ("median", idx_med), ("worst", idx_worst)]:
-        y_hat, y_var = predict_series(pod, gps, X_te[idx])
+        theta = X_te[idx]
         y_true = Y_te[idx]
+
+        y_gp, y_var = predict_series(pod, gps, theta)
         y_std = np.sqrt(np.maximum(y_var, 1e-14))
+
+        y_pod = pod_only_reconstruction(pod, y_true)
 
         plt.figure()
         plt.plot(t, y_true, label="true")
-        plt.plot(t, y_hat, label="POD+GP mean")
-        plt.fill_between(t, y_hat - 2 * y_std, y_hat + 2 * y_std, alpha=0.2, label="±2 std (approx)")
+        plt.plot(t, y_pod, label="POD-only (true coeffs)")
+        plt.plot(t, y_gp, label="POD+GP mean")
+        plt.fill_between(t, y_gp - 2 * y_std, y_gp + 2 * y_std, alpha=0.2, label="±2 std (approx)")
         plt.title(f"Trajectory reconstruction ({label})")
         plt.grid(True)
         plt.legend()

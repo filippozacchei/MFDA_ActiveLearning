@@ -12,7 +12,7 @@ class GPSurrogate:
     Public predict returns mean/var in ORIGINAL (unscaled) logL units.
     """
 
-    def __init__(self, X_train: np.ndarray, y_train: np.ndarray) -> None:
+    def __init__(self, X_train: np.ndarray, y_train: np.ndarray, kernel="matern52", ard=True) -> None:
         if X_train.ndim != 2:
             raise ValueError("X_train must be 2D (N, d).")
         if y_train.ndim != 1:
@@ -30,8 +30,15 @@ class GPSurrogate:
         Xs = self._x_scale(X_train)
         ys = self._y_scale(y_train).reshape(-1, 1)
 
-        kernel = GPy.kern.RBF(input_dim=X_train.shape[1], variance=1.0, lengthscale=1.0)
-        self.model = GPy.models.GPRegression(Xs, ys, kernel)
+        d = X_train.shape[1]
+        if kernel == "rbf":
+            kern = GPy.kern.RBF(input_dim=d, ARD=ard)
+        elif kernel == "matern32":
+            kern = GPy.kern.Matern32(input_dim=d, ARD=ard)
+        elif kernel == "matern52":
+            kern = GPy.kern.Matern52(input_dim=d, ARD=ard)        
+        
+        self.model = GPy.models.GPRegression(Xs, ys, kern)
 
         # reasonable initial noise; allow optimization to adjust
         self.model.Gaussian_noise.variance = 1e-2
