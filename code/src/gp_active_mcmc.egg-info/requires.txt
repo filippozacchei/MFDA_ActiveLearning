@@ -1,0 +1,6 @@
+numpy>=1.24
+scipy>=1.10
+matplotlib>=3.7
+GPy>=1.13.2
+pytest>=7.4
+tinyda
