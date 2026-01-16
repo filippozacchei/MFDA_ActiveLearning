@@ -36,7 +36,9 @@ class GPSurrogate:
         elif kernel == "matern32":
             kern = GPy.kern.Matern32(input_dim=d, ARD=ard)
         elif kernel == "matern52":
-            kern = GPy.kern.Matern52(input_dim=d, ARD=ard)        
+            kern = GPy.kern.Matern52(input_dim=d, ARD=ard)  
+        elif kernel == "mlp":
+            kern = GPy.kern.MLP(input_dim=d, ARD=ard)      
         
         self.model = GPy.models.GPRegression(Xs, ys, kern)
 
