@@ -43,7 +43,7 @@ class GPSurrogate:
         self.model = GPy.models.GPRegression(Xs, ys, kern)
 
         # reasonable initial noise; allow optimization to adjust
-        self.model.Gaussian_noise.variance = 1e-2
+        self.model.Gaussian_noise.variance = 1e-1
         self.model.Gaussian_noise.unfix()
 
         self.model.optimize()

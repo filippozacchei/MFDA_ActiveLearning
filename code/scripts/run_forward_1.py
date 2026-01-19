@@ -11,13 +11,11 @@ from gp_active_mcmc.toy import toy_forward, make_timeline
 def make_design_gaussian(rng, mean, cov, n):
     return rng.multivariate_normal(mean=mean, cov=cov, size=n)
 
-
 def fit_pod_gp(X_tr, Y_tr, r):
     pod = POD(r=r).fit(Y_tr)
     A_tr = pod.project(Y_tr)  # (Ntr, r)
     gps = [GPSurrogate(X_tr, A_tr[:, k]) for k in range(r)]
     return pod, gps
-
 
 def predict_coeffs(gps, theta):
     r = len(gps)
@@ -28,7 +26,6 @@ def predict_coeffs(gps, theta):
         mu[k] = mu_k
         var[k] = var_k
     return mu, var
-
 
 def predict_series(pod, gps, theta):
     """
@@ -43,7 +40,6 @@ def predict_series(pod, gps, theta):
     y_var = (Phi**2) @ var_a
     return y_hat, y_var
 
-
 def pod_only_reconstruction(pod, y_true):
     """
     POD-only reconstruction using true coefficients (no GP).
@@ -53,16 +49,13 @@ def pod_only_reconstruction(pod, y_true):
     y_pod = pod.reconstruct(a_true)[0]
     return y_pod
 
-
 def rmse(y_hat, y_true):
     return float(np.sqrt(np.mean((y_hat - y_true) ** 2)))
-
 
 def coverage(y_true, y_hat, y_std, z):
     lo = y_hat - z * y_std
     hi = y_hat + z * y_std
     return float(np.mean((y_true >= lo) & (y_true <= hi)))
-
 
 def plot_pair_scatter_train_test(X_tr, X_te, names=("A", "f", "tau")):
     pairs = [(0, 1), (0, 2), (1, 2)]
@@ -76,7 +69,6 @@ def plot_pair_scatter_train_test(X_tr, X_te, names=("A", "f", "tau")):
         plt.grid(True)
         plt.legend()
         plt.show()
-
 
 def plot_uncertainty_slice_with_points(
     pod, gps,
@@ -367,11 +359,11 @@ def main():
     theta_mean = np.array([0.8, 150.0, 0.010])
     theta_cov = np.diag([0.10**2, 10.0**2, 0.001**2])
 
-    N = 400
+    N = 1000
     X = make_design_gaussian(rng, theta_mean, theta_cov, N)
     Y = np.array([toy_forward(X[i], t) for i in range(N)])
 
-    X_tr, X_te, Y_tr, Y_te = train_test_split(X, Y, test_size=0.25, random_state=0)
+    X_tr, X_te, Y_tr, Y_te = train_test_split(X, Y, test_size=0.8, random_state=0)
     # --- POD rank selection diagnostics ---
     plot_pod_energy_curves(Y_tr, r_max=50, center=True, thresholds=(0.90, 0.95, 0.99))
     plot_pod_reconstruction_error_vs_rank(
@@ -380,7 +372,7 @@ def main():
         center=True
     )
     
-    r = 10
+    r = 25
     pod, gps = fit_pod_gp(X_tr, Y_tr, r)
 
     # True POD coefficients for train/test (ground truth in coefficient space)
@@ -446,28 +438,28 @@ def main():
     # k_sorted already computed for worst case
     k_to_plot = list(k_sorted[:r])  # or list(k_sorted[:3])
 
-    for k in k_to_plot:
-        plot_coeff_surface(
-            X_tr=X_tr, X_te=X_te,
-            A_tr_true=A_tr_true, A_te_true=A_te_true,
-            gps=gps,
-            k=k,
-            theta_center=X_tr.mean(axis=0),
-            idx_x=0, idx_y=1,      # slice A vs f
-            grid=80,
-            names=("A", "f", "tau"),
-            highlight=highlight,
-        )
+    # for k in k_to_plot:
+    #     plot_coeff_surface(
+    #         X_tr=X_tr, X_te=X_te,
+    #         A_tr_true=A_tr_true, A_te_true=A_te_true,
+    #         gps=gps,
+    #         k=k,
+    #         theta_center=X_tr.mean(axis=0),
+    #         idx_x=0, idx_y=1,      # slice A vs f
+    #         grid=80,
+    #         names=("A", "f", "tau"),
+    #         highlight=highlight,
+    #     )
         
-    plot_uncertainty_slice_with_points(
-        pod, gps,
-        X_tr=X_tr, X_te=X_te,
-        theta_center=X_tr.mean(axis=0),
-        idx_x=0, idx_y=1,
-        grid=80,
-        names=("A", "f", "tau"),
-        highlight=highlight,
-    )
+    # plot_uncertainty_slice_with_points(
+    #     pod, gps,
+    #     X_tr=X_tr, X_te=X_te,
+    #     theta_center=X_tr.mean(axis=0),
+    #     idx_x=0, idx_y=1,
+    #     grid=80,
+    #     names=("A", "f", "tau"),
+    #     highlight=highlight,
+    # )
 
     plot_error_vs_uncertainty(test_u, test_rmse)
     binned_reliability(test_u, test_rmse, n_bins=5)
