@@ -15,4 +15,5 @@ src/gp_active_mcmc.egg-info/SOURCES.txt
 src/gp_active_mcmc.egg-info/dependency_links.txt
 src/gp_active_mcmc.egg-info/top_level.txt
 tests/test_bounds.py
+tests/test_likelihoods.py
 tests/test_smoke.py
