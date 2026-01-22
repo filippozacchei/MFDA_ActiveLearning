@@ -8,7 +8,7 @@ class Prior:
         raise NotImplementedError
     
     def sample(self, rng: np.random.Generator)  -> np.ndarray:
-        rais NotImplementedError
+        raise NotImplementedError
 
 
 @dataclass(frozen=True)

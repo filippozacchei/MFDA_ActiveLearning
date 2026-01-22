@@ -15,7 +15,7 @@ class PODGPSurrogate:
         mu = np.zeros(r)
         var = np.zeros(r)
         for k, gpk in enumerate(self.gps):
-            mk, vk = gpk.predict_loglike(theta)  # scalar mean/var
+            mk, vk = gpk.predict(theta)  # scalar mean/var
             mu[k] = float(mk)
             var[k] = float(vk)
         var = np.maximum(var, self.coeff_var_floor)

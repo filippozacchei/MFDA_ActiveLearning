@@ -27,6 +27,6 @@ def loglike_theta_gp(theta: np.ndarray, fwd, y_obs: np.ndarray, sigma: np.ndarra
     fwd(theta) must return (y_sim, y_std)
     """
     assert sigma.shape == y_obs.shape
-    y_sim, y_std = fwd(theta)
+    y_sim, y_std = fwd.predict(theta)
     sigma_tot = np.sqrt(sigma**2 + y_std**2) 
     return loglike_gaussian(y_sim, y_obs, sigma_tot)

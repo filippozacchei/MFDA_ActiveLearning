@@ -50,28 +50,21 @@ def run_algorithm1_rwm(
     constraint_fn=None,
     verbose: bool = True,
     print_every: int = 200,
+    adaptive: bool = True,          # enable adaptive step/cov
+    target_accept: float = 0.25,     # target MH acceptance
+    adapt_until: int = 5000,         # max iterations to adapt
+    adapt_window: int = 50,          # window for local acceptance estimate
 ) -> dict:
     """
-    Run Algorithm 1 (Random Walk Metropolis) with GP-guided active learning.
-
-    Parameters
-    ----------
-    gp : object
-        Must implement predict(theta) -> (mu, var) and update(theta, y_true, gamma_L_ratio, n_retrain_max).
-    fw_true : callable
-        True forward model.
+    Random Walk Metropolis with optional GP-guided active learning
+    and optional adaptive step-size and covariance in theta-space.
     """
 
-    # Default flat prior
     if prior is None:
-
         class _Flat:
-            def logpdf(self, theta: np.ndarray) -> float:
-                return 0.0
-
+            def logpdf(self, theta: np.ndarray) -> float: return 0.0
         prior = _Flat()
 
-    # Default unconstrained space
     if constraint_fn is None:
         constraint_fn = lambda th: True
 
@@ -82,7 +75,6 @@ def run_algorithm1_rwm(
     accepted = np.zeros(n_total, dtype=bool)
 
     chain[0] = theta0
-
     lp0 = prior.logpdf(theta0)
     if np.isneginf(lp0) or (not constraint_fn(theta0)):
         raise ValueError("theta0 is outside prior support or violates constraints.")
@@ -90,19 +82,27 @@ def run_algorithm1_rwm(
     logL0 = loglike_theta(theta0, fw_true, y_obs, sigma_obs)
     logpost_old = logL0 + lp0
 
-    # Counters
-    n_forward = 0
-    n_constr_rej = 0
-    n_prior_rej = 0
-    n_gp_used = 0
+    n_forward = n_constr_rej = n_prior_rej = n_gp_used = 0
+
+    # Adaptive state
+    if adaptive:
+        mean_theta = theta0.copy()
+        C = cov.copy()  # proposal covariance
+        eps = 1e-8
 
     it = tqdm(range(n_total), disable=not verbose)
 
     for n in it:
         theta_n = chain[n].copy()
-        theta_star = rwm_proposal(rng, theta_n, cov, step_scale)
 
-        # Constraint rejection
+        # --- proposal ---
+        if adaptive and n > 0:
+            scale_mat = step_scale**2 * C
+            theta_star = theta_n + rng.multivariate_normal(np.zeros(d), scale_mat)
+        else:
+            theta_star = rwm_proposal(rng, theta_n, cov, step_scale)
+
+        # --- constraints ---
         if not constraint_fn(theta_star):
             chain[n + 1] = theta_n
             n_constr_rej += 1
@@ -110,7 +110,7 @@ def run_algorithm1_rwm(
                 print_algo(n, accepted, n_forward, n_gp_used, n_constr_rej, n_prior_rej)
             continue
 
-        # Prior rejection
+        # --- prior rejection ---
         lp_star = prior.logpdf(theta_star)
         if np.isneginf(lp_star):
             chain[n + 1] = theta_n
@@ -119,7 +119,7 @@ def run_algorithm1_rwm(
                 print_algo(n, accepted, n_forward, n_gp_used, n_constr_rej, n_prior_rej)
             continue
 
-        # GP prediction
+        # --- GP surrogate ---
         _, var_star = gp.predict(theta_star)
         ubar = float(np.mean(var_star))
         gp_var_hist[n] = ubar
@@ -141,31 +141,46 @@ def run_algorithm1_rwm(
 
         logpost_star = loglike_star + float(lp_star)
 
-        # MH acceptance
+        # --- MH acceptance ---
         alpha = mh_accept_prob(logpost_star, logpost_old)
         u = rng.uniform(0.0, 1.0)
+        is_acc = u < alpha
+        accepted[n] = is_acc
 
-        if u < alpha:
+        if is_acc:
             chain[n + 1] = theta_star
             logpost_old = logpost_star
-            accepted[n] = True
+            x_for_update = theta_star
         else:
             chain[n + 1] = theta_n
+            x_for_update = theta_n
 
-        if verbose:
-            # Update tqdm postfix
-            if hasattr(it, "set_postfix"):
-                it.set_postfix(
-                    acc=f"{accepted[: n + 1].mean():.3f}",
-                    fw=f"{n_forward / (n + 1):.3f}",
-                    gp=f"{n_gp_used / (n + 1):.3f}",
-                    var=f"{ubar:.2e}",
-                )
+        # --- adaptive updates ---
+        if adaptive and n < adapt_until:
+            # Online Welford update of covariance
+            delta = x_for_update - mean_theta
+            mean_theta += delta / (n + 1)
+            C += np.outer(delta, x_for_update - mean_theta)
 
-            # Periodic summary print
-            if print_every > 0 and (n + 1) % print_every == 0:
-                print_algo(n, accepted, n_forward, n_gp_used, n_constr_rej, n_prior_rej)
-                print(f"last_var={ubar:.2e}")
+            # Robbins–Monro step-size adaptation
+            if n >= adapt_window:
+                local_acc = accepted[n - adapt_window + 1 : n + 1].mean()
+                gamma = 1.0 / np.sqrt(n + 1)  # decay factor
+                step_scale *= np.exp(gamma * (local_acc - target_accept))
+                step_scale = np.clip(step_scale, 1e-5, 10.0)
+
+        # --- verbose / tqdm ---
+        if verbose and hasattr(it, "set_postfix"):
+            it.set_postfix(
+                acc=f"{accepted[: n + 1].mean():.3f}",
+                fw=f"{n_forward / (n + 1):.3f}",
+                gp=f"{n_gp_used / (n + 1):.3f}",
+                var=f"{ubar:.2e}",
+            )
+
+        if verbose and print_every > 0 and (n + 1) % print_every == 0:
+            print_algo(n, accepted, n_forward, n_gp_used, n_constr_rej, n_prior_rej)
+            print(f"last_var={ubar:.2e}, step_scale={step_scale:.3e}")
 
     return {
         "chain": chain,
@@ -179,4 +194,5 @@ def run_algorithm1_rwm(
             "n_constr_rej": int(n_constr_rej),
             "n_prior_rej": int(n_prior_rej),
         },
+        "step_scale": step_scale,
     }
