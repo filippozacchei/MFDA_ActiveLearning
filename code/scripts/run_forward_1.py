@@ -14,7 +14,7 @@ def make_design_gaussian(rng, mean, cov, n):
 def fit_pod_gp(X_tr, Y_tr, r):
     pod = POD(r=r).fit(Y_tr)
     A_tr = pod.project(Y_tr)  # (Ntr, r)
-    gps = [GPSurrogate(X_tr, A_tr[:, k]) for k in range(r)]
+    gps = [GPSurrogate(X_tr, A_tr[:, k], ard=True, kernel="matern32") for k in range(r)]
     return pod, gps
 
 def predict_coeffs(gps, theta):
@@ -357,13 +357,13 @@ def main():
     t = make_timeline(T=500, t_end=0.05)
 
     theta_mean = np.array([0.8, 150.0, 0.010])
-    theta_cov = np.diag([0.10**2, 10.0**2, 0.001**2])
+    theta_cov = np.diag([0.25**2, 10.0**2, 0.001**2])
 
-    N = 1000
+    N = 100
     X = make_design_gaussian(rng, theta_mean, theta_cov, N)
     Y = np.array([toy_forward(X[i], t) for i in range(N)])
 
-    X_tr, X_te, Y_tr, Y_te = train_test_split(X, Y, test_size=0.8, random_state=0)
+    X_tr, X_te, Y_tr, Y_te = train_test_split(X, Y, test_size=0.25, random_state=0)
     # --- POD rank selection diagnostics ---
     plot_pod_energy_curves(Y_tr, r_max=50, center=True, thresholds=(0.90, 0.95, 0.99))
     plot_pod_reconstruction_error_vs_rank(
@@ -372,7 +372,7 @@ def main():
         center=True
     )
     
-    r = 25
+    r = 10
     pod, gps = fit_pod_gp(X_tr, Y_tr, r)
 
     # True POD coefficients for train/test (ground truth in coefficient space)

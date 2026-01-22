@@ -20,6 +20,105 @@ def loglike_gaussian_iid(y: np.ndarray, y_obs: np.ndarray, sigma: float) -> floa
     r = y - y_obs
     return float(-0.5 * np.sum((r / sigma) ** 2))
 
+def loglike_gaussian_hetero(y_mean: np.ndarray, y_obs: np.ndarray,
+                           sigma_obs: float, y_std: np.ndarray) -> float:
+    # total variance per time point
+    var = sigma_obs**2 + np.maximum(y_std, 0.0)**2
+    r = y_obs - y_mean
+    return float(-0.5 * np.sum((r**2) / var + np.log(var)))
+
+def fd_jacobian_theta(theta: np.ndarray, t: np.ndarray, eps_rel: float = 1e-6) -> np.ndarray:
+    """
+    Finite-difference Jacobian J = dy/dtheta at theta.
+    Returns J with shape (T, d).
+    """
+    theta = theta.astype(float).copy()
+    y0 = toy_forward(theta, t)
+    T = y0.size
+    d = theta.size
+    J = np.zeros((T, d), dtype=float)
+
+    for j in range(d):
+        h = eps_rel * (abs(theta[j]) + 1.0)
+        thp = theta.copy()
+        thp[j] += h
+        yp = toy_forward(thp, t)
+        J[:, j] = (yp - y0) / h
+    return J
+
+
+def gauss_newton_ls(
+    theta0: np.ndarray,
+    t: np.ndarray,
+    y_obs: np.ndarray,
+    sigma_obs: float,
+    tau_min: float = 1e-6,
+    n_iter: int = 25,
+    lam0: float = 1e-3,
+) -> tuple[np.ndarray, np.ndarray]:
+    """
+    Constrained nonlinear LS via damped Gauss–Newton (Levenberg-style),
+    with projection tau >= tau_min. Returns (theta_ls, cov_ls).
+    cov_ls is the Gauss–Newton covariance approx: sigma^2 (J^T J)^{-1}.
+    """
+    theta = theta0.astype(float).copy()
+    theta[2] = max(theta[2], tau_min)
+    lam = float(lam0)
+
+    def obj(th: np.ndarray) -> float:
+        r = (toy_forward(th, t) - y_obs) / sigma_obs
+        return 0.5 * float(np.dot(r, r))
+
+    f_old = obj(theta)
+
+    for _ in range(n_iter):
+        y = toy_forward(theta, t)
+        r = (y - y_obs) / sigma_obs                          # (T,)
+        J = fd_jacobian_theta(theta, t) / sigma_obs          # (T,d) weighted
+        H = J.T @ J                                          # (d,d)
+        g = J.T @ r                                          # (d,)
+
+        # damped GN step: (H + lam I) delta = -g
+        A = H + lam * np.eye(theta.size)
+        try:
+            delta = -np.linalg.solve(A, g)
+        except np.linalg.LinAlgError:
+            delta = -np.linalg.pinv(A) @ g
+
+        # backtracking on objective + keep tau feasible
+        alpha = 1.0
+        accepted = False
+        for _bt in range(12):
+            th_new = theta + alpha * delta
+            th_new[2] = max(th_new[2], tau_min)
+            f_new = obj(th_new)
+            if np.isfinite(f_new) and f_new <= f_old:
+                theta = th_new
+                f_old = f_new
+                lam = max(lam * 0.5, 1e-12)
+                accepted = True
+                break
+            alpha *= 0.5
+
+        if not accepted:
+            lam = min(lam * 5.0, 1e12)
+
+        # small step -> stop
+        if np.linalg.norm(alpha * delta) < 1e-10:
+            break
+
+    # covariance at LS (Gauss–Newton)
+    J = fd_jacobian_theta(theta, t)                          # unweighted
+    JTJ = J.T @ J
+    try:
+        cov = (sigma_obs ** 2) * np.linalg.inv(JTJ)
+    except np.linalg.LinAlgError:
+        cov = (sigma_obs ** 2) * np.linalg.pinv(JTJ)
+
+    # jitter for PD Cholesky downstream
+    cov = 0.5 * (cov + cov.T)
+    cov = cov + 1e-12 * np.eye(theta.size)
+    return theta, cov
 
 # -------------------------
 # Design
@@ -154,24 +253,24 @@ def adaptive_cov_update(C: np.ndarray, x: np.ndarray, mean: np.ndarray, n: int) 
 
 def main():
     # ---------- user knobs ----------
-    seed = 4
-    N0 = 100
-    r_pod = 25
+    seed = 123
+    N0 = 25
+    r_pod= 10
     kernel = "matern52"
     ard = True
 
-    sigma_obs = 0.01
+    sigma_obs = 0.1
     n_total = 30000
 
     # AM / scaling knobs
     target_accept = 0.25
-    adapt_until = 5000          # adapt step and cov until this iteration
-    step0 = 1.0                 # initial scale in z-space (dimensionless)
-    step_min, step_max = 1e-3, 3.0
+    adapt_until = 10000          # adapt step and cov until this iteration
+    step0 = 0.1                # initial scale in z-space (dimensionless)
+    step_min, step_max = 1e-5, 3.0
 
-    u_thresh = 0.001
+    u_thresh = 0.01
     gamma_L_ratio = 1.05
-    n_retrain_max = 50
+    n_retrain_max = 500
 
     plot_every = 100
     map_every = 400
@@ -184,7 +283,7 @@ def main():
     t = make_timeline(T=500, t_end=0.05)
     
     prior_mean = np.array([0.8, 150.0, 0.010])
-    prior_cov = np.diag([0.25**2, 40.0**2, 0.004**2])
+    prior_cov = np.diag([0.5**2, 10.0**2, 0.01**2])
     prior = GaussianPrior(prior_mean, prior_cov)
 
     theta_true = sample_theta_from_prior(rng, prior_mean, prior_cov, tau_min=1e-6)
@@ -204,7 +303,37 @@ def main():
     W = WhitenTransform(mean=prior_mean, L=L_prior)
 
     # initialise chain at prior mean (or you can plug LS estimate here)
-    theta0 = sample_theta_from_prior(rng, prior_mean, prior_cov, tau_min=1e-6)
+# ---- LS initialization + proposal covariance from LS ----
+    # theta_ls, cov_ls = gauss_newton_ls(
+    #     theta0=prior_mean,      # starting guess
+    #     t=t,
+    #     y_obs=y_obs,
+    #     sigma_obs=sigma_obs,
+    #     tau_min=1e-6,
+    #     n_iter=30,
+    #     lam0=1e-3,
+    # )
+
+    # L_ls = np.linalg.cholesky(cov_ls + 1e-12 * np.eye(3))
+    # W = WhitenTransform(mean=theta_ls, L=L_ls)
+
+    # theta0 = theta_ls
+    # z0 = W.to_z(theta0)   # == 0 (up to numerical noise)
+
+    # # logpost at start (TRUE forward so it's consistent)
+    # y0 = toy_forward(theta0, t)
+    # ll0 = loglike_gaussian_iid(y0, y_obs, sigma_obs)
+    # lp0 = prior.logpdf(theta0)
+    # logpost_old = ll0 + lp0
+    
+    # ---- whitening transform based on prior covariance ----
+    L_prior = np.linalg.cholesky(prior_cov + 1e-12 * np.eye(3))
+    W = WhitenTransform(mean=prior_mean, L=L_prior)
+
+    # ---- initialise chain (choose one) ----
+    theta0 = prior_mean.copy()  # simplest
+    # theta0 = sample_theta_from_prior(rng, prior_mean, prior_cov, tau_min=1e-6)  # alternative
+
     z0 = W.to_z(theta0)
 
     # logpost at start (TRUE forward so it's consistent)
@@ -285,7 +414,7 @@ def main():
 
     # Running mean/cov accumulator for z (for adaptation)
     z_mean = z0.copy()
-    C = np.zeros((d, d))  # this stores sum of outer products (uncentred Welford accumulator)
+    C = np.eye(d)   # start with cov_z ≈ I
     eps = 1e-6
 
     def update_true_theta_panels():
@@ -326,13 +455,11 @@ def main():
 
         # --- adaptive covariance in z-space ---
         if n < adapt_until and n >= 10:
-            # empirical cov = C/(n)  (since C accumulates)
             cov_z = (C / max(n, 1)) + eps * np.eye(d)
         else:
             cov_z = (C / max(min(adapt_until, n), 1)) + eps * np.eye(d)
 
         # Haario scaling suggestion
-        # (2.38^2 / d) is a good default when cov approx posterior
         scale_mat = (2.38**2 / d) * cov_z
 
         # propose in z, then map to theta
@@ -353,47 +480,65 @@ def main():
             z_chain[n + 1] = z_n
             continue
 
-        # surrogate prediction
-        y_hat, y_std = emul.predict_series(theta_star)
-        ubar = float(np.mean(y_std))
+        # --- surrogate likelihood at current state (under current GP) ---
+        y_hat_n, y_std_n = emul.predict_series(theta_n)
+        ll_old_hat = loglike_gaussian_hetero(y_hat_n, y_obs, sigma_obs, y_std_n)
+        lp_old = prior.logpdf(theta_n)
+        logpost_old_hat = ll_old_hat + lp_old
+
+        # --- surrogate prediction at proposal ---
+        y_hat_star, y_std_star = emul.predict_series(theta_star)
+        ubar = float(np.mean(y_std_star))
         uprop_hist.append(ubar)
 
-        # active-learning gate
+        # --- active-learning gate ---
         if ubar > u_thresh:
+            # truth call (used only for retraining / diagnostics)
             y_true = toy_forward(theta_star, t)
-            ll_star = loglike_gaussian_iid(y_true, y_obs, sigma_obs)
-            emul.update_from_true_series(theta_star, y_true, gamma_L_ratio=gamma_L_ratio, n_retrain_max=n_retrain_max)
-            used_forward[n] = True
-        else:
-            ll_star = loglike_gaussian_iid(y_hat, y_obs, sigma_obs)
+            # ll_true_star = loglike_gaussian_iid(y_true, y_obs, sigma_obs)  # optional diagnostic
 
-        logpost_star = ll_star + lp_star
-        dlp = float(logpost_star - logpost_old)
+            emul.update_from_true_series(
+                theta_star, y_true,
+                gamma_L_ratio=gamma_L_ratio,
+                n_retrain_max=n_retrain_max
+            )
+            used_forward[n] = True
+
+            # GP changed -> recompute surrogate predictions for BOTH old and new
+            y_hat_n, y_std_n = emul.predict_series(theta_n)
+            ll_old_hat = loglike_gaussian_hetero(y_hat_n, y_obs, sigma_obs, y_std_n)
+            logpost_old_hat = ll_old_hat + lp_old  # lp_old unchanged
+
+            y_hat_star, y_std_star = emul.predict_series(theta_star)
+            ll_star_hat = loglike_gaussian_hetero(y_hat_star, y_obs, sigma_obs, y_std_star)
+        else:
+            ll_star_hat = loglike_gaussian_hetero(y_hat_star, y_obs, sigma_obs, y_std_star)
+
+        # --- MH on surrogate-consistent target ---
+        logpost_star_hat = ll_star_hat + lp_star
+        dlp = float(logpost_star_hat - logpost_old_hat)
         dlp_hist.append(dlp)
 
-        is_acc = mh_accept_log(rng, logpost_star, logpost_old)
+        is_acc = mh_accept_log(rng, logpost_star_hat, logpost_old_hat)
         accepted[n] = is_acc
 
         if is_acc:
             chain[n + 1] = theta_star
             z_chain[n + 1] = z_star
-            logpost_old = logpost_star
+            # (no persistent logpost_old needed; we recompute ll_old_hat each iter)
 
-            # update AM stats using accepted z
             if n < adapt_until:
                 C, z_mean = adaptive_cov_update(C, z_star, z_mean, n + 1)
         else:
             chain[n + 1] = theta_n
             z_chain[n + 1] = z_n
 
-            # still update covariance with current state (common AM variant)
             if n < adapt_until:
                 C, z_mean = adaptive_cov_update(C, z_n, z_mean, n + 1)
 
         # adapt step to hit target acceptance (Robbins–Monro)
         if n < adapt_until and (n + 1) % 25 == 0:
             acc_rate_local = float(np.mean(accepted[max(0, n - 500): n + 1]))
-            # multiplicative log-step update (stable)
             step *= np.exp(0.05 * (acc_rate_local - target_accept))
             step = float(np.clip(step, step_min, step_max))
 
