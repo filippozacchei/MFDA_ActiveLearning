@@ -24,9 +24,9 @@ def run_algorithm1_rwm(
     gp,
     loglike_true_fn,
     prior=None,
-    constraint_fn=None,          # optional hard constraint (physics)
-    verbose: bool = True,        # <- default True
-    print_every: int = 200,      # <- print cadence (iterations)
+    constraint_fn=None,          
+    verbose: bool = True,        
+    print_every: int = 200,      
 ) -> dict:
     """
     Algorithm 1 (RWM) with GP-guided active learning.

@@ -9,6 +9,7 @@ from gp_active_mcmc.toy import toy_forward, make_timeline, make_observation
 from gp_active_mcmc.pod import POD
 from gp_active_mcmc.gp_surrogate import GPSurrogate
 from gp_active_mcmc.priors import GaussianPrior
+from gp_active_mcmc.likelihood import loglike_theta_gp_adjusted, loglike_theta
 
 from matplotlib.colors import LogNorm
 
