@@ -21,7 +21,7 @@ def loglike_theta(theta: np.ndarray, fwd, y_obs: np.ndarray, sigma: np.ndarray) 
     return loglike_gaussian(y_sim, y_obs, sigma)
   
 
-def loglike_theta_gp_adjusted(theta: np.ndarray, fwd, y_obs: np.ndarray, sigma: np.ndarray) -> float: 
+def loglike_theta_gp(theta: np.ndarray, fwd, y_obs: np.ndarray, sigma: np.ndarray) -> float: 
     """
     Likelihood adjusted for surrogate (GP) predictive uncertainty.
     fwd(theta) must return (y_sim, y_std)

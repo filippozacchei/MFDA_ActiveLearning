@@ -67,9 +67,10 @@ class GPSurrogate:
         # If z = (y - m)/s, then Var[y] = Var[z] * s^2
         return var_scaled * (self.y_std ** 2)
 
-    def predict_loglike(self, theta: np.ndarray) -> tuple[float, float]:
+    def predict(self, theta: np.ndarray) -> tuple[float, float]:
         """
-        Returns (mu, var) of log-likelihood at theta in ORIGINAL units.
+        Returns (mu, var) of fw model.
+        No further rescaling needed.
         """
         x = self._x_scale(theta.reshape(1, -1))
         mu_s, var_s = self.model.predict(x)  # mu, variance in scaled y space

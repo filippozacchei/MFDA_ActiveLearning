@@ -31,12 +31,12 @@ def test_loglike_theta():
     expected = -0.5 * np.sum(((y_sim - y_obs) / sigma)**2)
     assert np.isclose(ll, expected), "loglike_theta returned incorrect value"
 
-def test_loglike_theta_gp_adjusted():
+def test_loglike_theta_gp():
     theta = np.array([1.0, 1.0, 1.0])
     y_obs = np.array([1.0, 2.0, 3.0])
     sigma = np.array([0.1, 0.1, 0.1])
     
-    ll = loglike_theta_gp_adjusted(theta, fwd_gp, y_obs, sigma)
+    ll = loglike_theta_gp(theta, fwd_gp, y_obs, sigma)
     y_sim, y_std = fwd_gp(theta)
     sigma_tot = np.sqrt(sigma**2 + y_std**2)
     expected = -0.5 * np.sum(((y_sim - y_obs) / sigma_tot)**2)
