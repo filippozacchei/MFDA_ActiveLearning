@@ -6,6 +6,9 @@ import numpy as np
 class Prior:
     def logpdf(self, theta: np.ndarray) -> float:
         raise NotImplementedError
+    
+    def sample(self, rng: np.random.Generator)  -> np.ndarray:
+        raise NotImplementedError
 
 
 @dataclass(frozen=True)
@@ -33,6 +36,9 @@ class GaussianPrior(Prior):
         logdet = 2.0 * float(np.sum(np.log(np.diag(L))))
         return float(-0.5 * (quad + logdet + d * np.log(2.0 * np.pi)))
 
+    def sample(self, rng: np.random.Generator) -> np.ndarray:
+        theta = rng.multivariate_normal(self.mean, self.cov)
+        return theta
 
 @dataclass(frozen=True)
 class SumPrior(Prior):
