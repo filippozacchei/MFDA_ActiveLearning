@@ -10,7 +10,6 @@ from gp_active_mcmc.podgp_surrogate import PODGPSurrogate
 from gp_active_mcmc.priors import GaussianPrior
 from gp_active_mcmc.algorithm1 import run_algorithm1_rwm
 
-# ---------- user knobs ----------
 seed = 123
 N0 = 25
 r_pod = 25
@@ -18,17 +17,16 @@ kernel = "matern52"
 ard = True
 
 sigma_obs = 0.01
-n_total = 5000   # smaller for testing / demo
+n_total = 5000   
 
 gamma_var = 0.01
 gamma_L_ratio = 1.05
 n_retrain_max = 500
-step_scale = 0.1  # initial proposal scale in theta space
+step_scale = 0.1  
 
 idx_x, idx_y = 0, 1
 names = ("A", "f", "tau")
 
-# ---------- setup ----------
 rng = np.random.default_rng(seed)
 t = make_timeline(T=500, t_end=0.05)
 
@@ -39,7 +37,7 @@ prior = GaussianPrior(prior_mean, prior_cov)
 theta_true = prior.sample(rng)
 y_obs = make_observation(rng, theta_true, t, sigma_obs)
 sigma_obs = sigma_obs*np.ones_like(y_obs)
-# initial emulator design
+
 X0 = np.array([prior.sample(rng) for i in range(N0)])
 Y0 = np.array([toy_forward(X0[i], t) for i in range(N0)])
 
@@ -48,7 +46,6 @@ A0 = pod.project(Y0)
 gps = [GPSurrogate(X0, A0[:, k], kernel=kernel, ard=ard) for k in range(r_pod)]
 emul = PODGPSurrogate(pod=pod, gps=gps)
 
-# ---- initialise chain ----
 theta0 = prior_mean.copy()
 
 plot_prediction_at_theta(
@@ -60,9 +57,6 @@ plot_prediction_at_theta(
     fname="prediction_begin.png",
 )
 
-# -------------------------
-# Run RWM + GP active learning
-# -------------------------
 result = run_algorithm1_rwm(
     rng=rng,
     theta0=theta0,
@@ -86,23 +80,20 @@ chain = result["chain"]
 used_forward = result["used_forward"]
 accepted = result["accepted"]
 
-# -------------------------
-# Final plot
-# -------------------------
 y_hat, y_std = np.array([emul.predict(th)[0] for th in chain]), \
                 np.array([emul.predict(th)[1] for th in chain])
 
 rmse_hist = np.sqrt(np.mean((y_hat - toy_forward(theta_true, t))**2, axis=1))
 mean_std_hist = np.mean(y_std, axis=1)
 
+print(f"Final acceptance rate: {result['accept_rate']:.3f}")
+print(f"Forward-call fraction: {np.mean(used_forward):.3f}")
+
 plot_rmse_and_uncertainty(
     rmse_hist=rmse_hist,
     mean_std_hist=mean_std_hist,
     fname="rmse_uncertainty.png",
 )
-
-print(f"Final acceptance rate: {result['accept_rate']:.3f}")
-print(f"Forward-call fraction: {np.mean(used_forward):.3f}")
 
 plot_chain_2d(
     chain=chain,
