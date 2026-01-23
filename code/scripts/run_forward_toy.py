@@ -22,7 +22,7 @@ def predict_coeffs(gps, theta):
     mu = np.zeros(r)
     var = np.zeros(r)
     for k, gpk in enumerate(gps):
-        mu_k, var_k = gpk.predict_loglike(theta)  # scalar mean/var
+        mu_k, var_k = gpk.predict(theta)  # scalar mean/var
         mu[k] = mu_k
         var[k] = var_k
     return mu, var
@@ -357,13 +357,13 @@ def main():
     t = make_timeline(T=500, t_end=0.05)
 
     theta_mean = np.array([0.8, 150.0, 0.010])
-    theta_cov = np.diag([0.25**2, 10.0**2, 0.001**2])
+    theta_cov = np.diag([0.4**2, 25.0**2, 0.001**2])
 
     N = 100
     X = make_design_gaussian(rng, theta_mean, theta_cov, N)
     Y = np.array([toy_forward(X[i], t) for i in range(N)])
 
-    X_tr, X_te, Y_tr, Y_te = train_test_split(X, Y, test_size=0.25, random_state=0)
+    X_tr, X_te, Y_tr, Y_te = train_test_split(X, Y, test_size=0.5, random_state=0)
     # --- POD rank selection diagnostics ---
     plot_pod_energy_curves(Y_tr, r_max=50, center=True, thresholds=(0.90, 0.95, 0.99))
     plot_pod_reconstruction_error_vs_rank(
@@ -372,7 +372,7 @@ def main():
         center=True
     )
     
-    r = 10
+    r = 25
     pod, gps = fit_pod_gp(X_tr, Y_tr, r)
 
     # True POD coefficients for train/test (ground truth in coefficient space)
