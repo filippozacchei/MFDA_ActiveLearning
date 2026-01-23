@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import numpy as np
 from .proposals import rwm_proposal
-from .likelihood import loglike_theta, loglike_gaussian, loglike_theta_gp
+from .likelihood import loglike_theta, loglike_theta_gp
 from tqdm import tqdm
 
 
