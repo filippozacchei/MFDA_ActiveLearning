@@ -33,3 +33,9 @@ class PODGPSurrogate:
         a_true = self.pod.project(y_true.reshape(1, -1))[0]
         for k, gpk in enumerate(self.gps):
             gpk.update(theta, float(a_true[k]))
+            
+    def log_likelihood(self) -> float:
+        total_ll = 0.0
+        for gpk in self.gps:
+            total_ll += float(gpk.model.log_likelihood())
+        return total_ll

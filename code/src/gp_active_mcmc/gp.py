@@ -106,3 +106,7 @@ class GPSurrogate:
             self._retrain_count += 1
         else:
             self._L_old = L_new
+            
+    def log_likelihood(self) -> float:
+        return float(self.model.log_likelihood())
+

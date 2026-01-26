@@ -173,25 +173,30 @@ class RALMCMC(ALMCMC):
 # =========================
 
 class ARALMCMC(RALMCMC):
-    """Adaptive RALMCMC: gradually reduces HF subsampling rate."""
-
-    def __init__(self, *args, target_hf_frac: float = 0.1, adapt_rate: float = 0.05, **kwargs):
+    """
+    Adaptive RALMCMC:
+    - Adjusts subsample_rate over the chain based on GP consistency (MLL improvement).
+    """
+    def __init__(self, *args, target_mll_gain: float = 0.01, adapt_rate: float = 0.05, **kwargs):
         super().__init__(*args, **kwargs)
-        self.target_hf_frac = target_hf_frac
+        self.target_mll_gain = target_mll_gain
         self.adapt_rate = adapt_rate
-        self.true_fw_calls = 0
         self.total_steps = 0
+        self.last_mll = self.gp.log_likelihood()  # initialize reference MLL
 
     def step(self, theta_n: np.ndarray) -> tuple[np.ndarray, bool, bool]:
         self.total_steps += 1
+
+        # Call RALMCMC step
         theta_next, is_acc, used_fw = super().step(theta_n)
 
-        if used_fw:
-            self.true_fw_calls += 1
-
+        # Adapt subsample_rate every N steps
         if self.total_steps % 10 == 0:
-            hf_frac = self.true_fw_calls / self.total_steps
-            self.subsample_rate *= 1.0 + self.adapt_rate * (hf_frac - self.target_hf_frac)
+            current_mll = self.gp.log_likelihood()
+            mll_gain = (current_mll - self.last_mll) / max(abs(self.last_mll), 1e-12)
+            # Reduce subsample_rate if GP is stable
+            self.subsample_rate *= 1.0 - self.adapt_rate * np.clip(mll_gain / self.target_mll_gain, -1, 1)
             self.subsample_rate = np.clip(self.subsample_rate, 0.01, 1.0)
+            self.last_mll = current_mll
 
         return theta_next, is_acc, used_fw
