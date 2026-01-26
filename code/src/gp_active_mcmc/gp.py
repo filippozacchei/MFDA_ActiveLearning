@@ -86,6 +86,9 @@ class GPSurrogate:
         mu = float(self._y_unscale_mean(mu_s)[0, 0])
         var = float(self._y_unscale_var(var_s)[0, 0])
         return mu, var
+    
+    def __call__(self, theta: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
+        return self.predict(theta)
 
     def update(self, theta: np.ndarray, logL: float) -> None:
         """

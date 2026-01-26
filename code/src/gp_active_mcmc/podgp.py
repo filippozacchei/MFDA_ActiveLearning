@@ -28,6 +28,9 @@ class PODGPSurrogate:
         y_var = (Phi**2) @ var_a
         y_std = np.sqrt(np.maximum(y_var, 1e-14))
         return y_hat, y_std
+    
+    def __call__(self, theta: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
+        return self.predict(theta)
 
     def update(self, theta: np.ndarray, y_true: np.ndarray):
         a_true = self.pod.project(y_true.reshape(1, -1))[0]
