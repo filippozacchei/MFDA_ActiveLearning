@@ -228,6 +228,7 @@ def plot_chain_2d(
     chain: np.ndarray,
     used_forward: np.ndarray,
     theta_true: np.ndarray,
+    title: str = None,
     names: tuple[str, str] = ("A", "f"),
 ):
     """2D visualization of MCMC chain."""
@@ -249,7 +250,7 @@ def plot_chain_2d(
 
     ax.set_xlabel(names[0])
     ax.set_ylabel(names[1])
-    ax.set_title("Final chain")
+    ax.set_title(title)
     ax.grid(True)
     ax.legend()
     fig.tight_layout()

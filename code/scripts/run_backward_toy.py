@@ -8,7 +8,7 @@ from gp_active_mcmc.gp import GPSurrogate
 from gp_active_mcmc.podgp import PODGPSurrogate
 from gp_active_mcmc.priors import GaussianPrior
 from gp_active_mcmc.proposals import AdaptiveRWMProposal
-from gp_active_mcmc.sampler import ALMCMC,DAMCMC,AGAMCMC
+from gp_active_mcmc.sampler import ALMCMC,RALMCMC,ARALMCMC
 from gp_active_mcmc.likelihood import loglike_theta_gp, loglike_theta
 
 from utils import plot_prediction_at_theta, plot_chain_2d
@@ -27,7 +27,7 @@ USE_ARD = True
 N_INIT = 25
 
 # Observation model
-SIGMA_OBS = 0.01
+SIGMA_OBS = 0.1
 
 # MCMC parameters
 N_TOTAL = 5000
@@ -98,6 +98,7 @@ plot_prediction_at_theta(
 loglike = lambda theta: loglike_theta(theta,fw,y_obs,sigma_obs)
 loglike_surrogate = lambda theta: loglike_theta_gp(theta,emul,y_obs,sigma_obs)
 
+# sampler = ARALMCMC(emul,fw,loglike=loglike,loglike_surrogate=loglike_surrogate,prior=prior,proposal=proposal,log_theta_ref=theta_true)
 sampler = ALMCMC(emul,fw,loglike_surrogate=loglike_surrogate,prior=prior,proposal=proposal,log_theta_ref=theta_true)
 result = sampler.run(theta0=theta0,n_total=N_TOTAL,store_gp_ref=True)
 chain = result["chain"]

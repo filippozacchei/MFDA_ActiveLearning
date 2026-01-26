@@ -94,21 +94,21 @@ class GPSurrogate:
         """
         Add (theta, logL_true) to training set and (optionally) re-optimize.
         """
-        x_new = self._x_scale(theta.reshape(1, -1))
-        y_new = self._y_scale(np.array([logL])).reshape(1, 1)
+        if (self._retrain_count < self._n_retrain_max):
+            x_new = self._x_scale(theta.reshape(1, -1))
+            y_new = self._y_scale(np.array([logL])).reshape(1, 1)
 
-        self.Xs = np.vstack([self.Xs, x_new])
-        self.ys = np.vstack([self.ys, y_new])
-        self.model.set_XY(self.Xs, self.ys)
+            self.Xs = np.vstack([self.Xs, x_new])
+            self.ys = np.vstack([self.ys, y_new])
+            self.model.set_XY(self.Xs, self.ys)
 
-        L_new = float(self.model.log_likelihood())
-        if (abs(L_new / self._L_old) > self._gamma_L_ratio) and (self._retrain_count < self._n_retrain_max):
-            print(self._retrain_count)
-            self.model.optimize()
-            self._L_old = float(self.model.log_likelihood())
-            self._retrain_count += 1
-        else:
-            self._L_old = L_new
+            L_new = float(self.model.log_likelihood())
+            if (abs(L_new / self._L_old) > self._gamma_L_ratio) and (self._retrain_count < self._n_retrain_max):
+                self.model.optimize()
+                self._L_old = float(self.model.log_likelihood())
+                self._retrain_count += 1
+            else:
+                self._L_old = L_new
             
     def log_likelihood(self) -> float:
         return float(self.model.log_likelihood())

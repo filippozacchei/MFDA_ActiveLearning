@@ -1,5 +1,6 @@
 import numpy as np
 from dataclasses import dataclass
+import copy
 
 from .pod import POD
 from .gp import GPSurrogate
@@ -42,3 +43,8 @@ class PODGPSurrogate:
         for gpk in self.gps:
             total_ll += float(gpk.model.log_likelihood())
         return total_ll
+    
+    def copy(self) -> "PODGPSurrogate":
+        pod_copy = copy.deepcopy(self.pod)
+        gps_copy = [copy.deepcopy(g) for g in self.gps]
+        return PODGPSurrogate(pod=pod_copy, gps=gps_copy, coeff_var_floor=self.coeff_var_floor)

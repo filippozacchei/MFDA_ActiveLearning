@@ -68,7 +68,7 @@ class SurrogateMCMC(ABC):
         result = {
             "chain": self.chain,
             "accepted": self.accepted,
-            "accept_rate": np.sum(self.accepted)/n,
+            "accept_rate": np.mean(self.accepted),
             "used_forward": self.used_forward,
         }
 
@@ -128,10 +128,11 @@ class ALMCMC(SurrogateMCMC):
 class RALMCMC(ALMCMC):
     """ALMCMC but HF is called randomly even if GP variance is low."""
 
-    def __init__(self, *args, subsample_rate: float = 0.1, **kwargs):
+    def __init__(self, *args, loglike, subsample_rate: float = 0.1, **kwargs):
         super().__init__(*args, **kwargs)
         self.subsample_rate = subsample_rate
         self.last_hf_loglike = None
+        self.loglike = loglike
 
     def step(self, theta_n: np.ndarray) -> tuple[np.ndarray, bool, bool]:
         theta_star = self.proposal.propose(theta_n)
@@ -153,9 +154,8 @@ class RALMCMC(ALMCMC):
             y_true = self.fw_true(theta_star)
             self.gp.update(theta_star, y_true)
             used_fw = True
-            loglike_star = self.loglike_surrogate(theta_star)
-            loglike_n = self.last_hf_loglike if self.last_hf_loglike is not None else self.loglike_surrogate(theta_n)
-            self.last_hf_loglike = self.loglike_surrogate(theta_star)
+            loglike_star = self.loglike(theta_star)
+            loglike_n = self.last_hf_loglike if self.last_hf_loglike is not None else self.loglike(theta_n)
         else:
             loglike_star = self.loglike_surrogate(theta_star)
             loglike_n = self.loglike_surrogate(theta_n)
@@ -163,7 +163,10 @@ class RALMCMC(ALMCMC):
         logpost_star = loglike_star + float(lp_star)
         logpost_old = loglike_n + float(self.prior.logpdf(theta_n))
         is_acc = self.mh_accept(logpost_star, logpost_old)
-
+        
+        if do_hf and is_acc:
+            self.last_hf_loglike = self.loglike(theta_star)
+            
         theta_next = theta_star if is_acc else theta_n
         self.proposal.update(theta_next, is_acc)
         return theta_next, is_acc, used_fw

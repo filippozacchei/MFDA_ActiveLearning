@@ -1,5 +1,4 @@
-from __future__ import annotations
-
+import copy
 import numpy as np
 from abc import ABC, abstractmethod
 
@@ -17,6 +16,10 @@ class BaseProposal(ABC):
     @abstractmethod
     def update(self, theta_new: np.ndarray, accepted: bool) -> None:
         pass
+
+    def copy(self) -> "BaseProposal":
+        """Return a deep copy of the proposal."""
+        return copy.deepcopy(self)
 
 
 class RWMProposal(BaseProposal):
