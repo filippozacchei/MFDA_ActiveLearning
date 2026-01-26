@@ -2,7 +2,7 @@ import numpy as np
 from dataclasses import dataclass
 
 from .pod import POD
-from .gp_surrogate import GPSurrogate
+from .gp import GPSurrogate
 
 @dataclass
 class PODGPSurrogate:
@@ -29,7 +29,7 @@ class PODGPSurrogate:
         y_std = np.sqrt(np.maximum(y_var, 1e-14))
         return y_hat, y_std
 
-    def update(self, theta: np.ndarray, y_true: np.ndarray, gamma_L_ratio: float, n_retrain_max: int):
+    def update(self, theta: np.ndarray, y_true: np.ndarray):
         a_true = self.pod.project(y_true.reshape(1, -1))[0]
         for k, gpk in enumerate(self.gps):
-            gpk.update(theta, float(a_true[k]), gamma_L_ratio, n_retrain_max)
+            gpk.update(theta, float(a_true[k]))

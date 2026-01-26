@@ -10,8 +10,8 @@ from sklearn.model_selection import train_test_split
 
 from gp_active_mcmc.utils import set_seed
 from gp_active_mcmc.pod import POD
-from gp_active_mcmc.gp_surrogate import GPSurrogate
-from gp_active_mcmc.podgp_surrogate import PODGPSurrogate
+from gp_active_mcmc.gp import GPSurrogate
+from gp_active_mcmc.podgp import PODGPSurrogate
 from gp_active_mcmc.priors import GaussianPrior
 from gp_active_mcmc.toy import toy_forward, make_timeline
 

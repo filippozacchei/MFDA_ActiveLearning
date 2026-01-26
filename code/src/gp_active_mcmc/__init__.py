@@ -1,5 +1,5 @@
 from .config import AlgorithmConfig
-from .gp_surrogate import GPSurrogate
+from .gp import GPSurrogate
 from .algorithm1 import run_algorithm1_rwm
 
 

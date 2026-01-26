@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import numpy as np
-from .proposals import rwm_proposal
+from .proposals import RWMProposal
 from .likelihood import loglike_theta, loglike_theta_gp
 from tqdm import tqdm
 
@@ -100,7 +100,7 @@ def run_algorithm1_rwm(
             scale_mat = step_scale**2 * C
             theta_star = theta_n + rng.multivariate_normal(np.zeros(d), scale_mat)
         else:
-            theta_star = rwm_proposal(rng, theta_n, cov, step_scale)
+            theta_star = RWMProposal(rng, theta_n, cov, step_scale)
 
         # --- constraints ---
         if not constraint_fn(theta_star):

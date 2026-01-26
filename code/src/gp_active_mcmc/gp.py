@@ -12,7 +12,14 @@ class GPSurrogate:
     Public predict returns mean/var in ORIGINAL (unscaled) logL units.
     """
 
-    def __init__(self, X_train: np.ndarray, y_train: np.ndarray, kernel="matern52", ard=True) -> None:
+    def __init__(self, 
+                 X_train: np.ndarray, 
+                 y_train: np.ndarray, 
+                 kernel: str = "matern52", 
+                 ard: bool = True,
+                 gamma_L_ratio: float = 0.01, 
+                 n_retrain_max: int = 500
+               ) -> None:
         if X_train.ndim != 2:
             raise ValueError("X_train must be 2D (N, d).")
         if y_train.ndim != 1:
@@ -53,6 +60,8 @@ class GPSurrogate:
         self.ys = self.model.Y.copy()
         self._L_old = float(self.model.log_likelihood())
         self._retrain_count = 0
+        self._gamma_L_ratio = gamma_L_ratio
+        self._n_retrain_max = n_retrain_max
 
     def _x_scale(self, X: np.ndarray) -> np.ndarray:
         return (X - self.X_mean) / self.X_std
@@ -78,8 +87,7 @@ class GPSurrogate:
         var = float(self._y_unscale_var(var_s)[0, 0])
         return mu, var
 
-    def update(self, theta: np.ndarray, logL: float,
-               gamma_L_ratio: float, n_retrain_max: int) -> None:
+    def update(self, theta: np.ndarray, logL: float) -> None:
         """
         Add (theta, logL_true) to training set and (optionally) re-optimize.
         """
@@ -91,7 +99,7 @@ class GPSurrogate:
         self.model.set_XY(self.Xs, self.ys)
 
         L_new = float(self.model.log_likelihood())
-        if (abs(L_new / self._L_old) > gamma_L_ratio) and (self._retrain_count < n_retrain_max):
+        if (abs(L_new / self._L_old) > self._gamma_L_ratio) and (self._retrain_count < self._n_retrain_max):
             self.model.optimize()
             self._L_old = float(self.model.log_likelihood())
             self._retrain_count += 1

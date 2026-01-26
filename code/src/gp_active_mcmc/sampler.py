@@ -1,7 +1,7 @@
 import numpy as np
 from abc import ABC, abstractmethod
-from .likelihood import loglike_theta, loglike_theta_gp  # your existing likelihood functions
-from .proposals import FlatPrior
+from tqdm import tqdm
+from .priors import FlatPrior
 
 # =========================
 # Base Surrogate MCMC
@@ -18,6 +18,7 @@ class SurrogateMCMC(ABC):
         self,
         gp,
         fw_true,
+        loglike_surrogate,
         prior=None,
         constraint_fn=None,
         proposal=None,
@@ -28,6 +29,7 @@ class SurrogateMCMC(ABC):
         self.prior = prior or FlatPrior()
         self.constraint_fn = constraint_fn or (lambda th: True)
         self.proposal = proposal
+        self.loglike_surrogate = loglike_surrogate
 
         # Chain info
         self.chain = None
@@ -67,7 +69,7 @@ class SurrogateMCMC(ABC):
         if store_gp_ref and self.log_theta_ref is not None:
             self.gp_pred_ref = []
 
-        for n in range(n_total):
+        for n in tqdm(range(n_total)):
             theta_n = self.chain[n]
             theta_next, is_acc, used_fw = self.step(theta_n)
 
@@ -82,6 +84,7 @@ class SurrogateMCMC(ABC):
         result = {
             "chain": self.chain,
             "accepted": self.accepted,
+            "accept_rate": np.sum(self.accepted)/n,
             "used_forward": self.used_forward,
         }
 
@@ -126,18 +129,17 @@ class ALMCMC(SurrogateMCMC):
         used_fw = False
 
         if ubar < self.gamma_var:
-            # Use GP surrogate
-            loglike_star = loglike_theta_gp(theta_star, self.gp)
+            loglike_star = self.loglike_surrogate(theta_star)
         else:
             # Call true forward and update GP
             y_true = self.fw_true(theta_star)
             self.gp.update(theta_star, y_true)
-            loglike_star = loglike_theta(theta_star, self.fw_true)
+            loglike_star = self.loglike_surrogate(theta_star)
             used_fw = True
 
         # --- MH acceptance ---
         logpost_star = loglike_star + float(lp_star)
-        logpost_old = loglike_theta(theta_n, self.fw_true) + float(self.prior.logpdf(theta_n))
+        logpost_old = self.loglike_surrogate(theta_n) + float(self.prior.logpdf(theta_n))
         is_acc = self.mh_accept(logpost_star, logpost_old)
 
         # --- update proposal if adaptive ---
