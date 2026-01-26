@@ -8,8 +8,8 @@ from gp_active_mcmc.gp import GPSurrogate
 from gp_active_mcmc.podgp import PODGPSurrogate
 from gp_active_mcmc.priors import GaussianPrior
 from gp_active_mcmc.proposals import AdaptiveRWMProposal
-from gp_active_mcmc.sampler import ALMCMC
-from gp_active_mcmc.likelihood import loglike_theta_gp
+from gp_active_mcmc.sampler import ALMCMC,DAMCMC,AGAMCMC
+from gp_active_mcmc.likelihood import loglike_theta_gp, loglike_theta
 
 from utils import plot_prediction_at_theta, plot_chain_2d
 
@@ -36,7 +36,7 @@ STEP_SCALE = 0.1
 # Algorithm 1 controls
 GAMMA_VAR = 0.01
 GAMMA_L_RATIO = 1.05
-N_RETRAIN_MAX = 500
+N_RETRAIN_MAX = 100
 
 def positive_tau(theta: np.ndarray) -> bool:
     """Simple positivity constraint on tau."""
@@ -95,6 +95,7 @@ plot_prediction_at_theta(
 # --------------------------------------------------------------
 # Run Algorithm 1
 # --------------------------------------------------------------
+loglike = lambda theta: loglike_theta(theta,fw,y_obs,sigma_obs)
 loglike_surrogate = lambda theta: loglike_theta_gp(theta,emul,y_obs,sigma_obs)
 
 sampler = ALMCMC(emul,fw,loglike_surrogate=loglike_surrogate,prior=prior,proposal=proposal,log_theta_ref=theta_true)

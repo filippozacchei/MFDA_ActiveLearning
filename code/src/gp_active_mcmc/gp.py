@@ -17,7 +17,7 @@ class GPSurrogate:
                  y_train: np.ndarray, 
                  kernel: str = "matern52", 
                  ard: bool = True,
-                 gamma_L_ratio: float = 0.01, 
+                 gamma_L_ratio: float = 1.05, 
                  n_retrain_max: int = 500
                ) -> None:
         if X_train.ndim != 2:
@@ -100,6 +100,7 @@ class GPSurrogate:
 
         L_new = float(self.model.log_likelihood())
         if (abs(L_new / self._L_old) > self._gamma_L_ratio) and (self._retrain_count < self._n_retrain_max):
+            print(self._retrain_count)
             self.model.optimize()
             self._L_old = float(self.model.log_likelihood())
             self._retrain_count += 1
