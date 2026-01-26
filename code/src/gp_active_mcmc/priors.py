@@ -9,7 +9,10 @@ class Prior:
     
     def sample(self, rng: np.random.Generator)  -> np.ndarray:
         raise NotImplementedError
-
+    
+class FlatPrior(Prior):
+    def logpdf(self, theta: np.ndarray):
+        return 0.0
 
 @dataclass(frozen=True)
 class BoxUniformPrior(Prior):
@@ -20,7 +23,6 @@ class BoxUniformPrior(Prior):
         if np.all(theta >= self.low) and np.all(theta <= self.high):
             return 0.0  
         return -np.inf
-
 
 @dataclass(frozen=True)
 class GaussianPrior(Prior):
