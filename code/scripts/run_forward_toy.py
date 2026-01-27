@@ -37,14 +37,14 @@ t = make_timeline(T=500, t_end=0.05)
 # Prior on parameters
 # --------------------------------------------------------------
 theta_mean = np.array([0.8, 150.0, 0.010])
-theta_cov = np.diag([0.5**2, 10.0**2, 0.01**2])
+theta_cov = np.diag([0.5**2, 25.0**2, 0.001**2])
 prior = GaussianPrior(theta_mean, theta_cov)
 
 # --------------------------------------------------------------
 # Dataset generation
 # --------------------------------------------------------------
 N_SNAPSHOTS = 100
-POD_RANK = 10
+POD_RANK = 25
 GP_KERNEL = "matern52"
 USE_ARD = True
 

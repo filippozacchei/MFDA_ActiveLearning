@@ -49,6 +49,7 @@ class SurrogateMCMC(ABC):
             n_total: int, 
             store_gp_ref: bool = True,
             n_gp_update: int | None = None, 
+            n_gp_update_params: int | None = None
             ) -> dict:
         d = len(theta0)
         self.chain = np.zeros((n_total + 1, d))
@@ -56,10 +57,11 @@ class SurrogateMCMC(ABC):
         self.used_forward = np.zeros(n_total, dtype=bool)
         self.chain[0] = theta0
         
-        self.n_gp_update = n_gp_update
+        self.gp_active = True
 
         if store_gp_ref and self.log_theta_ref is not None:
-            self.gp_pred_ref = []
+            self.gp_pred_ref = []  
+
 
         for n in tqdm(range(n_total)):
             theta_n = self.chain[n]
@@ -68,7 +70,10 @@ class SurrogateMCMC(ABC):
             self.accepted[n] = is_acc
             self.used_forward[n] = used_fw
             
-            if n == self.n_gp_update:
+            if n_gp_update is not None and n >= n_gp_update:
+                self.gp_active = False
+                
+            if n_gp_update_params is not None and n == n_gp_update_params:
                 self.gp.stop_optimize()
 
             if store_gp_ref and self.log_theta_ref is not None:
@@ -115,7 +120,7 @@ class ALMCMC(SurrogateMCMC):
         y_gp, var_gp = self.gp.predict(theta_star)
         ubar = float(np.mean(var_gp))
 
-        if ubar < self.gamma_var:
+        if ubar < self.gamma_var or not self.gp_active:
             loglike_star = self.loglike_surrogate(theta_star)
         else:
             y_true = self.fw_true(theta_star)
@@ -158,10 +163,8 @@ class RALMCMC(ALMCMC):
         y_gp, var_gp = self.gp.predict(theta_star)
         ubar = float(np.mean(var_gp))
 
-        do_hf = (
-            (ubar >= self.gamma_var) or (np.random.rand() < self.subsample_rate)
-        )
-
+        do_hf = (self.gp_active and (ubar >= self.gamma_var)) or (np.random.rand() < self.subsample_rate)
+        
         if do_hf:
             y_true = self.fw_true(theta_star)
             self.gp.update(theta_star, y_true)

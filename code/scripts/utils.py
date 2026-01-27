@@ -234,16 +234,19 @@ def plot_chain_2d(
     """2D visualization of MCMC chain."""
     fig, ax = plt.subplots(figsize=(6, 5))
 
-    gp_idx = np.where(~used_forward)[0] + 1
-    fw_idx = np.where(used_forward)[0] + 1
+    if used_forward is not None:
+        gp_idx = np.where(~used_forward)[0] + 1
+        fw_idx = np.where(used_forward)[0] + 1
 
-    if gp_idx.size:
-        ax.scatter(chain[gp_idx, 0], chain[gp_idx, 1],
-                   s=15, alpha=0.4, label="GP")
+        if gp_idx.size:
+            ax.scatter(chain[gp_idx, 0], chain[gp_idx, 1],
+                    s=15, alpha=0.4, label="GP")
 
-    if fw_idx.size:
-        ax.scatter(chain[fw_idx, 0], chain[fw_idx, 1],
-                   s=40, marker="x", label="Forward")
+        if fw_idx.size:
+            ax.scatter(chain[fw_idx, 0], chain[fw_idx, 1],
+                    s=40, marker="x", label="Forward")
+    else: 
+        ax.scatter(chain[:, 0], chain[:, 1], s=40)
 
     ax.scatter(theta_true[0], theta_true[1],
                s=140, marker="*", c="k", label=r"$\theta_{\mathrm{true}}$")

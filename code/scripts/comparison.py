@@ -15,23 +15,24 @@ from utils import plot_prediction_at_theta, plot_chain_2d
 # ---------------------------------------------------------------------
 # Configuration
 # ---------------------------------------------------------------------
-SEED = 123
+SEED = 1
 N_TOTAL = 5000  # quick test
 N_BURNIN = 2000  # quick test
-N_INIT = 25
-POD_RANK = 10
+N_BURNIN_params = 1000  # quick test
+N_INIT = 50
+POD_RANK = 25
 GP_KERNEL = "matern52"
 USE_ARD = True
 SIGMA_OBS = 0.01
-GAMMA_VAR = 0.01
-GAMMA_L_RATIO = 1.05
+GAMMA_VAR = 0.005
+GAMMA_L_RATIO = 1.0
 N_RETRAIN_MAX = 50
 
 rng = np.random.default_rng(SEED)
 t = make_timeline(T=500, t_end=0.05)
 
 prior_mean = np.array([0.8, 150.0, 0.010])
-prior_cov = np.diag([0.5**2, 10.0**2, 0.01**2])
+prior_cov = np.diag([0.5**2, 25.0**2, 0.001**2])
 prior = GaussianPrior(prior_mean, prior_cov)
 proposal = AdaptiveRWMProposal(cov=prior_cov)
 
@@ -82,7 +83,7 @@ methods = {
 results = {}
 for name, sampler in methods.items():
     print(f"\nRunning {name}...")
-    results[name] = sampler.run(theta0=theta0, n_total=N_TOTAL, store_gp_ref=True, n_gp_update=N_BURNIN)
+    results[name] = sampler.run(theta0=theta0, n_total=N_TOTAL, store_gp_ref=True, n_gp_update=N_BURNIN, n_gp_update_params=N_BURNIN_params)
 
 # --------------------------------------------------------------
 # Analysis
@@ -92,8 +93,9 @@ for name, res in results.items():
     used_forward = res["used_forward"]
     accept_rate = res["accept_rate"]
     forward_frac = np.mean(used_forward)
-    rmse = np.sqrt(np.mean((chain[-1] - theta_true)**2))
-    
+    chain_post = chain[N_BURNIN:]
+    theta_mean = np.mean(chain_post, axis=0)
+    rmse = np.sqrt(np.mean((theta_mean - theta_true) ** 2))    
     print(f"\n{name} summary:")
     print(f"  Acceptance rate      : {accept_rate:.3f}")
     print(f"  Forward-call fraction: {forward_frac:.3f}")
@@ -115,6 +117,14 @@ for name, res in results.items():
         title=f"{name} chain"
     )
     
+    plot_chain_2d(
+        chain=chain_post,
+        used_forward=None,
+        theta_true=theta_true,
+        names=("A", "f"),
+        title=f"{name} post Burn in"
+    )
+    
     # Surrogate prediction plot
     plot_prediction_at_theta(
         emul=emul,
@@ -122,6 +132,14 @@ for name, res in results.items():
         t=t,
         y_obs=y_obs,
         title=f"{name} surrogate prediction"
+    )
+    
+    plot_prediction_at_theta(
+        emul=emul,
+        theta=theta_true,
+        t=t,
+        y_obs=fw(theta_true),
+        title=f"{name} surrogate error"
     )
 
 # --------------------------------------------------------------

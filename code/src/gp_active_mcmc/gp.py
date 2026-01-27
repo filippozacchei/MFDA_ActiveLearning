@@ -95,6 +95,7 @@ class GPSurrogate:
         """
         Add (theta, logL_true) to training set and (optionally) re-optimize.
         """
+        
         x_new = self._x_scale(theta.reshape(1, -1))
         y_new = self._y_scale(np.array([logL])).reshape(1, 1)
 
@@ -104,7 +105,7 @@ class GPSurrogate:
 
         if self.optimize_params:
             L_new = float(self.model.log_likelihood())
-            if (abs(L_new / self._L_old) > self._gamma_L_ratio) and (self._retrain_count < self._n_retrain_max):
+            if (abs(L_new / self._L_old) > self._gamma_L_ratio):
                 self.model.optimize()
                 self._L_old = float(self.model.log_likelihood())
                 self._retrain_count += 1
