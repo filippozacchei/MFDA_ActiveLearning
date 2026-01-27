@@ -94,6 +94,7 @@ class GPSurrogate:
         """
         Add (theta, logL_true) to training set and (optionally) re-optimize.
         """
+        print(self._retrain_count)
         if (self._retrain_count < self._n_retrain_max):
             x_new = self._x_scale(theta.reshape(1, -1))
             y_new = self._y_scale(np.array([logL])).reshape(1, 1)

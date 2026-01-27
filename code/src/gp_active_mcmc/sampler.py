@@ -44,12 +44,20 @@ class SurrogateMCMC(ABC):
     def step(self, theta_n: np.ndarray) -> tuple[np.ndarray, bool, bool]:
         pass
 
-    def run(self, theta0: np.ndarray, n_total: int, store_gp_ref: bool = True) -> dict:
+    def run(self, 
+            theta0: np.ndarray, 
+            n_total: int, 
+            store_gp_ref: bool = True,
+            n_gp_update: int | None = None, 
+            ) -> dict:
         d = len(theta0)
         self.chain = np.zeros((n_total + 1, d))
         self.accepted = np.zeros(n_total, dtype=bool)
         self.used_forward = np.zeros(n_total, dtype=bool)
         self.chain[0] = theta0
+        
+        self.n_gp_update = n_gp_update
+        self.gp_active = True
 
         if store_gp_ref and self.log_theta_ref is not None:
             self.gp_pred_ref = []
@@ -60,6 +68,9 @@ class SurrogateMCMC(ABC):
             self.chain[n + 1] = theta_next
             self.accepted[n] = is_acc
             self.used_forward[n] = used_fw
+            
+            if self.n_gp_update is not None and n >= self.n_gp_update:
+                self.gp_active = False
 
             if store_gp_ref and self.log_theta_ref is not None:
                 y_pred_ref, y_var_ref = self.gp.predict(self.log_theta_ref)
@@ -105,7 +116,7 @@ class ALMCMC(SurrogateMCMC):
         y_gp, var_gp = self.gp.predict(theta_star)
         ubar = float(np.mean(var_gp))
 
-        if ubar < self.gamma_var:
+        if ubar < self.gamma_var or not self.gp_active:
             loglike_star = self.loglike_surrogate(theta_star)
         else:
             y_true = self.fw_true(theta_star)
@@ -148,7 +159,9 @@ class RALMCMC(ALMCMC):
         y_gp, var_gp = self.gp.predict(theta_star)
         ubar = float(np.mean(var_gp))
 
-        do_hf = (ubar >= self.gamma_var) or (np.random.rand() < self.subsample_rate)
+        do_hf = self.gp_active and (
+            (ubar >= self.gamma_var) or (np.random.rand() < self.subsample_rate)
+        )
 
         if do_hf:
             y_true = self.fw_true(theta_star)
