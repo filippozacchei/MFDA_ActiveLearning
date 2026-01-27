@@ -48,3 +48,7 @@ class PODGPSurrogate:
         pod_copy = copy.deepcopy(self.pod)
         gps_copy = [copy.deepcopy(g) for g in self.gps]
         return PODGPSurrogate(pod=pod_copy, gps=gps_copy, coeff_var_floor=self.coeff_var_floor)
+    
+    def stop_optimize(self):
+        for gpk in self.gps:
+            gpk.stop_optimize()

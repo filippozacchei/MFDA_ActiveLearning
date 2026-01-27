@@ -17,6 +17,7 @@ from utils import plot_prediction_at_theta, plot_chain_2d
 # ---------------------------------------------------------------------
 SEED = 123
 N_TOTAL = 5000  # quick test
+N_BURNIN = 2000  # quick test
 N_INIT = 25
 POD_RANK = 10
 GP_KERNEL = "matern52"
@@ -70,9 +71,9 @@ loglike_surrogate = lambda theta: loglike_theta_gp(theta, emul, y_obs, sigma_obs
 # Define methods
 # --------------------------------------------------------------
 methods = {
-    "ALMCMC": ALMCMC(emul, fw, loglike_surrogate=loglike_surrogate, prior=prior, proposal=proposal, log_theta_ref=theta_true),
-    "RALMCMC": RALMCMC(emul.copy(), fw, loglike=loglike,loglike_surrogate=loglike_surrogate, prior=prior, proposal=proposal.copy(), log_theta_ref=theta_true, subsample_rate=0.25),
-    "ARALMCMC": ARALMCMC(emul.copy(), fw, loglike=loglike,loglike_surrogate=loglike_surrogate, prior=prior, proposal=proposal.copy(), log_theta_ref=theta_true, subsample_rate=0.25),
+    "ALMCMC": ALMCMC(emul, fw, gamma_var=GAMMA_VAR, loglike_surrogate=loglike_surrogate, prior=prior, proposal=proposal, log_theta_ref=theta_true),
+    "RALMCMC": RALMCMC(emul.copy(), fw, gamma_var=GAMMA_VAR, loglike=loglike,loglike_surrogate=loglike_surrogate, prior=prior, proposal=proposal.copy(), log_theta_ref=theta_true, subsample_rate=0.25),
+    "ARALMCMC": ARALMCMC(emul.copy(), fw, gamma_var=GAMMA_VAR, loglike=loglike,loglike_surrogate=loglike_surrogate, prior=prior, proposal=proposal.copy(), log_theta_ref=theta_true, subsample_rate=0.25),
 }
 
 # --------------------------------------------------------------
@@ -81,7 +82,7 @@ methods = {
 results = {}
 for name, sampler in methods.items():
     print(f"\nRunning {name}...")
-    results[name] = sampler.run(theta0=theta0, n_total=N_TOTAL, store_gp_ref=True)
+    results[name] = sampler.run(theta0=theta0, n_total=N_TOTAL, store_gp_ref=True, n_gp_update=N_BURNIN)
 
 # --------------------------------------------------------------
 # Analysis

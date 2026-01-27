@@ -57,7 +57,6 @@ class SurrogateMCMC(ABC):
         self.chain[0] = theta0
         
         self.n_gp_update = n_gp_update
-        self.gp_active = True
 
         if store_gp_ref and self.log_theta_ref is not None:
             self.gp_pred_ref = []
@@ -69,8 +68,8 @@ class SurrogateMCMC(ABC):
             self.accepted[n] = is_acc
             self.used_forward[n] = used_fw
             
-            if self.n_gp_update is not None and n >= self.n_gp_update:
-                self.gp_active = False
+            if n == self.n_gp_update:
+                self.gp.stop_optimize()
 
             if store_gp_ref and self.log_theta_ref is not None:
                 y_pred_ref, y_var_ref = self.gp.predict(self.log_theta_ref)
@@ -116,7 +115,7 @@ class ALMCMC(SurrogateMCMC):
         y_gp, var_gp = self.gp.predict(theta_star)
         ubar = float(np.mean(var_gp))
 
-        if ubar < self.gamma_var or not self.gp_active:
+        if ubar < self.gamma_var:
             loglike_star = self.loglike_surrogate(theta_star)
         else:
             y_true = self.fw_true(theta_star)
@@ -159,7 +158,7 @@ class RALMCMC(ALMCMC):
         y_gp, var_gp = self.gp.predict(theta_star)
         ubar = float(np.mean(var_gp))
 
-        do_hf = self.gp_active and (
+        do_hf = (
             (ubar >= self.gamma_var) or (np.random.rand() < self.subsample_rate)
         )
 

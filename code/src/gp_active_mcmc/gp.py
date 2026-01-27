@@ -62,6 +62,7 @@ class GPSurrogate:
         self._retrain_count = 0
         self._gamma_L_ratio = gamma_L_ratio
         self._n_retrain_max = n_retrain_max
+        self.optimize_params = True
 
     def _x_scale(self, X: np.ndarray) -> np.ndarray:
         return (X - self.X_mean) / self.X_std
@@ -94,15 +95,14 @@ class GPSurrogate:
         """
         Add (theta, logL_true) to training set and (optionally) re-optimize.
         """
-        print(self._retrain_count)
-        if (self._retrain_count < self._n_retrain_max):
-            x_new = self._x_scale(theta.reshape(1, -1))
-            y_new = self._y_scale(np.array([logL])).reshape(1, 1)
+        x_new = self._x_scale(theta.reshape(1, -1))
+        y_new = self._y_scale(np.array([logL])).reshape(1, 1)
 
-            self.Xs = np.vstack([self.Xs, x_new])
-            self.ys = np.vstack([self.ys, y_new])
-            self.model.set_XY(self.Xs, self.ys)
+        self.Xs = np.vstack([self.Xs, x_new])
+        self.ys = np.vstack([self.ys, y_new])
+        self.model.set_XY(self.Xs, self.ys)
 
+        if self.optimize_params:
             L_new = float(self.model.log_likelihood())
             if (abs(L_new / self._L_old) > self._gamma_L_ratio) and (self._retrain_count < self._n_retrain_max):
                 self.model.optimize()
@@ -113,4 +113,7 @@ class GPSurrogate:
             
     def log_likelihood(self) -> float:
         return float(self.model.log_likelihood())
+    
+    def stop_optimize(self):
+        self.optimize_params = False
 
