@@ -148,6 +148,8 @@ class RALMCMC(ALMCMC):
         self.subsample_rate = subsample_rate
         self.last_hf_loglike = None
         self.loglike = loglike
+        self.hf_errors = []
+        self.max_err_hist = 50
 
     def step(self, theta_n: np.ndarray) -> tuple[np.ndarray, bool, bool]:
         theta_star = self.proposal.propose(theta_n)
@@ -167,11 +169,19 @@ class RALMCMC(ALMCMC):
         
         if do_hf:
             y_true = self.fw_true(theta_star)
+
+            err = (y_true - mu_gp) / np.sqrt(var_gp + 1e-12)
+            self.hf_errors.append(float(np.mean(err**2)))
+            self.hf_errors = self.hf_errors[-self.max_err_hist:]
+
             if self.gp_active:
                 self.gp.update(theta_star, y_true)
+                
             used_fw = True
             loglike_star = self.loglike(theta_star)
             loglike_n = self.last_hf_loglike if self.last_hf_loglike is not None else self.loglike(theta_n)
+            mu_gp, var_gp = self.gp.predict(theta_star)
+
         else:
             loglike_star = self.loglike_surrogate(theta_star)
             loglike_n = self.loglike_surrogate(theta_n)
@@ -201,7 +211,7 @@ class ARALMCMC(RALMCMC):
         self.target_mll_gain = target_mll_gain
         self.adapt_rate = adapt_rate
         self.total_steps = 0
-        self.last_mll = self.gp.log_likelihood()  # initialize reference MLL
+
 
     def step(self, theta_n: np.ndarray) -> tuple[np.ndarray, bool, bool]:
         self.total_steps += 1
@@ -210,12 +220,12 @@ class ARALMCMC(RALMCMC):
         theta_next, is_acc, used_fw = super().step(theta_n)
 
         # Adapt subsample_rate every N steps
-        if self.total_steps % 10 == 0:
-            current_mll = self.gp.log_likelihood()
-            mll_gain = (current_mll - self.last_mll) / max(abs(self.last_mll), 1e-12)
-            # Reduce subsample_rate if GP is stable
-            self.subsample_rate *= 1.0 - self.adapt_rate * np.clip(mll_gain / self.target_mll_gain, -1, 1)
+        if self.total_steps % 10 == 0 and len(self.hf_errors) > 5:
+            npe = np.mean(self.hf_errors)
+
+            # target npe ≈ 1
+            delta = np.clip((npe - 1.0), -1.0, 1.0)
+            self.subsample_rate *= np.exp(self.adapt_rate * delta)
             self.subsample_rate = np.clip(self.subsample_rate, 0.01, 1.0)
-            self.last_mll = current_mll
 
         return theta_next, is_acc, used_fw
