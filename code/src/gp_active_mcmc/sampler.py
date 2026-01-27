@@ -167,7 +167,8 @@ class RALMCMC(ALMCMC):
         
         if do_hf:
             y_true = self.fw_true(theta_star)
-            self.gp.update(theta_star, y_true)
+            if self.gp_active:
+                self.gp.update(theta_star, y_true)
             used_fw = True
             loglike_star = self.loglike(theta_star)
             loglike_n = self.last_hf_loglike if self.last_hf_loglike is not None else self.loglike(theta_n)
