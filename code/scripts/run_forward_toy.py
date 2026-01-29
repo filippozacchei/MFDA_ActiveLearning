@@ -44,7 +44,7 @@ prior = GaussianPrior(theta_mean, theta_cov)
 # Dataset generation
 # --------------------------------------------------------------
 N_SNAPSHOTS = 100
-POD_RANK = 25
+POD_RANK = 10
 GP_KERNEL = "matern52"
 USE_ARD = True
 
@@ -55,14 +55,19 @@ Y = np.array([toy_forward(X[i], t) for i in range(N_SNAPSHOTS)])
 # Train–test split
 # --------------------------------------------------------------
 X_tr, X_te, Y_tr, Y_te = train_test_split(
-    X, Y, test_size=0.25, random_state=0
+    X, Y, test_size=0.75, random_state=0
 )
 
 # --------------------------------------------------------------
 # POD + GP surrogate construction
 # --------------------------------------------------------------
 pod = POD(r=POD_RANK).fit(Y_tr)
+
+X_tr, X_te, Y_tr, Y_te = train_test_split(
+    X, Y, test_size=0.25, random_state=0
+)
 A_tr = pod.project(Y_tr)
+
 
 gps = [
     GPSurrogate(X_tr, A_tr[:, k], kernel=GP_KERNEL, ard=USE_ARD)

@@ -146,13 +146,16 @@ class RALMCMC(ALMCMC):
     def __init__(self, *args, loglike, subsample_rate: float = 0.1, **kwargs):
         super().__init__(*args, **kwargs)
         self.subsample_rate = subsample_rate
-        self.last_hf_loglike = None
+        self.last_hf_theta = None
         self.loglike = loglike
         self.hf_errors = []
         self.max_err_hist = 50
 
     def step(self, theta_n: np.ndarray) -> tuple[np.ndarray, bool, bool]:
+
         theta_star = self.proposal.propose(theta_n)
+        if self.last_hf_theta is None:
+            self.last_hf_theta = theta_n
         used_fw = False
 
         if not self.constraint_fn(theta_star):
@@ -166,34 +169,41 @@ class RALMCMC(ALMCMC):
         ubar = float(np.mean(var_gp))
 
         do_hf = (self.gp_active and (ubar >= self.gamma_var)) or (np.random.rand() < self.subsample_rate)
-        
+
         if do_hf:
             y_true = self.fw_true(theta_star)
+            used_fw = True
 
-            err = (y_true - mu_gp) / np.sqrt(var_gp + 1e-12)
-            self.hf_errors.append(float(np.mean(err**2)))
-            self.hf_errors = self.hf_errors[-self.max_err_hist:]
+            loglike_F_star = self.loglike(theta_star)
+            loglike_F_start = self.loglike(self.last_hf_theta)
 
+            loglike_C_star = self.loglike_surrogate(theta_star)
+            loglike_C_start = self.loglike_surrogate(self.last_hf_theta)
+
+            logpost_star = loglike_F_star + loglike_C_star
+            logpost_old = loglike_F_start + loglike_C_start
+            
             if self.gp_active:
                 self.gp.update(theta_star, y_true)
-                
-            used_fw = True
-            loglike_star = self.loglike(theta_star)
-            loglike_n = self.last_hf_loglike if self.last_hf_loglike is not None else self.loglike(theta_n)
-            mu_gp, var_gp = self.gp.predict(theta_star)
 
+            err = (y_true - y_gp) / np.sqrt(var_gp + 1e-12)
+            self.hf_errors.append(float(np.mean(err**2)))
+            self.hf_errors = self.hf_errors[-self.max_err_hist:]
         else:
             loglike_star = self.loglike_surrogate(theta_star)
             loglike_n = self.loglike_surrogate(theta_n)
+            logpost_star = loglike_star + float(lp_star)
+            logpost_old = loglike_n + float(self.prior.logpdf(theta_n))
 
-        logpost_star = loglike_star + float(lp_star)
-        logpost_old = loglike_n + float(self.prior.logpdf(theta_n))
         is_acc = self.mh_accept(logpost_star, logpost_old)
-        
-        if do_hf and is_acc:
-            self.last_hf_loglike = self.loglike(theta_star)
-            
-        theta_next = theta_star if is_acc else theta_n
+
+        if do_hf:
+            theta_next = theta_star if is_acc else self.last_hf_theta
+            if is_acc:
+                self.last_hf_theta = theta_star
+        else:
+            theta_next = theta_star if is_acc else theta_n
+
         self.proposal.update(theta_next, is_acc)
         return theta_next, is_acc, used_fw
 

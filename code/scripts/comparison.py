@@ -15,17 +15,17 @@ from utils import plot_prediction_at_theta, plot_chain_2d
 # ---------------------------------------------------------------------
 # Configuration
 # ---------------------------------------------------------------------
-SEED = 1
-N_TOTAL = 5000  # quick test
-N_BURNIN = 2000  # quick test
-N_BURNIN_params = 1000  # quick test
-N_INIT = 50
-POD_RANK = 25
+SEED = 123
+N_TOTAL = 5000  
+N_BURNIN = 1000  
+N_BURNIN_params = 1000
+N_INIT = 25
+POD_RANK = 10
 GP_KERNEL = "matern52"
 USE_ARD = True
 SIGMA_OBS = 0.01
 GAMMA_VAR = 0.005
-GAMMA_L_RATIO = 1.0
+GAMMA_L_RATIO = 1.005
 N_RETRAIN_MAX = 50
 
 rng = np.random.default_rng(SEED)
