@@ -19,9 +19,9 @@ SEED = 123
 N_TOTAL = 5000  
 N_BURNIN = 1000  
 N_BURNIN_params = 1000
-N_INIT = 25
+N_INIT = 15
 POD_RANK = 10
-GP_KERNEL = "matern52"
+GP_KERNEL = "rbf"
 USE_ARD = True
 SIGMA_OBS = 0.01
 GAMMA_VAR = 0.005
@@ -32,7 +32,7 @@ rng = np.random.default_rng(SEED)
 t = make_timeline(T=500, t_end=0.05)
 
 prior_mean = np.array([0.8, 150.0, 0.010])
-prior_cov = np.diag([0.5**2, 25.0**2, 0.001**2])
+prior_cov = np.diag([0.5**2, 10.0**2, 0.001**2])
 prior = GaussianPrior(prior_mean, prior_cov)
 proposal = AdaptiveRWMProposal(cov=prior_cov)
 
@@ -95,7 +95,7 @@ for name, res in results.items():
     forward_frac = np.mean(used_forward)
     chain_post = chain[N_BURNIN:]
     theta_mean = np.mean(chain_post, axis=0)
-    rmse = np.sqrt(np.mean((theta_mean - theta_true) ** 2))    
+    rmse = np.mean(np.abs((theta_mean - theta_true)/theta_true))    
     print(f"\n{name} summary:")
     print(f"  Acceptance rate      : {accept_rate:.3f}")
     print(f"  Forward-call fraction: {forward_frac:.3f}")

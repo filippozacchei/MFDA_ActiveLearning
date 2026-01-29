@@ -180,8 +180,8 @@ class RALMCMC(ALMCMC):
             loglike_C_star = self.loglike_surrogate(theta_star)
             loglike_C_start = self.loglike_surrogate(self.last_hf_theta)
 
-            logpost_star = loglike_F_star + loglike_C_star
-            logpost_old = loglike_F_start + loglike_C_start
+            logpost_star = loglike_F_star + loglike_C_start
+            logpost_old = loglike_F_start + loglike_C_star
             
             if self.gp_active:
                 self.gp.update(theta_star, y_true)
