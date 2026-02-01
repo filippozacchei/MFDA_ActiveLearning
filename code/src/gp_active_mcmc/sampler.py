@@ -173,6 +173,9 @@ class RALMCMC(ALMCMC):
         if do_hf:
             y_true = self.fw_true(theta_star)
             used_fw = True
+            
+            # if self.gp_active:
+            #     self.gp.update(theta_star, y_true)
 
             loglike_F_star = self.loglike(theta_star)
             loglike_F_start = self.loglike(self.last_hf_theta)
@@ -185,7 +188,7 @@ class RALMCMC(ALMCMC):
             
             if self.gp_active:
                 self.gp.update(theta_star, y_true)
-
+    
             err = (y_true - y_gp) / np.sqrt(var_gp + 1e-12)
             self.hf_errors.append(float(np.mean(err**2)))
             self.hf_errors = self.hf_errors[-self.max_err_hist:]
@@ -195,16 +198,16 @@ class RALMCMC(ALMCMC):
             logpost_star = loglike_star + float(lp_star)
             logpost_old = loglike_n + float(self.prior.logpdf(theta_n))
 
-        is_acc = self.mh_accept(logpost_star, logpost_old)
+        is_acc = self.mh_accept(logpost_star, logpost_old+1e-12)
 
         if do_hf:
             theta_next = theta_star if is_acc else self.last_hf_theta
             if is_acc:
-                self.last_hf_theta = theta_star
+                self.last_hf_theta = theta_star            
         else:
-            theta_next = theta_star if is_acc else theta_n
-
-        self.proposal.update(theta_next, is_acc)
+            theta_next = theta_star if is_acc else theta_n    
+            self.proposal.update(theta_next, is_acc)
+        
         return theta_next, is_acc, used_fw
 
 # =========================

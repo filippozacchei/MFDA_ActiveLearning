@@ -61,4 +61,5 @@ class AdaptiveRWMProposal(RWMProposal):
             gamma = 1.0 / np.sqrt(self.n_updates)
             self.step_scale *= np.exp(gamma * (local_acc - self.target_accept))
             self.step_scale = np.clip(self.step_scale, 1e-5, 10.0)
+        print(self.step_scale)
 

@@ -7,9 +7,9 @@ from gp_active_mcmc.pod import POD
 from gp_active_mcmc.gp import GPSurrogate
 from gp_active_mcmc.podgp import PODGPSurrogate
 from gp_active_mcmc.priors import GaussianPrior
-from gp_active_mcmc.proposals import AdaptiveRWMProposal
+from gp_active_mcmc.proposals import AdaptiveRWMProposal, RWMProposal
 from gp_active_mcmc.sampler import ALMCMC, RALMCMC, ARALMCMC
-from gp_active_mcmc.likelihood import loglike_theta_gp, loglike_theta
+from gp_active_mcmc.likelihood import loglike_theta_gp, loglike_theta, loglike_theta_gp_no_uq
 from utils import plot_prediction_at_theta, plot_chain_2d
 
 # ---------------------------------------------------------------------
@@ -17,14 +17,14 @@ from utils import plot_prediction_at_theta, plot_chain_2d
 # ---------------------------------------------------------------------
 SEED = 123
 N_TOTAL = 5000  
-N_BURNIN = 1000  
+N_BURNIN = 2000  
 N_BURNIN_params = 1000
-N_INIT = 15
+N_INIT = 25
 POD_RANK = 10
-GP_KERNEL = "rbf"
+GP_KERNEL = "matern52"
 USE_ARD = True
 SIGMA_OBS = 0.01
-GAMMA_VAR = 0.005
+GAMMA_VAR = 0.01
 GAMMA_L_RATIO = 1.005
 N_RETRAIN_MAX = 50
 
@@ -66,15 +66,28 @@ emul = PODGPSurrogate(pod=pod, gps=gps)
 theta0 = prior_mean.copy()
 
 loglike = lambda theta: loglike_theta(theta, fw, y_obs, sigma_obs)
-loglike_surrogate = lambda theta: loglike_theta_gp(theta, emul, y_obs, sigma_obs)
+
+emul_al = emul.copy()
+emul_ral = emul.copy()
+emul_aral = emul.copy()
+
+loglike_surrogate_al = lambda theta: loglike_theta_gp(theta, emul_al, y_obs, sigma_obs)
+loglike_surrogate_ral = lambda theta: loglike_theta_gp_no_uq(theta, emul_ral, y_obs, sigma_obs)
+loglike_surrogate_aral = lambda theta: loglike_theta_gp_no_uq(theta, emul_aral, y_obs, sigma_obs)
+
+emuls = {
+    "ALMCMC": emul_al,
+    "RALMCMC": emul_ral,
+    "ARALMCMC": emul_aral,
+}
 
 # --------------------------------------------------------------
 # Define methods
 # --------------------------------------------------------------
 methods = {
-    "ALMCMC": ALMCMC(emul, fw, gamma_var=GAMMA_VAR, loglike_surrogate=loglike_surrogate, prior=prior, proposal=proposal, log_theta_ref=theta_true),
-    "RALMCMC": RALMCMC(emul.copy(), fw, gamma_var=GAMMA_VAR, loglike=loglike,loglike_surrogate=loglike_surrogate, prior=prior, proposal=proposal.copy(), log_theta_ref=theta_true, subsample_rate=0.25),
-    "ARALMCMC": ARALMCMC(emul.copy(), fw, gamma_var=GAMMA_VAR, loglike=loglike,loglike_surrogate=loglike_surrogate, prior=prior, proposal=proposal.copy(), log_theta_ref=theta_true, subsample_rate=0.25),
+    "ALMCMC": ALMCMC(emul_al, fw, gamma_var=GAMMA_VAR, loglike_surrogate=loglike_surrogate_al, prior=prior, proposal=proposal.copy(), log_theta_ref=theta_true),
+    "RALMCMC": RALMCMC(emul_ral, fw, gamma_var=GAMMA_VAR, loglike=loglike,loglike_surrogate=loglike_surrogate_ral, prior=prior, proposal=proposal.copy(), log_theta_ref=theta_true, subsample_rate=0.25),
+    "ARALMCMC": ARALMCMC(emul_aral, fw, gamma_var=GAMMA_VAR, loglike=loglike,loglike_surrogate=loglike_surrogate_aral, prior=prior, proposal=proposal.copy(), log_theta_ref=theta_true, subsample_rate=0.25),
 }
 
 # --------------------------------------------------------------
@@ -89,13 +102,13 @@ for name, sampler in methods.items():
 # Analysis
 # --------------------------------------------------------------
 for name, res in results.items():
+    emulator = emuls[name]
     chain = res["chain"]
     used_forward = res["used_forward"]
     accept_rate = res["accept_rate"]
     forward_frac = np.mean(used_forward)
     chain_post = chain[N_BURNIN:]
-    theta_mean = np.mean(chain_post, axis=0)
-    rmse = np.mean(np.abs((theta_mean - theta_true)/theta_true))    
+    rmse = np.mean(np.abs((chain_post - theta_true)/theta_true))    
     print(f"\n{name} summary:")
     print(f"  Acceptance rate      : {accept_rate:.3f}")
     print(f"  Forward-call fraction: {forward_frac:.3f}")
@@ -127,7 +140,7 @@ for name, res in results.items():
     
     # Surrogate prediction plot
     plot_prediction_at_theta(
-        emul=emul,
+        emul=emulator,
         theta=theta_true,
         t=t,
         y_obs=y_obs,
@@ -135,7 +148,7 @@ for name, res in results.items():
     )
     
     plot_prediction_at_theta(
-        emul=emul,
+        emul=emulator,
         theta=theta_true,
         t=t,
         y_obs=fw(theta_true),
