@@ -1,5 +1,7 @@
 GPy==1.13.2
+GPy==1.13.2
 matplotlib==3.10.8
+nox==2025.11.12
 numpy==2.4.2
 scikit_learn==1.8.0
 scipy==1.17.0
