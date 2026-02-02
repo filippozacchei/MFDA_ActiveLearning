@@ -2,12 +2,16 @@
 requires = ["setuptools>=68", "wheel"]
 build-backend = "setuptools.build_meta"
 
+[tool.setuptools.packages.find]
+where = ["src"]
+include = ["gp_active_mcmc*"]
+
 [project]
 name = "gp-active-mcmc"
 version = "0.1.0"
 description = "MCMC-guided active learning for GP surrogate likelihoods"
 requires-python = ">=3.10"
-license = { text = "MIT" } 
+license = "MIT"
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]       
