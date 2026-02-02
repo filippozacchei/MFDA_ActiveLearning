@@ -37,7 +37,7 @@ t = make_timeline(T=500, t_end=0.05)
 # Prior on parameters
 # --------------------------------------------------------------
 prior_mean = np.array([0.8, 150.0, 0.01])
-prior_cov = np.diag([0.5**2, 40.0**2, 0.01**2])
+prior_cov = np.diag([0.5**2, 25.0**2, 0.01**2])
 prior = multivariate_normal(prior_mean, prior_cov)
 
 # --------------------------------------------------------------

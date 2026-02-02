@@ -27,8 +27,8 @@ N_INIT = 25
 POD_RANK = 10
 GP_KERNEL = "matern52"
 USE_ARD = True
-SIGMA_OBS = 0.01
-GAMMA_VAR = 0.01
+SIGMA_OBS = 0.1
+GAMMA_VAR = 0.1
 GAMMA_L_RATIO = 1.05
 N_RETRAIN_MAX = 100
 SUBSAMPLE_RATE = 5
@@ -38,9 +38,9 @@ t = make_timeline(T=500, t_end=0.05)
 
 # Prior and proposal
 prior_mean = np.array([0.8, 150.0, 0.01])
-prior_cov = np.diag([0.5**2, 40.0**2, 0.01**2])
+prior_cov = np.diag([0.5**2, 25.0**2, 0.01**2])
 prior = multivariate_normal(mean=prior_mean, cov=prior_cov)
-proposal = tda.AdaptiveMetropolis(C0=prior_cov, sd=0.01, adaptive=True)
+proposal = tda.AdaptiveMetropolis(C0=prior_cov, sd=0.001, adaptive=True,period=100)
 
 # Ground truth and observations
 theta_true = prior.rvs(random_state=rng)
@@ -101,21 +101,21 @@ plot_prediction_at_theta(emul, theta_true, t, y_obs, title="Surrogate prediction
 # ---------------------------------------------------------------------
 theta0 = prior_mean.copy()
 samples = tda.sample(
-    posteriors=[posterior_coarse, posterior_fine],
+    posteriors=[posterior_coarse],
     proposal=proposal,
-    iterations=N_TOTAL//SUBSAMPLE_RATE,
+    iterations=N_TOTAL,
     n_chains=1,
     force_sequential=True,
     initial_parameters=theta0,
-    store_coarse_chain=True,
-    subsampling_rate=SUBSAMPLE_RATE,
-    adaptive_error_model='state-independent'
+    # store_coarse_chain=True,
+    # subsampling_rate=SUBSAMPLE_RATE,
+    # adaptive_error_model=None
 )
 
 # ---------------------------------------------------------------------
 # Chain analysis
 # ---------------------------------------------------------------------
-chain_array = np.array([link.parameters for link in samples["chain_coarse_0"]])
+chain_array = np.array([link.parameters for link in samples["chain_0"]])
 forward_calls = np.array(model.used_hf[:N_TOTAL])
 forward_post = forward_calls[N_BURNIN:]
 
