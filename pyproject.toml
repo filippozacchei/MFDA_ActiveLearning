@@ -9,5 +9,5 @@ description = "MCMC-guided active learning for GP surrogate likelihoods"
 requires-python = ">=3.10"
 
 [tool.pytest.ini_options]
-testpaths = ["tests"]
+testpaths = ["test"]
 addopts = "-q"

@@ -7,7 +7,7 @@ python_versions = ["3.10"]
 def tests(session):
     """Run all unit tests with pytest."""
     session.install("-r", "requirements.txt")
-    session.run("pytest", "test")
+    session.run("pytest", "tests")
 
 
 @nox.session(python=python_versions)
