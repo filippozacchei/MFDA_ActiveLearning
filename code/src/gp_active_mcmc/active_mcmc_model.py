@@ -36,7 +36,6 @@ class ActiveMCMCModel:
     def coarse(self, theta: np.ndarray) -> np.ndarray:
         y_pred, var = self.lf.predict(theta)
         u_bar = float(np.mean(var))
-        print(u_bar)
 
         if u_bar > self.gamma_var:
             y = self.hf(theta)

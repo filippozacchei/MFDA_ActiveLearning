@@ -38,7 +38,7 @@ t = make_timeline(T=500, t_end=0.05)
 
 # Prior and proposal
 prior_mean = np.array([0.8, 150.0, 0.01])
-prior_cov = np.diag([0.1**2, 25.0**2, 0.001**2])
+prior_cov = np.diag([0.5**2, 40.0**2, 0.01**2])
 prior = multivariate_normal(mean=prior_mean, cov=prior_cov)
 proposal = tda.AdaptiveMetropolis(C0=prior_cov, sd=0.01, adaptive=True)
 
@@ -103,7 +103,7 @@ theta0 = prior_mean.copy()
 samples = tda.sample(
     posteriors=[posterior_coarse, posterior_fine],
     proposal=proposal,
-    iterations=N_TOTAL,
+    iterations=N_TOTAL//SUBSAMPLE_RATE,
     n_chains=1,
     force_sequential=True,
     initial_parameters=theta0,
