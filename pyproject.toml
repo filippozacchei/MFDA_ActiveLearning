@@ -7,7 +7,15 @@ name = "gp-active-mcmc"
 version = "0.1.0"
 description = "MCMC-guided active learning for GP surrogate likelihoods"
 requires-python = ">=3.10"
+license = { text = "MIT" } 
 
 [tool.pytest.ini_options]
-testpaths = ["test"]
-addopts = "-q"
+testpaths = ["tests"]       
+addopts = "-q --strict-markers --tb=short"
+
+[tool.black]
+line-length = 88
+target-version = ["py310"]
+
+[tool.pre-commit]
+
