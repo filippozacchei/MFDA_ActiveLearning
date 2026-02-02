@@ -5,116 +5,130 @@ import GPy
 
 class GPSurrogate:
     """
-    GP surrogate for log-likelihood with:
-      - X standardization: x = (theta - X_mean)/X_std
-      - y standardization: z = (logL - y_mean)/y_std
-    Internally, the GP is fit on (x, z).
-    Public predict returns mean/var in ORIGINAL (unscaled) logL units.
+    GP surrogate for a forward model y(theta), with uncertainty.
     """
 
-    def __init__(self, 
-                 X_train: np.ndarray, 
-                 y_train: np.ndarray, 
-                 kernel: str = "matern52", 
-                 ard: bool = True,
-                 gamma_L_ratio: float = 1.05, 
-                 n_retrain_max: int = 500
-               ) -> None:
+    def __init__(
+        self,
+        X_train: np.ndarray,        # (N, d)
+        Y_train: np.ndarray,        # (N, m)
+        kernel: str = "matern52",
+        ard: bool = True,
+        gamma_L_ratio: float = 1.05,
+        n_retrain_max: int = 500,
+    ) -> None:
+
         if X_train.ndim != 2:
             raise ValueError("X_train must be 2D (N, d).")
-        if y_train.ndim != 1:
-            raise ValueError("y_train must be 1D (N,).")
 
+        if Y_train.ndim == 1:
+            Y_train = Y_train[:, None]
+        elif Y_train.ndim != 2:
+            raise ValueError("Y_train must be 1D or 2D.")
+
+        self.n_out = Y_train.shape[1]
+
+        # -------------------------
+        # Input scaling
+        # -------------------------
         self.X_mean = X_train.mean(axis=0)
         self.X_std = X_train.std(axis=0)
         self.X_std[self.X_std == 0.0] = 1.0
-
-        self.y_mean = y_train.mean()
-        self.y_std = y_train.std()
-        if self.y_std == 0.0:
-            self.y_std = 1.0
-
         Xs = self._x_scale(X_train)
-        ys = self._y_scale(y_train).reshape(-1, 1)
+
+        # -------------------------
+        # Output scaling
+        # -------------------------
+        self.Y_mean = Y_train.mean(axis=0)
+        self.Y_std = Y_train.std(axis=0)
+        self.Y_std[self.Y_std == 0.0] = 1.0
+        Ys = self._y_scale(Y_train)
+
+        # -------------------------
+        # Build one GP per output
+        # -------------------------
+        self.models = []
+        self.Xs = Xs.copy()
+        self.Ys = Ys.copy()
 
         d = X_train.shape[1]
-        if kernel == "rbf":
-            kern = GPy.kern.RBF(input_dim=d, ARD=ard)
-        elif kernel == "matern32":
-            kern = GPy.kern.Matern32(input_dim=d, ARD=ard)
-        elif kernel == "matern52":
-            kern = GPy.kern.Matern52(input_dim=d, ARD=ard)  
-        elif kernel == "mlp":
-            kern = GPy.kern.MLP(input_dim=d, ARD=ard)      
-        
-        self.model = GPy.models.GPRegression(Xs, ys, kern)
+        for k in range(self.n_out):
+            if kernel == "rbf":
+                kern = GPy.kern.RBF(d, ARD=ard)
+            elif kernel == "matern32":
+                kern = GPy.kern.Matern32(d, ARD=ard)
+            elif kernel == "matern52":
+                kern = GPy.kern.Matern52(d, ARD=ard)
+            else:
+                raise ValueError(f"Unknown kernel: {kernel}")
 
-        # reasonable initial noise; allow optimization to adjust
-        self.model.Gaussian_noise.variance = 1e-1
-        self.model.Gaussian_noise.unfix()
+            gp = GPy.models.GPRegression(
+                Xs, Ys[:, [k]], kern
+            )
+            gp.Gaussian_noise.variance = 1e-6
+            gp.Gaussian_noise.unfix()
+            gp.optimize()
 
-        self.model.optimize()
+            self.models.append(gp)
 
-        # book-keeping for active learning dataset (in scaled coordinates)
-        self.Xs = self.model.X.copy()
-        self.ys = self.model.Y.copy()
-        self._L_old = float(self.model.log_likelihood())
-        self._retrain_count = 0
+        # -------------------------
+        # Active-learning bookkeeping
+        # -------------------------
+        self._L_old = np.array([m.log_likelihood() for m in self.models])
         self._gamma_L_ratio = gamma_L_ratio
         self._n_retrain_max = n_retrain_max
+        self._retrain_count = 0
         self.optimize_params = True
 
     def _x_scale(self, X: np.ndarray) -> np.ndarray:
         return (X - self.X_mean) / self.X_std
 
-    def _y_scale(self, y: np.ndarray) -> np.ndarray:
-        return (y - self.y_mean) / self.y_std
+    def _y_scale(self, Y: np.ndarray) -> np.ndarray:
+        return (Y - self.Y_mean) / self.Y_std
 
-    def _y_unscale_mean(self, mu_scaled: np.ndarray) -> np.ndarray:
-        return mu_scaled * self.y_std + self.y_mean
+    def _y_unscale(self, Y: np.ndarray) -> np.ndarray:
+        return Y * self.Y_std + self.Y_mean
 
-    def _y_unscale_var(self, var_scaled: np.ndarray) -> np.ndarray:
-        # If z = (y - m)/s, then Var[y] = Var[z] * s^2
-        return var_scaled * (self.y_std ** 2)
-
-    def predict(self, theta: np.ndarray) -> tuple[float, float]:
+    def predict(self, theta: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
         """
-        Returns (mu, var) of fw model.
-        No further rescaling needed.
+        Predict forward model output and variance.
+
+        Returns
+        -------
+        y_mean : (m,)
+        y_var  : (m,)
         """
         x = self._x_scale(theta.reshape(1, -1))
-        mu_s, var_s = self.model.predict(x)  # mu, variance in scaled y space
-        mu = float(self._y_unscale_mean(mu_s)[0, 0])
-        var = float(self._y_unscale_var(var_s)[0, 0])
+
+        mu = np.zeros(self.n_out)
+        var = np.zeros(self.n_out)
+
+        for k, gp in enumerate(self.models):
+            mu_s, var_s = gp.predict(x)
+            mu[k] = mu_s[0, 0] * self.Y_std[k] + self.Y_mean[k]
+            var[k] = var_s[0, 0] * (self.Y_std[k] ** 2)
+
         return mu, var
-    
-    def __call__(self, theta: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
+
+    def __call__(self, theta: np.ndarray):
         return self.predict(theta)
 
-    def update(self, theta: np.ndarray, logL: float) -> None:
+    def update(self, theta: np.ndarray, y_true: np.ndarray) -> None:
         """
-        Add (theta, logL_true) to training set and (optionally) re-optimize.
+        Add a new HF observation and (optionally) retrain hyperparameters.
         """
-        
+
         x_new = self._x_scale(theta.reshape(1, -1))
-        y_new = self._y_scale(np.array([logL])).reshape(1, 1)
+        y_new = self._y_scale(y_true)
 
         self.Xs = np.vstack([self.Xs, x_new])
-        self.ys = np.vstack([self.ys, y_new])
-        self.model.set_XY(self.Xs, self.ys)
+        self.Ys = np.vstack([self.Ys, y_new])
 
-        if self.optimize_params:
-            L_new = float(self.model.log_likelihood())
-            if (abs(L_new / self._L_old) > self._gamma_L_ratio):
-                self.model.optimize()
-                self._L_old = float(self.model.log_likelihood())
-                self._retrain_count += 1
-            else:
-                self._L_old = L_new
-            
-    def log_likelihood(self) -> float:
-        return float(self.model.log_likelihood())
-    
-    def stop_optimize(self):
-        self.optimize_params = False
-
+        if self._retrain_count <= self._n_retrain_max:
+            for k, gp in enumerate(self.models):
+                gp.set_XY(self.Xs, self.Ys[:, [k]])
+                L_new = gp.log_likelihood()
+                if abs(L_new / self._L_old[k]) > self._gamma_L_ratio:
+                    gp.optimize()
+                self._L_old[k] = gp.log_likelihood()
+        self._retrain_count += 1
