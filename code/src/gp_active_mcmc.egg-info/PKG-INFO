@@ -1,5 +1,0 @@
-Metadata-Version: 2.4
-Name: gp-active-mcmc
-Version: 0.1.0
-Summary: MCMC-guided active learning for GP surrogate likelihoods
-Requires-Python: >=3.10
