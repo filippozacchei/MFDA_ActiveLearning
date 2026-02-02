@@ -51,7 +51,7 @@ rng = np.random.default_rng(SEED)
 t = make_timeline(T=500, t_end=0.05)
 
 prior_mean = np.array([0.8, 150.0, 0.010])
-prior_cov = np.diag([0.5**2, 10.0**2, 0.01**2])
+prior_cov = np.diag([0.1**2, 25.0**2, 0.001**2])
 prior = GaussianPrior(prior_mean, prior_cov)
 proposal = AdaptiveRWMProposal(cov=prior_cov)
 

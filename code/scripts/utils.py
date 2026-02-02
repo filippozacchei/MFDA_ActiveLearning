@@ -41,7 +41,7 @@ def plot_pair_scatter_train_test(
     names: tuple[str, ...],
 ):
     """Pairwise 2D scatter plots of training and test points."""
-    pairs = [(0, 1), (0, 2), (1, 2)]
+    pairs = [(0, 1)]
 
     for i, j in pairs:
         plt.figure()
@@ -235,8 +235,8 @@ def plot_chain_2d(
     fig, ax = plt.subplots(figsize=(6, 5))
 
     if used_forward is not None:
-        gp_idx = np.where(~used_forward)[0] + 1
-        fw_idx = np.where(used_forward)[0] + 1
+        gp_idx = np.where(~used_forward)[0] 
+        fw_idx = np.where(used_forward)[0] 
 
         if gp_idx.size:
             ax.scatter(chain[gp_idx, 0], chain[gp_idx, 1],

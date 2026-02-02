@@ -7,12 +7,12 @@ from __future__ import annotations
 import numpy as np
 import matplotlib.pyplot as plt
 from sklearn.model_selection import train_test_split
+from scipy.stats import multivariate_normal
 
 from gp_active_mcmc.utils import set_seed
 from gp_active_mcmc.pod import POD
 from gp_active_mcmc.gp import GPSurrogate
 from gp_active_mcmc.podgp import PODGPSurrogate
-from gp_active_mcmc.priors import GaussianPrior
 from gp_active_mcmc.toy import toy_forward, make_timeline
 
 from utils import (
@@ -36,9 +36,9 @@ t = make_timeline(T=500, t_end=0.05)
 # --------------------------------------------------------------
 # Prior on parameters
 # --------------------------------------------------------------
-theta_mean = np.array([0.8, 150.0, 0.010])
-theta_cov = np.diag([0.5**2, 25.0**2, 0.001**2])
-prior = GaussianPrior(theta_mean, theta_cov)
+prior_mean = np.array([0.8, 150.0, 0.01])
+prior_cov = np.diag([0.5**2, 25.0**2, 0.01**2])
+prior = multivariate_normal(prior_mean, prior_cov)
 
 # --------------------------------------------------------------
 # Dataset generation
@@ -48,7 +48,7 @@ POD_RANK = 10
 GP_KERNEL = "matern52"
 USE_ARD = True
 
-X = np.array([prior.sample(rng) for _ in range(N_SNAPSHOTS)])
+X = np.array([prior.rvs(random_state=rng) for _ in range(N_SNAPSHOTS)])
 Y = np.array([toy_forward(X[i], t) for i in range(N_SNAPSHOTS)])
 
 # --------------------------------------------------------------

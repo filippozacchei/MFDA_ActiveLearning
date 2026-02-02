@@ -1,168 +1,170 @@
-# from __future__ import annotations
+# %% Imports
+from pathlib import Path
+from typing import Callable
+
 import numpy as np
 import matplotlib.pyplot as plt
+import arviz as az
+from scipy.stats import multivariate_normal
+
+import tinyDA as tda
 
 from gp_active_mcmc.toy import toy_forward, make_timeline, make_observation
 from gp_active_mcmc.pod import POD
 from gp_active_mcmc.gp import GPSurrogate
 from gp_active_mcmc.podgp import PODGPSurrogate
-from gp_active_mcmc.priors import GaussianPrior
-from gp_active_mcmc.proposals import AdaptiveRWMProposal, RWMProposal
-from gp_active_mcmc.sampler import ALMCMC, RALMCMC, ARALMCMC
-from gp_active_mcmc.likelihood import loglike_theta_gp, loglike_theta, loglike_theta_gp_no_uq
+from gp_active_mcmc.active_mcmc_model import ActiveMCMCModel
+from gp_active_mcmc.likelihood import GaussianLogLikeWithGP
 from utils import plot_prediction_at_theta, plot_chain_2d
 
 # ---------------------------------------------------------------------
 # Configuration
 # ---------------------------------------------------------------------
 SEED = 123
-N_TOTAL = 5000  
-N_BURNIN = 2000  
-N_BURNIN_params = 1000
+N_TOTAL = 5000
+N_BURNIN = 2000
 N_INIT = 25
 POD_RANK = 10
 GP_KERNEL = "matern52"
 USE_ARD = True
-SIGMA_OBS = 0.01
-GAMMA_VAR = 0.01
-GAMMA_L_RATIO = 1.005
-N_RETRAIN_MAX = 50
+SIGMA_OBS = 0.1
+GAMMA_VAR = 0.1
+GAMMA_L_RATIO = 1.05
+N_RETRAIN_MAX = 100
+SUBSAMPLE_RATE = 5
 
 rng = np.random.default_rng(SEED)
 t = make_timeline(T=500, t_end=0.05)
 
-prior_mean = np.array([0.8, 150.0, 0.010])
-prior_cov = np.diag([0.5**2, 10.0**2, 0.001**2])
-prior = GaussianPrior(prior_mean, prior_cov)
-proposal = AdaptiveRWMProposal(cov=prior_cov)
+# Prior and proposal
+prior_mean = np.array([0.8, 150.0, 0.01])
+prior_cov = np.diag([0.5**2, 25.0**2, 0.01**2])
+prior = multivariate_normal(mean=prior_mean, cov=prior_cov)
+proposal = tda.AdaptiveMetropolis(C0=prior_cov, sd=0.001, adaptive=True,period=100)
 
-theta_true = prior.sample(rng)
+# Ground truth and observations
+theta_true = prior.rvs(random_state=rng)
 y_obs = make_observation(rng, theta_true, t, SIGMA_OBS)
 sigma_obs = SIGMA_OBS * np.ones_like(y_obs)
-fw = lambda theta: toy_forward(theta, t)
 
-def positive_tau(theta: np.ndarray) -> bool:
-    return theta[2] > 1e-6
+# Forward model wrapper
+def forward_model(theta: np.ndarray) -> np.ndarray:
+    return toy_forward(theta, t)
 
-# --------------------------------------------------------------
-# Build initial surrogate
-# --------------------------------------------------------------
-X0 = np.array([prior.sample(rng) for _ in range(N_INIT)])
-Y0 = np.array([fw(X0[i]) for i in range(N_INIT)])
+# ---------------------------------------------------------------------
+# Initial dataset for POD + GP
+# ---------------------------------------------------------------------
+X0 = np.array([prior.rvs(random_state=rng) for _ in range(N_INIT)])
+Y0 = np.array([forward_model(theta) for theta in X0])
 
+# POD
 pod = POD(r=POD_RANK).fit(Y0)
 A0 = pod.project(Y0)
 
+# GP surrogates
 gps = [
     GPSurrogate(
-        X0, A0[:, k],
-        kernel=GP_KERNEL, ard=USE_ARD,
+        X0,
+        A0[:, k],
+        kernel=GP_KERNEL,
+        ard=USE_ARD,
         gamma_L_ratio=GAMMA_L_RATIO,
         n_retrain_max=N_RETRAIN_MAX
-    ) for k in range(POD_RANK)
+    )
+    for k in range(POD_RANK)
 ]
 
+# POD-GP surrogate
 emul = PODGPSurrogate(pod=pod, gps=gps)
+
+# Active surrogate model (coarse/fine)
+model = ActiveMCMCModel(
+    lf=emul,
+    hf=forward_model,
+    gamma_var=GAMMA_VAR
+)
+
+# ---------------------------------------------------------------------
+# Likelihood and posterior
+# ---------------------------------------------------------------------
+likelihood_coarse = GaussianLogLikeWithGP(y_obs, sigma_obs * np.eye(len(y_obs)))
+likelihood_fine = tda.AdaptiveGaussianLogLike(y_obs, sigma_obs * np.eye(len(y_obs)))
+
+posterior_coarse = tda.Posterior(prior, likelihood_coarse, model.coarse)
+posterior_fine = tda.Posterior(prior, likelihood_fine, model.fine)
+
+# Visualization: initial surrogate prediction
+plot_prediction_at_theta(emul, theta_true, t, y_obs, title="Surrogate prediction")
+
+# ---------------------------------------------------------------------
+# Run MCMC chain
+# ---------------------------------------------------------------------
 theta0 = prior_mean.copy()
+samples = tda.sample(
+    posteriors=[posterior_coarse],
+    proposal=proposal,
+    iterations=N_TOTAL,
+    n_chains=1,
+    force_sequential=True,
+    initial_parameters=theta0,
+    # store_coarse_chain=True,
+    # subsampling_rate=SUBSAMPLE_RATE,
+    # adaptive_error_model=None
+)
 
-loglike = lambda theta: loglike_theta(theta, fw, y_obs, sigma_obs)
+# ---------------------------------------------------------------------
+# Chain analysis
+# ---------------------------------------------------------------------
+chain_array = np.array([link.parameters for link in samples["chain_0"]])
+forward_calls = np.array(model.used_hf[:N_TOTAL])
+forward_post = forward_calls[N_BURNIN:]
 
-emul_al = emul.copy()
-emul_ral = emul.copy()
-emul_aral = emul.copy()
+# Acceptance rate
+accepted = np.any(np.diff(chain_array, axis=0) != 0, axis=1)
+accept_rate = accepted.mean()
+forward_frac = forward_post.mean()
 
-loglike_surrogate_al = lambda theta: loglike_theta_gp(theta, emul_al, y_obs, sigma_obs)
-loglike_surrogate_ral = lambda theta: loglike_theta_gp_no_uq(theta, emul_ral, y_obs, sigma_obs)
-loglike_surrogate_aral = lambda theta: loglike_theta_gp_no_uq(theta, emul_aral, y_obs, sigma_obs)
+# RMSE vs ground truth
+rmse = np.mean(np.sqrt(np.sum((chain_array[N_BURNIN:] - theta_true)**2, axis=1)))
 
-emuls = {
-    "ALMCMC": emul_al,
-    "RALMCMC": emul_ral,
-    "ARALMCMC": emul_aral,
-}
+print(f"Summary:")
+print(f"  Acceptance rate      : {accept_rate:.3f}")
+print(f"  Forward-call fraction: {forward_frac:.3f}")
+print(f"  RMSE vs theta_true   : {rmse:.5f}")
+print(f"Total forward calls   : {len(forward_calls)}")
+print(f"Total chain length    : {len(chain_array)}")
 
-# --------------------------------------------------------------
-# Define methods
-# --------------------------------------------------------------
-methods = {
-    "ALMCMC": ALMCMC(emul_al, fw, gamma_var=GAMMA_VAR, loglike_surrogate=loglike_surrogate_al, prior=prior, proposal=proposal.copy(), log_theta_ref=theta_true),
-    "RALMCMC": RALMCMC(emul_ral, fw, gamma_var=GAMMA_VAR, loglike=loglike,loglike_surrogate=loglike_surrogate_ral, prior=prior, proposal=proposal.copy(), log_theta_ref=theta_true, subsample_rate=0.25),
-    "ARALMCMC": ARALMCMC(emul_aral, fw, gamma_var=GAMMA_VAR, loglike=loglike,loglike_surrogate=loglike_surrogate_aral, prior=prior, proposal=proposal.copy(), log_theta_ref=theta_true, subsample_rate=0.25),
-}
+# ---------------------------------------------------------------------
+# Plot chains
+# ---------------------------------------------------------------------
+plot_chain_2d(
+    chain_array,
+    used_forward=forward_calls,
+    theta_true=theta_true,
+    names=("A","f"),
+    title="Full chain"
+)
+plot_chain_2d(
+    chain_array[N_BURNIN:],
+    used_forward=None,
+    theta_true=theta_true,
+    names=("A","f"),
+    title="Post burn-in"
+)
 
-# --------------------------------------------------------------
-# Run samplers
-# --------------------------------------------------------------
-results = {}
-for name, sampler in methods.items():
-    print(f"\nRunning {name}...")
-    results[name] = sampler.run(theta0=theta0, n_total=N_TOTAL, store_gp_ref=True, n_gp_update=N_BURNIN, n_gp_update_params=N_BURNIN_params)
+# ---------------------------------------------------------------------
+# Surrogate predictions
+# ---------------------------------------------------------------------
+y_pred, y_std = emul.predict(theta_true)
+plot_prediction_at_theta(emul, theta_true, t, y_obs, title="Surrogate prediction")
+plot_prediction_at_theta(emul, theta_true, t, forward_model(theta_true), title="Surrogate error")
 
-# --------------------------------------------------------------
-# Analysis
-# --------------------------------------------------------------
-for name, res in results.items():
-    emulator = emuls[name]
-    chain = res["chain"]
-    used_forward = res["used_forward"]
-    accept_rate = res["accept_rate"]
-    forward_frac = np.mean(used_forward)
-    chain_post = chain[N_BURNIN:]
-    rmse = np.mean(np.abs((chain_post - theta_true)/theta_true))    
-    print(f"\n{name} summary:")
-    print(f"  Acceptance rate      : {accept_rate:.3f}")
-    print(f"  Forward-call fraction: {forward_frac:.3f}")
-    print(f"  RMSE vs theta_true   : {rmse:.5f}")
-    
-    # Surrogate prediction consistency
-    if "gp_pred_ref" in res:
-        y_preds, y_vars = zip(*res["gp_pred_ref"])
-        y_preds = np.array(y_preds)
-        mse_gp = np.mean((y_preds - fw(theta_true))**2)
-        print(f"  GP MSE at theta_ref  : {mse_gp:.3e}")
-    
-    # Chain plots
-    plot_chain_2d(
-        chain=chain,
-        used_forward=used_forward,
-        theta_true=theta_true,
-        names=("A", "f"),
-        title=f"{name} chain"
-    )
-    
-    plot_chain_2d(
-        chain=chain_post,
-        used_forward=None,
-        theta_true=theta_true,
-        names=("A", "f"),
-        title=f"{name} post Burn in"
-    )
-    
-    # Surrogate prediction plot
-    plot_prediction_at_theta(
-        emul=emulator,
-        theta=theta_true,
-        t=t,
-        y_obs=y_obs,
-        title=f"{name} surrogate prediction"
-    )
-    
-    plot_prediction_at_theta(
-        emul=emulator,
-        theta=theta_true,
-        t=t,
-        y_obs=fw(theta_true),
-        title=f"{name} surrogate error"
-    )
-
-# --------------------------------------------------------------
-# Optional: Forward-call histogram over iterations
-# --------------------------------------------------------------
+# ---------------------------------------------------------------------
+# Forward-call fraction over iterations
+# ---------------------------------------------------------------------
 plt.figure(figsize=(8,4))
-for name, res in results.items():
-    plt.plot(np.cumsum(res["used_forward"])/np.arange(1,N_TOTAL+1), label=name)
+plt.plot(np.cumsum(forward_calls)/np.arange(1, N_TOTAL+1))
 plt.xlabel("Iteration")
 plt.ylabel("Cumulative Forward-call fraction")
 plt.title("Forward-call fraction over iterations")
-plt.legend()
 plt.show()
