@@ -4,16 +4,10 @@ max-line-length = 88
 
 # Exclude certain directories (e.g., virtual environments, data, notebooks)
 exclude =
-    .git,
-    __pycache__,
-    venv,
-    env,
-    data,
-    notebooks
+    .git
 
 # Ignore specific errors/warnings if necessary
-# E.g., E203 (whitespace before ':'), W503 (line break before binary operator)
-ignore = E203, W503
+ignore = 
 
 # Show statistics at the end of the run
 statistics = True
@@ -22,6 +16,4 @@ statistics = True
 count = True
 
 # Enable per-file-ignores if needed
-# Example: ignore docstring style for setup.py
 per-file-ignores =
-    setup.py: D100,D101
