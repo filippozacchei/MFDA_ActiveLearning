@@ -1,9 +1,11 @@
-import numpy as np
-from dataclasses import dataclass
 import copy
+from dataclasses import dataclass
 
-from .pod import POD
+import numpy as np
+
 from .gp import GPSurrogate
+from .pod import POD
+
 
 @dataclass
 class PODGPSurrogate:
@@ -29,7 +31,7 @@ class PODGPSurrogate:
         y_var = (Phi**2) @ var_a
         y_std = np.sqrt(np.maximum(y_var, 1e-14))
         return y_hat, y_std
-    
+
     def __call__(self, theta: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
         return self.predict(theta)
 
@@ -37,18 +39,20 @@ class PODGPSurrogate:
         a_true = self.pod.project(y_true.reshape(1, -1))[0]
         for k, gpk in enumerate(self.gps):
             gpk.update(theta, float(a_true[k]))
-            
+
     def log_likelihood(self) -> float:
         total_ll = 0.0
         for gpk in self.gps:
             total_ll += float(gpk.model.log_likelihood())
         return total_ll
-    
+
     def copy(self) -> "PODGPSurrogate":
         pod_copy = copy.deepcopy(self.pod)
         gps_copy = [copy.deepcopy(g) for g in self.gps]
-        return PODGPSurrogate(pod=pod_copy, gps=gps_copy, coeff_var_floor=self.coeff_var_floor)
-    
+        return PODGPSurrogate(
+            pod=pod_copy, gps=gps_copy, coeff_var_floor=self.coeff_var_floor
+        )
+
     def stop_optimize(self):
         for gpk in self.gps:
             gpk.stop_optimize()

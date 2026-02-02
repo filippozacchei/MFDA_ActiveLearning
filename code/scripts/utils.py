@@ -4,8 +4,8 @@
 
 from __future__ import annotations
 
-import numpy as np
 import matplotlib.pyplot as plt
+import numpy as np
 
 EPS = 1e-14
 
@@ -13,6 +13,7 @@ EPS = 1e-14
 # ---------------------------------------------------------------------
 # Basic metrics
 # ---------------------------------------------------------------------
+
 
 def rmse(y_hat: np.ndarray, y_true: np.ndarray) -> float:
     """Root-mean-square error."""
@@ -34,6 +35,7 @@ def coverage(
 # ---------------------------------------------------------------------
 # Design space visualization
 # ---------------------------------------------------------------------
+
 
 def plot_pair_scatter_train_test(
     X_tr: np.ndarray,
@@ -58,6 +60,7 @@ def plot_pair_scatter_train_test(
 # ---------------------------------------------------------------------
 # POD diagnostics
 # ---------------------------------------------------------------------
+
 
 def pod_energy_from_snapshots(
     Y: np.ndarray,
@@ -145,6 +148,7 @@ def plot_pod_reconstruction_error_vs_rank(
 # Uncertainty diagnostics
 # ---------------------------------------------------------------------
 
+
 def plot_error_vs_uncertainty(
     mean_std: np.ndarray,
     rmse_vals: np.ndarray,
@@ -191,12 +195,9 @@ def binned_reliability(
 # Time-series prediction
 # ---------------------------------------------------------------------
 
+
 def plot_prediction_at_theta(
-    emul,
-    theta: np.ndarray,
-    t: np.ndarray,
-    y_obs: np.ndarray,
-    title: str = None
+    emul, theta: np.ndarray, t: np.ndarray, y_obs: np.ndarray, title: str = None
 ):
     """Surrogate prediction with ±2σ band."""
     y_hat, y_std = emul.predict(theta)
@@ -224,6 +225,7 @@ def plot_prediction_at_theta(
 # MCMC diagnostics
 # ---------------------------------------------------------------------
 
+
 def plot_chain_2d(
     chain: np.ndarray,
     used_forward: np.ndarray,
@@ -235,21 +237,27 @@ def plot_chain_2d(
     fig, ax = plt.subplots(figsize=(6, 5))
 
     if used_forward is not None:
-        gp_idx = np.where(~used_forward)[0] 
-        fw_idx = np.where(used_forward)[0] 
+        gp_idx = np.where(~used_forward)[0]
+        fw_idx = np.where(used_forward)[0]
 
         if gp_idx.size:
-            ax.scatter(chain[gp_idx, 0], chain[gp_idx, 1],
-                    s=15, alpha=0.4, label="GP")
+            ax.scatter(chain[gp_idx, 0], chain[gp_idx, 1], s=15, alpha=0.4, label="GP")
 
         if fw_idx.size:
-            ax.scatter(chain[fw_idx, 0], chain[fw_idx, 1],
-                    s=40, marker="x", label="Forward")
-    else: 
+            ax.scatter(
+                chain[fw_idx, 0], chain[fw_idx, 1], s=40, marker="x", label="Forward"
+            )
+    else:
         ax.scatter(chain[:, 0], chain[:, 1], s=40)
 
-    ax.scatter(theta_true[0], theta_true[1],
-               s=140, marker="*", c="k", label=r"$\theta_{\mathrm{true}}$")
+    ax.scatter(
+        theta_true[0],
+        theta_true[1],
+        s=140,
+        marker="*",
+        c="k",
+        label=r"$\theta_{\mathrm{true}}$",
+    )
 
     ax.set_xlabel(names[0])
     ax.set_ylabel(names[1])

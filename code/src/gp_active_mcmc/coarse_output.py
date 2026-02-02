@@ -1,5 +1,6 @@
 import numpy as np
 
+
 class CoarseOutput(np.ndarray):
     """
     NumPy-compatible array that also stores prediction variance.
@@ -11,5 +12,6 @@ class CoarseOutput(np.ndarray):
         return obj
 
     def __array_finalize__(self, obj):
-        if obj is None: return
-        self.variance = getattr(obj, 'variance', None)
+        if obj is None:
+            return
+        self.variance = getattr(obj, "variance", None)

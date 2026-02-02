@@ -5,25 +5,22 @@
 from __future__ import annotations
 
 import numpy as np
-import matplotlib.pyplot as plt
-from sklearn.model_selection import train_test_split
-from scipy.stats import multivariate_normal
-
-from gp_active_mcmc.utils import set_seed
-from gp_active_mcmc.pod import POD
 from gp_active_mcmc.gp import GPSurrogate
+from gp_active_mcmc.pod import POD
 from gp_active_mcmc.podgp import PODGPSurrogate
-from gp_active_mcmc.toy import toy_forward, make_timeline
-
+from gp_active_mcmc.toy import make_timeline, toy_forward
+from gp_active_mcmc.utils import set_seed
+from scipy.stats import multivariate_normal
+from sklearn.model_selection import train_test_split
 from utils import (
-    rmse,
+    binned_reliability,
     coverage,
+    plot_error_vs_uncertainty,
     plot_pair_scatter_train_test,
     plot_pod_energy_curves,
     plot_pod_reconstruction_error_vs_rank,
-    plot_error_vs_uncertainty,
     plot_prediction_at_theta,
-    binned_reliability,
+    rmse,
 )
 
 rng = set_seed(7)
@@ -54,18 +51,14 @@ Y = np.array([toy_forward(X[i], t) for i in range(N_SNAPSHOTS)])
 # --------------------------------------------------------------
 # Train–test split
 # --------------------------------------------------------------
-X_tr, X_te, Y_tr, Y_te = train_test_split(
-    X, Y, test_size=0.75, random_state=0
-)
+X_tr, X_te, Y_tr, Y_te = train_test_split(X, Y, test_size=0.75, random_state=0)
 
 # --------------------------------------------------------------
 # POD + GP surrogate construction
 # --------------------------------------------------------------
 pod = POD(r=POD_RANK).fit(Y_tr)
 
-X_tr, X_te, Y_tr, Y_te = train_test_split(
-    X, Y, test_size=0.25, random_state=0
-)
+X_tr, X_te, Y_tr, Y_te = train_test_split(X, Y, test_size=0.25, random_state=0)
 A_tr = pod.project(Y_tr)
 
 
@@ -177,6 +170,4 @@ for label, idx in [("best", idx_best), ("median", idx_median), ("worst", idx_wor
     theta = X_te[idx]
     y_true = Y_te[idx]
 
-    plot_prediction_at_theta(emul,theta,t,y_true)
-
-
+    plot_prediction_at_theta(emul, theta, t, y_true)

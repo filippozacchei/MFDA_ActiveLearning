@@ -1,6 +1,7 @@
 from __future__ import annotations
-import numpy as np
+
 import GPy
+import numpy as np
 
 
 class GPSurrogate:
@@ -10,14 +11,13 @@ class GPSurrogate:
 
     def __init__(
         self,
-        X_train: np.ndarray,        # (N, d)
-        Y_train: np.ndarray,        # (N, m)
+        X_train: np.ndarray,  # (N, d)
+        Y_train: np.ndarray,  # (N, m)
         kernel: str = "matern52",
         ard: bool = True,
         gamma_L_ratio: float = 1.05,
         n_retrain_max: int = 500,
     ) -> None:
-
         if X_train.ndim != 2:
             raise ValueError("X_train must be 2D (N, d).")
 
@@ -62,9 +62,7 @@ class GPSurrogate:
             else:
                 raise ValueError(f"Unknown kernel: {kernel}")
 
-            gp = GPy.models.GPRegression(
-                Xs, Ys[:, [k]], kern
-            )
+            gp = GPy.models.GPRegression(Xs, Ys[:, [k]], kern)
             gp.Gaussian_noise.variance = 1e-6
             gp.Gaussian_noise.unfix()
             gp.optimize()

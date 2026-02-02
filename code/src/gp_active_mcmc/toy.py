@@ -1,4 +1,5 @@
 from __future__ import annotations
+
 import numpy as np
 
 
@@ -31,10 +32,7 @@ def make_timeline(T: int = 200, t_end: float = 0.02) -> np.ndarray:
 
 
 def make_observation(
-    rng: np.random.Generator,
-    theta_true: np.ndarray,
-    t: np.ndarray,
-    sigma_obs: float
+    rng: np.random.Generator, theta_true: np.ndarray, t: np.ndarray, sigma_obs: float
 ) -> np.ndarray:
     y_clean = toy_forward(theta_true, t)
     return y_clean + rng.normal(0.0, sigma_obs, size=y_clean.shape)

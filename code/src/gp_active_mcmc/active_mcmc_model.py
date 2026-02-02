@@ -1,7 +1,9 @@
-import numpy as np
 from typing import Protocol
 
+import numpy as np
+
 from .coarse_output import CoarseOutput
+
 
 class ActiveLF(Protocol):
     def predict(self, theta: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
@@ -9,10 +11,12 @@ class ActiveLF(Protocol):
 
     def update(self, theta: np.ndarray, y: np.ndarray) -> None:
         """Update surrogate with HF data."""
-        
+
+
 class HF(Protocol):
     def predict(self, theta: np.ndarray) -> np.ndarray:
         """Return HF prediction."""
+
 
 class ActiveMCMCModel:
     """
@@ -46,7 +50,7 @@ class ActiveMCMCModel:
 
         self.used_hf.append(False)
         return CoarseOutput(y_pred, var)
-    
+
     def fine(self, theta: np.ndarray) -> np.ndarray:
         y = self.hf(theta)
         self.n_hf += 1

@@ -1,8 +1,10 @@
 from __future__ import annotations
+
 import numpy as np
 
 try:
     from sklearn.utils.extmath import randomized_svd
+
     _HAS_RAND_SVD = True
 except Exception:
     _HAS_RAND_SVD = False
@@ -13,6 +15,7 @@ class POD:
     POD over the time dimension.
     Fit on snapshots Y: (N, T) => basis Phi: (T, r), mean: (T,)
     """
+
     def __init__(
         self,
         r: int,
