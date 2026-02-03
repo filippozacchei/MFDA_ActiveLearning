@@ -126,7 +126,7 @@ class GPSurrogate:
             for k, gp in enumerate(self.models):
                 gp.set_XY(self.Xs, self.Ys[:, [k]])
                 L_new = gp.log_likelihood()
-                if abs(L_new / self._L_old[k]) > self._gamma_L_ratio:
+                if np.log(abs(L_new / self._L_old[k])) > np.log(self._gamma_L_ratio):
                     gp.optimize()
+                    self._retrain_count += 1
                 self._L_old[k] = gp.log_likelihood()
-        self._retrain_count += 1

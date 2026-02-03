@@ -14,16 +14,16 @@ from utils import plot_chain_2d, plot_prediction_at_theta
 # ---------------------------------------------------------------------
 # Configuration
 # ---------------------------------------------------------------------
-SEED = 123
+SEED = 1
 N_TOTAL = 5000
 N_BURNIN = 2000
 N_INIT = 25
 POD_RANK = 10
 GP_KERNEL = "matern52"
 USE_ARD = True
-SIGMA_OBS = 0.1
-GAMMA_VAR = 0.1
-GAMMA_L_RATIO = 1.05
+SIGMA_OBS = 0.01
+GAMMA_VAR = 0.01
+GAMMA_L_RATIO = 1.005
 N_RETRAIN_MAX = 100
 SUBSAMPLE_RATE = 5
 
@@ -32,9 +32,9 @@ t = make_timeline(T=500, t_end=0.05)
 
 # Prior and proposal
 prior_mean = np.array([0.8, 150.0, 0.01])
-prior_cov = np.diag([0.5**2, 25.0**2, 0.01**2])
+prior_cov = np.diag([0.5**2, 10.0**2, 0.01**2])
 prior = multivariate_normal(mean=prior_mean, cov=prior_cov)
-proposal = tda.AdaptiveMetropolis(C0=prior_cov, sd=0.001, adaptive=True, period=100)
+proposal = tda.AdaptiveMetropolis(C0=prior_cov, sd=0.1, adaptive=True, period=100)
 
 # Ground truth and observations
 theta_true = prior.rvs(random_state=rng)
