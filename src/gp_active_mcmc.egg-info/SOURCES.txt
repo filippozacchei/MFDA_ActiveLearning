@@ -13,5 +13,6 @@ src/gp_active_mcmc/utils.py
 src/gp_active_mcmc.egg-info/PKG-INFO
 src/gp_active_mcmc.egg-info/SOURCES.txt
 src/gp_active_mcmc.egg-info/dependency_links.txt
+src/gp_active_mcmc.egg-info/requires.txt
 src/gp_active_mcmc.egg-info/top_level.txt
 tests/test.py
