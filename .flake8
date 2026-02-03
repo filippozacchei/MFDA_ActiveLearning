@@ -1,19 +1,6 @@
 [flake8]
-# Maximum allowed line length 
 max-line-length = 88
-
-# Exclude certain directories (e.g., virtual environments, data, notebooks)
 exclude =
     .git
-
-# Ignore specific errors/warnings if necessary
-ignore = 
-
-# Show statistics at the end of the run
-statistics = True
-
-# Count total errors and warnings
 count = True
-
-# Enable per-file-ignores if needed
-per-file-ignores =
+statistics = True

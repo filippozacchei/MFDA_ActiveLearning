@@ -2,10 +2,6 @@
 requires = ["setuptools>=68", "wheel"]
 build-backend = "setuptools.build_meta"
 
-[tool.setuptools.packages.find]
-where = ["src"]
-include = ["gp_active_mcmc*"]
-
 [project]
 name = "gp-active-mcmc"
 version = "0.1.0"
@@ -13,13 +9,29 @@ description = "MCMC-guided active learning for GP surrogate likelihoods"
 requires-python = ">=3.10"
 license = "MIT"
 
+dependencies = [
+    "GPy==1.13.2",
+    "numpy==2.4.2",
+    "scipy==1.17.0",
+    "scikit-learn==1.8.0",
+    "matplotlib==3.10.8",
+    "tinyDA==0.9.21",
+]
+
+[project.optional-dependencies]
+dev = [
+    "black",
+    "flake8",
+]
+
+[tool.setuptools.packages.find]
+where = ["src"]
+include = ["gp_active_mcmc*"]
+
 [tool.pytest.ini_options]
-testpaths = ["tests"]       
+testpaths = ["tests"]
 addopts = "-q --strict-markers --tb=short"
 
 [tool.black]
 line-length = 88
 target-version = ["py310"]
-
-[tool.pre-commit]
-
