@@ -16,6 +16,6 @@ class GaussianLogLikeWithGP(AdaptiveGaussianLogLike):
         else:
             self.total_cov = self.cov + self.cov_bias
 
-        self.cov_inverse = np.diag(1.0 / np.diag(self.total_cov))
+        self.cov_inverse = np.linalg.inv(self.total_cov)
 
         return super().loglike(y_pred)

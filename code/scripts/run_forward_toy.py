@@ -34,7 +34,7 @@ t = make_timeline(T=500, t_end=0.05)
 # Prior on parameters
 # --------------------------------------------------------------
 prior_mean = np.array([0.8, 150.0, 0.01])
-prior_cov = np.diag([0.5**2, 25.0**2, 0.01**2])
+prior_cov = np.diag([0.4**2, 10**2, 0.01**2])
 prior = multivariate_normal(prior_mean, prior_cov)
 
 # --------------------------------------------------------------
@@ -43,7 +43,7 @@ prior = multivariate_normal(prior_mean, prior_cov)
 N_SNAPSHOTS = 100
 POD_RANK = 10
 GP_KERNEL = "matern52"
-USE_ARD = True
+USE_ARD = False
 
 X = np.array([prior.rvs(random_state=rng) for _ in range(N_SNAPSHOTS)])
 Y = np.array([toy_forward(X[i], t) for i in range(N_SNAPSHOTS)])

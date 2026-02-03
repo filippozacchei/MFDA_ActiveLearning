@@ -17,14 +17,13 @@ from utils import plot_chain_2d, plot_prediction_at_theta
 SEED = 1
 N_TOTAL = 5000
 N_BURNIN = 2000
-N_INIT = 25
-POD_RANK = 10
+N_INIT = 50
+POD_RANK = 20
 GP_KERNEL = "matern52"
 USE_ARD = True
 SIGMA_OBS = 0.01
 GAMMA_VAR = 0.01
-GAMMA_L_RATIO = 1.005
-N_RETRAIN_MAX = 100
+N_RETRAIN_MAX = 20
 SUBSAMPLE_RATE = 5
 
 rng = np.random.default_rng(SEED)
@@ -32,9 +31,11 @@ t = make_timeline(T=500, t_end=0.05)
 
 # Prior and proposal
 prior_mean = np.array([0.8, 150.0, 0.01])
-prior_cov = np.diag([0.5**2, 10.0**2, 0.01**2])
+prior_cov = np.diag([0.5**2, 40.0**2, 0.01**2])
 prior = multivariate_normal(mean=prior_mean, cov=prior_cov)
-proposal = tda.AdaptiveMetropolis(C0=prior_cov, sd=0.1, adaptive=True, period=100)
+proposal = tda.AdaptiveMetropolis(
+    C0=prior_cov, sd=0.1, adaptive=True, period=100, gamma=1.01
+)
 
 # Ground truth and observations
 theta_true = prior.rvs(random_state=rng)
@@ -64,7 +65,6 @@ gps = [
         A0[:, k],
         kernel=GP_KERNEL,
         ard=USE_ARD,
-        gamma_L_ratio=GAMMA_L_RATIO,
         n_retrain_max=N_RETRAIN_MAX,
     )
     for k in range(POD_RANK)
@@ -92,29 +92,32 @@ plot_prediction_at_theta(emul, theta_true, t, y_obs, title="Surrogate prediction
 # Run MCMC chain
 # ---------------------------------------------------------------------
 theta0 = prior_mean.copy()
+N_TOTAL = N_TOTAL // SUBSAMPLE_RATE
+N_BURNIN = N_BURNIN // SUBSAMPLE_RATE
+chain = "chain_coarse_0"
 samples = tda.sample(
-    posteriors=[posterior_coarse],
+    posteriors=[posterior_coarse, posterior_fine],
     proposal=proposal,
     iterations=N_TOTAL,
     n_chains=1,
     force_sequential=True,
     initial_parameters=theta0,
-    # store_coarse_chain=True,
-    # subsampling_rate=SUBSAMPLE_RATE,
-    # adaptive_error_model=None
+    store_coarse_chain=True,
+    subsampling_rate=SUBSAMPLE_RATE,
+    adaptive_error_model=None,
 )
 
 # ---------------------------------------------------------------------
 # Chain analysis
 # ---------------------------------------------------------------------
-chain_array = np.array([link.parameters for link in samples["chain_0"]])
+chain_array = np.array([link.parameters for link in samples[chain]])
 forward_calls = np.array(model.used_hf[:N_TOTAL])
 forward_post = forward_calls[N_BURNIN:]
 
 # Acceptance rate
 accepted = np.any(np.diff(chain_array, axis=0) != 0, axis=1)
 accept_rate = accepted.mean()
-forward_frac = forward_post.mean()
+forward_frac = forward_calls.mean()
 
 # RMSE vs ground truth
 rmse = np.mean(np.sqrt(np.sum((chain_array[N_BURNIN:] - theta_true) ** 2, axis=1)))
@@ -138,7 +141,7 @@ plot_chain_2d(
 )
 plot_chain_2d(
     chain_array[N_BURNIN:],
-    used_forward=None,
+    used_forward=forward_calls[N_BURNIN:],
     theta_true=theta_true,
     names=("A", "f"),
     title="Post burn-in",

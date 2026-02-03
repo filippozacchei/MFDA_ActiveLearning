@@ -15,8 +15,7 @@ class GPSurrogate:
         Y_train: np.ndarray,  # (N, m)
         kernel: str = "matern52",
         ard: bool = True,
-        gamma_L_ratio: float = 1.05,
-        n_retrain_max: int = 500,
+        n_retrain_max: int = 20,
     ) -> None:
         if X_train.ndim != 2:
             raise ValueError("X_train must be 2D (N, d).")
@@ -27,6 +26,7 @@ class GPSurrogate:
             raise ValueError("Y_train must be 1D or 2D.")
 
         self.n_out = Y_train.shape[1]
+        self.counter = 0
 
         # -------------------------
         # Input scaling
@@ -73,10 +73,8 @@ class GPSurrogate:
         # Active-learning bookkeeping
         # -------------------------
         self._L_old = np.array([m.log_likelihood() for m in self.models])
-        self._gamma_L_ratio = gamma_L_ratio
         self._n_retrain_max = n_retrain_max
         self._retrain_count = 0
-        self.optimize_params = True
 
     def _x_scale(self, X: np.ndarray) -> np.ndarray:
         return (X - self.X_mean) / self.X_std
@@ -117,16 +115,26 @@ class GPSurrogate:
         """
 
         x_new = self._x_scale(theta.reshape(1, -1))
-        y_new = self._y_scale(y_true)
-
+        y_new = np.atleast_2d(y_true).reshape(1, -1)
+        y_new = self._y_scale(y_new)
         self.Xs = np.vstack([self.Xs, x_new])
         self.Ys = np.vstack([self.Ys, y_new])
 
-        if self._retrain_count <= self._n_retrain_max:
-            for k, gp in enumerate(self.models):
-                gp.set_XY(self.Xs, self.Ys[:, [k]])
-                L_new = gp.log_likelihood()
-                if np.log(abs(L_new / self._L_old[k])) > np.log(self._gamma_L_ratio):
-                    gp.optimize()
-                    self._retrain_count += 1
+        for k, gp in enumerate(self.models):
+            gp.set_XY(self.Xs, self.Ys[:, [k]])
+
+            if self._retrain_count <= self._n_retrain_max and self.counter % 100 == 0:
+                gp.optimize()
+                self._retrain_count += 1
                 self._L_old[k] = gp.log_likelihood()
+                self.counter += 1
+
+    def optimize(self) -> None:
+        for gp in self.models:
+            gp.optimize()
+
+    def log_likelihood(self) -> float:
+        total_ll = 0.0
+        for gp in self.models:
+            total_ll += float(gp.model.log_likelihood)
+        return total_ll

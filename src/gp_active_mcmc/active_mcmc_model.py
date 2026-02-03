@@ -53,4 +53,5 @@ class ActiveMCMCModel:
 
     def fine(self, theta: np.ndarray) -> np.ndarray:
         y = self.hf(theta)
+        self.lf.update(theta, y)
         return y
