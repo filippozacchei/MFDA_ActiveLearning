@@ -7,6 +7,8 @@ class CoarseOutput(np.ndarray):
     """
 
     def __new__(cls, y_pred: np.ndarray, y_var: np.ndarray):
+        if np.shape(y_pred) != np.shape(y_var):
+            raise ValueError("y_pred and y_var must have the same shape")
         obj = np.asarray(y_pred).view(cls)
         obj.variance = y_var
         return obj

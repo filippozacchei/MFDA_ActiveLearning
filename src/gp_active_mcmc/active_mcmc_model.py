@@ -19,6 +19,7 @@ class ActiveMCMC:
     ):
         self.lf_model = lf_model
         self.hf_model = hf_model
+        assert gamma_threshold >= 0, "gamma_threshold must be a non negative float"
         self.gamma_threshold = gamma_threshold
 
         self.n_hf_calls = 0
