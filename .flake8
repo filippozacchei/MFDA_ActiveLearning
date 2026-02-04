@@ -1,6 +1,0 @@
-[flake8]
-max-line-length = 88
-exclude =
-    .git
-count = True
-statistics = True
