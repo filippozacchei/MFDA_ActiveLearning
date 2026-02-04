@@ -43,8 +43,8 @@ def plot_active_mcmc_diagnostics(
     # ------------------------------------------------------------------
     # 2. Subchain length evolution (adaptive only)
     # ------------------------------------------------------------------
-    if hasattr(model, "subchain_history") and len(model.subchain_history) > 0:
-        axes[1].plot(model.subchain_history)
+    if hasattr(model, "subchain_lengths") and len(model.subchain_lengths) > 0:
+        axes[1].plot(model.subchain_lengths)
         axes[1].set_ylabel("Subchain length")
         axes[1].set_title("Adaptive subchain length")
     else:
@@ -54,8 +54,8 @@ def plot_active_mcmc_diagnostics(
     # ------------------------------------------------------------------
     # 3. Surrogate error history
     # ------------------------------------------------------------------
-    if hasattr(model, "_errors") and len(model._errors) > 0:
-        axes[2].plot(model._errors)
+    if hasattr(model, "hf_errors") and len(model.hf_errors) > 0:
+        axes[2].plot(model.hf_errors)
         axes[2].axhline(
             getattr(model, "target_error", 0.0),
             linestyle="--",

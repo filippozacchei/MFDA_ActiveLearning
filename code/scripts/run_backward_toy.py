@@ -11,6 +11,7 @@ from gp_active_mcmc.pod import POD
 from gp_active_mcmc.active_mcmc_model import ActiveMCMCModel
 from gp_active_mcmc.podgp import PODGPSurrogate
 from gp_active_mcmc.toy import make_observation, make_timeline, toy_forward
+from gp_active_mcmc.diagnostics import plot_active_mcmc_diagnostics
 from scipy.stats import multivariate_normal
 from utils import plot_chain_2d
 
@@ -19,14 +20,14 @@ from utils import plot_chain_2d
 # ---------------------------------------------------------------------
 SEED = 1
 N_TOTAL = 5000
-N_BURNIN = 2000
+N_BURNIN = 20
 N_INIT = 50
 POD_RANK = 20
 GP_KERNEL = "matern52"
 USE_ARD = True
 SIGMA_OBS = 0.01
 GAMMA_VAR = 0.01
-N_RETRAIN_MAX = 0
+N_RETRAIN_MAX = 50
 FIXED_SUBSAMPLE = 5
 
 rng = np.random.default_rng(SEED)
@@ -97,7 +98,7 @@ model_adaptive = AdaptiveActiveMCMCModel(
     hf=forward_model,
     gamma_var=GAMMA_VAR,
     initial_subchain=5,
-    max_steps=N_TOTAL,
+    max_steps=5000,
 )  # adaptive
 
 
@@ -149,18 +150,18 @@ theta0 = prior_mean.copy()
 results = {}
 strategies = {
     "coarse_only": (model_coarse_only, post_coarse_only, 1, "chain_0"),
-    "fixed_subsample": (
-        model_fixed,
-        [post_fixed, post_fixed_fine],
-        FIXED_SUBSAMPLE,
-        "chain_coarse_0",
-    ),
-    "adaptive_subsample": (
-        model_adaptive,
-        [post_adaptive, post_adaptive_fine],
-        model_adaptive.subchain_length,
-        "chain_coarse_0",
-    ),
+    # "fixed_subsample": (
+    #     model_fixed,
+    #     [post_fixed, post_fixed_fine],
+    #     FIXED_SUBSAMPLE,
+    #     "chain_coarse_0",
+    # ),
+    # "adaptive_subsample": (
+    #     model_adaptive,
+    #     [post_adaptive, post_adaptive_fine],
+    #     model_adaptive.subchain_length,
+    #     "chain_coarse_0",
+    # ),
 }
 
 for name, (mod, post, subsample, chain) in strategies.items():
@@ -168,12 +169,8 @@ for name, (mod, post, subsample, chain) in strategies.items():
         mod, post, theta0, N_TOTAL, subsample, chain
     )
     results[name] = (chain_array, forward_calls, N_total_sub, N_burnin_sub)
+    plot_active_mcmc_diagnostics(mod, N_burnin_sub)
 
-# ---------------------------------------------------------------------
-# Analyze and plot results
-# ---------------------------------------------------------------------
-for name, (chain_array, forward_calls, N_total_sub, N_burnin_sub) in results.items():
-    # Acceptance rate
     accepted = np.any(np.diff(chain_array, axis=0) != 0, axis=1)
     accept_rate = accepted.mean()
     forward_frac = forward_calls.mean()

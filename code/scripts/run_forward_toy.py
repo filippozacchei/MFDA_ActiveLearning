@@ -34,14 +34,14 @@ t = make_timeline(T=500, t_end=0.05)
 # Prior on parameters
 # --------------------------------------------------------------
 prior_mean = np.array([0.8, 150.0, 0.01])
-prior_cov = np.diag([0.4**2, 10**2, 0.01**2])
+prior_cov = np.diag([0.4**2, 40**2, 0.01**2])
 prior = multivariate_normal(prior_mean, prior_cov)
 
 # --------------------------------------------------------------
 # Dataset generation
 # --------------------------------------------------------------
 N_SNAPSHOTS = 100
-POD_RANK = 10
+POD_RANK = 20
 GP_KERNEL = "matern52"
 USE_ARD = False
 
@@ -51,7 +51,7 @@ Y = np.array([toy_forward(X[i], t) for i in range(N_SNAPSHOTS)])
 # --------------------------------------------------------------
 # Train–test split
 # --------------------------------------------------------------
-X_tr, X_te, Y_tr, Y_te = train_test_split(X, Y, test_size=0.75, random_state=0)
+X_tr, X_te, Y_tr, Y_te = train_test_split(X, Y, test_size=0.5, random_state=0)
 
 # --------------------------------------------------------------
 # POD + GP surrogate construction
