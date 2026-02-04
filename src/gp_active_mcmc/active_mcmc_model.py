@@ -74,7 +74,7 @@ class AdaptiveActiveMCMCModel(ActiveMCMCModel):
     Adaptive MCMC model that adjusts the HF subchain length based
     on surrogate prediction error.
     Subchain length increases when surrogate error is small and
-    decreases when error is high.
+    wdecreases when error is high.
     """
 
     def __init__(
@@ -90,6 +90,7 @@ class AdaptiveActiveMCMCModel(ActiveMCMCModel):
         min_subchain: int = 1,
         max_subchain: int = 100,
         update_fine: bool = True,
+        max_steps: int | None = None,
     ):
         super().__init__(lf, hf, gamma_var, update_fine)
         self.subchain_length = initial_subchain
@@ -100,7 +101,23 @@ class AdaptiveActiveMCMCModel(ActiveMCMCModel):
         self.target_error = target_error
         self.min_subchain = min_subchain
         self.max_subchain = max_subchain
+        self.max_steps = max_steps
         self.total_steps = 0
+        self.subchain_lengths = []
+
+    def coarse(self, theta):
+        self.total_steps += 1
+        return super().coarse(theta)
+
+    def fine(self, theta: np.ndarray):
+        if self.max_steps is not None and self.total_steps >= self.max_steps:
+            y_pred, _ = self.lf.predict(theta)
+            return y_pred
+
+        y = self.hf(theta)
+        if self.update_fine:
+            self.update_lf(theta, y)
+        return y
 
     def record_error(self, error: float) -> None:
         """Record HF prediction error and adapt subchain length accordingly."""
@@ -108,7 +125,6 @@ class AdaptiveActiveMCMCModel(ActiveMCMCModel):
         if len(self.hf_errors) > self.max_err_hist:
             self.hf_errors.pop(0)
 
-        self.total_steps += 1
         if self.total_steps % self.update_every != 0 or len(self.hf_errors) <= 5:
             return
 
@@ -116,7 +132,6 @@ class AdaptiveActiveMCMCModel(ActiveMCMCModel):
         npe = np.mean(self.hf_errors) / self.target_error
         delta = np.clip(npe - 1.0, -1.0, 1.0)
 
-        # adjust subchain length inversely proportional to surrogate error
         subsample_rate = 1.0 / self.subchain_length
         subsample_rate *= np.exp(self.adapt_rate * delta)
         subsample_rate = np.clip(
@@ -124,11 +139,7 @@ class AdaptiveActiveMCMCModel(ActiveMCMCModel):
         )
 
         self.subchain_length = int(round(1.0 / subsample_rate))
-
-        print(
-            f"NPE: {npe:.4f}, delta: {delta:.3f}, \
-            new subchain length: {self.subchain_length}"
-        )
+        self.subchain_lengths.append(self.subchain_length)
 
     def update_lf(self, theta: np.ndarray, y: np.ndarray) -> None:
         """Update surrogate and record the prediction error for adaptive control."""

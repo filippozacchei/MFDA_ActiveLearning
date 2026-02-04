@@ -26,7 +26,7 @@ GP_KERNEL = "matern52"
 USE_ARD = True
 SIGMA_OBS = 0.01
 GAMMA_VAR = 0.01
-N_RETRAIN_MAX = 20
+N_RETRAIN_MAX = 0
 FIXED_SUBSAMPLE = 5
 
 rng = np.random.default_rng(SEED)
@@ -97,6 +97,7 @@ model_adaptive = AdaptiveActiveMCMCModel(
     hf=forward_model,
     gamma_var=GAMMA_VAR,
     initial_subchain=5,
+    max_steps=N_TOTAL,
 )  # adaptive
 
 
@@ -119,13 +120,13 @@ post_adaptive, post_adaptive_fine = create_posteriors(model_adaptive)
 # ---------------------------------------------------------------------
 # Run MCMC for each strategy
 # ---------------------------------------------------------------------
-def run_chain(model, posterior, theta0, n_total, subsample_length):
+def run_chain(model, posterior, theta0, n_total, subsample_length, chain):
     N_total_subsampled = n_total // subsample_length
     N_burnin_subsampled = N_BURNIN // subsample_length
 
     samples = tda.sample(
-        posteriors=[posterior],
-        proposal=proposal,
+        posteriors=posterior,
+        proposal=copy.deepcopy(proposal),
         iterations=N_total_subsampled,
         n_chains=1,
         force_sequential=True,
@@ -137,7 +138,7 @@ def run_chain(model, posterior, theta0, n_total, subsample_length):
         adaptive_error_model=None,
     )
 
-    chain_array = np.array([link.parameters for link in samples["chain_coarse_0"]])
+    chain_array = np.array([link.parameters for link in samples[chain]])
     forward_calls = np.array(model.used_hf[:N_total_subsampled])
 
     return chain_array, forward_calls, N_total_subsampled, N_burnin_subsampled
@@ -147,18 +148,24 @@ theta0 = prior_mean.copy()
 
 results = {}
 strategies = {
-    "coarse_only": (model_coarse_only, post_coarse_only, 1),
-    "fixed_subsample": (model_fixed, post_fixed, FIXED_SUBSAMPLE),
+    "coarse_only": (model_coarse_only, post_coarse_only, 1, "chain_0"),
+    "fixed_subsample": (
+        model_fixed,
+        [post_fixed, post_fixed_fine],
+        FIXED_SUBSAMPLE,
+        "chain_coarse_0",
+    ),
     "adaptive_subsample": (
         model_adaptive,
-        post_adaptive,
+        [post_adaptive, post_adaptive_fine],
         model_adaptive.subchain_length,
+        "chain_coarse_0",
     ),
 }
 
-for name, (mod, post, subsample) in strategies.items():
+for name, (mod, post, subsample, chain) in strategies.items():
     chain_array, forward_calls, N_total_sub, N_burnin_sub = run_chain(
-        mod, post, theta0, N_TOTAL, subsample
+        mod, post, theta0, N_TOTAL, subsample, chain
     )
     results[name] = (chain_array, forward_calls, N_total_sub, N_burnin_sub)
 
