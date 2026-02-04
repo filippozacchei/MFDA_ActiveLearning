@@ -15,6 +15,7 @@ class SingleGP:
         kernel: str = "matern52",
         ard: bool = True,
         n_retrain_max: int = 20,
+        update_every: int = 10,
     ):
         # -------------------------
         # Input validation
@@ -33,6 +34,7 @@ class SingleGP:
         self.n_retrain_max = n_retrain_max
         self.retrain_count = 0
         self.counter = 0
+        self.update_every = update_every
 
         # -------------------------
         # Input scaling
@@ -84,7 +86,10 @@ class SingleGP:
 
     def _optimize(self):
         self.counter += 1
-        if self.retrain_count < self.n_retrain_max and self.counter % 100 == 0:
+        if (
+            self.retrain_count < self.n_retrain_max
+            and self.counter % self.update_every == 0
+        ):
             self.gp.optimize()
             self.retrain_count += 1
 
@@ -123,6 +128,7 @@ class MultiOutputGP:
         kernel: str = "matern52",
         ard: bool = True,
         n_retrain_max: int = 20,
+        update_every: int = 10,
     ):
         if Y_train.ndim == 1:
             Y_train = Y_train[:, None]
@@ -134,6 +140,7 @@ class MultiOutputGP:
                 kernel=kernel,
                 ard=ard,
                 n_retrain_max=n_retrain_max,
+                update_every=update_every,
             )
             for i in range(self.n_out)
         ]

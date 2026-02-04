@@ -5,7 +5,7 @@ import copy
 import tinyDA as tda
 
 from gp_active_mcmc.active_mcmc_model import AdaptiveActiveMCMCModel
-from gp_active_mcmc.gp import GPSurrogate
+from gp_active_mcmc.gp import MultiOutputGP
 from gp_active_mcmc.likelihood import GaussianLogLikeWithGP
 from gp_active_mcmc.pod import POD
 from gp_active_mcmc.active_mcmc_model import ActiveMCMCModel
@@ -21,13 +21,14 @@ from utils import plot_chain_2d
 SEED = 1
 N_TOTAL = 5000
 N_BURNIN = 20
-N_INIT = 50
-POD_RANK = 20
+N_INIT = 25
+POD_RANK = 10
 GP_KERNEL = "matern52"
 USE_ARD = True
 SIGMA_OBS = 0.01
 GAMMA_VAR = 0.01
-N_RETRAIN_MAX = 50
+N_RETRAIN_MAX = 20
+UPDATE_EVERY = 100
 FIXED_SUBSAMPLE = 5
 
 rng = np.random.default_rng(SEED)
@@ -37,7 +38,7 @@ t = make_timeline(T=500, t_end=0.05)
 # Prior and proposal
 # ---------------------------------------------------------------------
 prior_mean = np.array([0.8, 150.0, 0.01])
-prior_cov = np.diag([0.5**2, 40.0**2, 0.01**2])
+prior_cov = np.diag([0.5**2, 25.0**2, 0.001**2])
 prior = multivariate_normal(mean=prior_mean, cov=prior_cov)
 proposal = tda.AdaptiveMetropolis(
     C0=prior_cov, sd=0.1, adaptive=True, period=100, gamma=1.01
@@ -65,15 +66,18 @@ X0 = np.array([prior.rvs(random_state=rng) for _ in range(N_INIT)])
 Y0 = np.array([forward_model(theta) for theta in X0])
 
 pod = POD(r=POD_RANK).fit(Y0)
-A0 = pod.project(Y0)
+A0 = pod.project(Y0)[:, :POD_RANK]
 
-gps = [
-    GPSurrogate(
-        X0, A0[:, k], kernel=GP_KERNEL, ard=USE_ARD, n_retrain_max=N_RETRAIN_MAX
-    )
-    for k in range(POD_RANK)
-]
-emul_base = PODGPSurrogate(pod=pod, gps=gps)
+gps = MultiOutputGP(
+    X0,
+    A0,
+    kernel=GP_KERNEL,
+    ard=USE_ARD,
+    n_retrain_max=N_RETRAIN_MAX,
+    update_every=UPDATE_EVERY,
+)
+
+emul_base = PODGPSurrogate(pod=pod, gp=gps)
 
 # ---------------------------------------------------------------------
 # Setup three strategies (deep copies)
@@ -83,23 +87,14 @@ model_coarse_only = copy.deepcopy(emul_base)
 # Wrap in minimal ActiveMCMCModel interface for coarse-only
 
 model_coarse_only = ActiveMCMCModel(
-    lf=copy.deepcopy(emul_base), hf=forward_model, gamma_var=GAMMA_VAR
+    lf_model=copy.deepcopy(emul_base), hf_model=forward_model, gamma_threshold=GAMMA_VAR
 )
 
 # 2) Coarse+fine fixed subsample
 model_fixed = copy.deepcopy(emul_base)
 model_fixed = ActiveMCMCModel(
-    lf=copy.deepcopy(emul_base), hf=forward_model, gamma_var=GAMMA_VAR
+    lf_model=copy.deepcopy(emul_base), hf_model=forward_model, gamma_threshold=GAMMA_VAR
 )
-
-# 3) Coarse+fine adaptive subsample
-model_adaptive = AdaptiveActiveMCMCModel(
-    lf=copy.deepcopy(emul_base),
-    hf=forward_model,
-    gamma_var=GAMMA_VAR,
-    initial_subchain=5,
-    max_steps=5000,
-)  # adaptive
 
 
 # ---------------------------------------------------------------------
@@ -115,7 +110,6 @@ def create_posteriors(model):
 
 post_coarse_only, _ = create_posteriors(model_coarse_only)
 post_fixed, post_fixed_fine = create_posteriors(model_fixed)
-post_adaptive, post_adaptive_fine = create_posteriors(model_adaptive)
 
 
 # ---------------------------------------------------------------------
@@ -140,7 +134,7 @@ def run_chain(model, posterior, theta0, n_total, subsample_length, chain):
     )
 
     chain_array = np.array([link.parameters for link in samples[chain]])
-    forward_calls = np.array(model.used_hf[:N_total_subsampled])
+    forward_calls = np.array(model.used_hf_flags[:N_total_subsampled])
 
     return chain_array, forward_calls, N_total_subsampled, N_burnin_subsampled
 
@@ -150,12 +144,12 @@ theta0 = prior_mean.copy()
 results = {}
 strategies = {
     "coarse_only": (model_coarse_only, post_coarse_only, 1, "chain_0"),
-    # "fixed_subsample": (
-    #     model_fixed,
-    #     [post_fixed, post_fixed_fine],
-    #     FIXED_SUBSAMPLE,
-    #     "chain_coarse_0",
-    # ),
+    "fixed_subsample": (
+        model_fixed,
+        [post_fixed, post_fixed_fine],
+        FIXED_SUBSAMPLE,
+        "chain_coarse_0",
+    ),
     # "adaptive_subsample": (
     #     model_adaptive,
     #     [post_adaptive, post_adaptive_fine],

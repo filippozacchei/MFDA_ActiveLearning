@@ -8,7 +8,7 @@ from .coarse_output import CoarseOutput
 from .adaptive_config import AdaptiveState, AdaptiveControl
 
 
-class ActiveMCMC:
+class ActiveMCMCModel:
     """MCMC model wrapper providing coarse (surrogate) and fine (HF) evaluations."""
 
     def __init__(
@@ -40,7 +40,7 @@ class ActiveMCMC:
         y_pred, var = self.lf_model.predict(theta)
         avg_var = float(np.mean(var))
 
-        if avg_var > self.gamma_threshold:
+        if avg_var > self.gamma_threshold**2:
             return self.fine(theta)
 
         self._append_lf()
@@ -54,7 +54,7 @@ class ActiveMCMC:
         return y
 
 
-class AdaptiveActiveMCMC(ActiveMCMC):
+class AdaptiveActiveMCMCModel(ActiveMCMCModel):
     """Adaptive MCMC that adjusts HF subchain length based on surrogate prediction error."""
 
     def __init__(
