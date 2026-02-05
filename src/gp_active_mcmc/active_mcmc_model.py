@@ -22,11 +22,9 @@ class ActiveMCMCModel:
         assert gamma_threshold >= 0, "gamma_threshold must be a non negative float"
         self.gamma_threshold = gamma_threshold
 
-        self.n_hf_calls = 0
         self.used_hf_flags: list[bool] = []
 
     def _append_hf(self):
-        self.n_hf_calls += 1
         self.used_hf_flags.append(True)
 
     def _append_lf(self):
@@ -41,6 +39,7 @@ class ActiveMCMCModel:
         avg_var = float(np.mean(var))
 
         if avg_var > self.gamma_threshold**2:
+            self._append_hf()
             return self.fine(theta)
 
         self._append_lf()
@@ -49,6 +48,7 @@ class ActiveMCMCModel:
     def fine(self, theta: np.ndarray) -> np.ndarray:
         """Return HF prediction, updating the surrogate."""
         y = self.hf_model(theta)
+        self.used_hf_flags.pop()
         self._update_lf(theta, y)
         self._append_hf()
         return y

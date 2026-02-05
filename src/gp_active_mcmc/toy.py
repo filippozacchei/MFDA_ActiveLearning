@@ -1,4 +1,5 @@
 from __future__ import annotations
+from typing import Callable
 
 import numpy as np
 
@@ -25,6 +26,15 @@ def toy_forward(theta: np.ndarray, t: np.ndarray) -> np.ndarray:
     # Single decaying sinusoid (bounded, smooth)
     y = A * np.sin(2.0 * np.pi * f * t) * np.exp(-t / tau)
     return y
+
+
+def make_forward_model(t: np.ndarray) -> Callable[[np.ndarray], np.ndarray]:
+    """Wrap the toy forward model with the timeline baked in."""
+
+    def _forward(theta: np.ndarray) -> np.ndarray:
+        return toy_forward(theta, t)
+
+    return _forward
 
 
 def make_timeline(T: int = 200, t_end: float = 0.02) -> np.ndarray:

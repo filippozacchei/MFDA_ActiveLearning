@@ -9,8 +9,10 @@ dist/
 .env/
 .ipynb_checkpoints/
 .DS_Store
+*.DS_Store*
 outputs/
 
 # Python bytecode
 *__pycache__/*
 *.py[cod]
+.DS_Store
