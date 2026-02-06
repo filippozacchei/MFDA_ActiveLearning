@@ -7,7 +7,7 @@ import numpy as np
 @dataclass
 class AdaptiveControl:
     adapt_rate: float = 0.1
-    update_every: int = 100
+    update_every: int = 10
     target_error: float = 0.01
     min_subchain: int = 1
     max_subchain: int = 100
@@ -16,6 +16,7 @@ class AdaptiveControl:
 
 @dataclass
 class AdaptiveState:
+    n_updates: int = 0
     total_steps: int = 0
     subchain_length: int = 10
     subsample_rate: float = 0.1
@@ -36,7 +37,6 @@ class AdaptiveState:
 
     def update_subchain(self, control: AdaptiveControl):
         if self.to_update(control):
-            print("I am adapting")
             normalized_error = np.mean(self.hf_errors) / control.target_error
             delta = np.clip(normalized_error - 1.0, -1.0, 1.0)
             self.subsample_rate *= np.exp(control.adapt_rate * delta)

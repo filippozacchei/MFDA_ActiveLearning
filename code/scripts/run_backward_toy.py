@@ -25,7 +25,11 @@ from scipy.stats import multivariate_normal
 from gp_active_mcmc.proposal import AdaptiveMetropolisShared
 from gp_active_mcmc.active_mcmc_chain import ActiveMCMCChain
 from gp_active_mcmc.active_mcmc_model import ActiveMCMCModel, AdaptiveActiveMCMCModel
-from gp_active_mcmc.diagnostics.mcmc import plot_chain, plot_cumulative_hf_fraction
+from gp_active_mcmc.diagnostics.mcmc import (
+    plot_chain,
+    plot_cumulative_hf_fraction,
+    plot_subchain_length_history,
+)
 from gp_active_mcmc.diagnostics.surrogate import plot_prediction_at_theta
 from gp_active_mcmc.gp import MultiOutputGP
 from gp_active_mcmc.likelihood import GaussianLogLikeWithGP
@@ -46,20 +50,20 @@ from gp_active_mcmc.adaptive_config import AdaptiveControl, AdaptiveState
 # %%
 SEED = 1
 N_TOTAL = 5000  # interpreted as coarse evaluation budget for all three strategies
-N_BURNIN = 0
+N_BURNIN = 2000
 N_CHAINS = 1
 
 # surrogate / training
-N_INIT = 25
-POD_RANK = 10
+N_INIT = 50
+POD_RANK = 20
 GP_KERNEL = "matern52"
 USE_ARD = True
-N_RETRAIN_MAX = 1
+N_RETRAIN_MAX = 0
 UPDATE_EVERY = 100
 
 # observation / active threshold
-SIGMA_OBS = 0.01
-GAMMA_THRESHOLD = 0.01
+SIGMA_OBS = 0.1
+GAMMA_THRESHOLD = 0.1
 
 # fixed-subsample strategy
 SUBSAMPLE_RATE = 5
@@ -78,7 +82,7 @@ rng = set_seed(SEED)
 
 # %%
 prior_mean = np.array([0.8, 150.0, 0.01])
-prior_cov = np.diag([0.5**2, 10.0**2, 0.001**2])
+prior_cov = np.diag([0.5**2, 40.0**2, 0.01**2])
 prior = multivariate_normal(mean=prior_mean, cov=prior_cov)
 
 t = make_timeline(T=N_STEPS, t_end=T_END)
@@ -97,7 +101,7 @@ sigma_obs = SIGMA_OBS * np.ones_like(y_obs)
 # %%
 proposal = tda.AdaptiveMetropolis(
     C0=prior_cov,
-    sd=1,
+    sd=0.1,
     adaptive=True,
     period=100,
     gamma=1.01,
@@ -106,7 +110,7 @@ proposal = tda.AdaptiveMetropolis(
 
 adaptive_proposal = AdaptiveMetropolisShared(
     C0=prior_cov,
-    sd=1,
+    sd=0.1,
     adaptive=True,
     period=100,
     gamma=1.01,
@@ -207,28 +211,28 @@ def run_active_mcmc_adaptive(
 
 # %%
 strategies: dict[str, dict[str, object]] = {
-    "AL-DAMCMC": {
-        "model": ActiveMCMCModel(
-            lf_model=copy.deepcopy(emul_base),
-            hf_model=forward_model,
-            gamma_threshold=GAMMA_THRESHOLD,
-        ),
-        "runner": "fixed",
-        "subsampling_rate": SUBSAMPLE_RATE,
-        "chain_key": "chain_coarse_0",
-        "posterior_kind": "both",
-    },
-    "AL-MCMC": {
-        "model": ActiveMCMCModel(
-            lf_model=copy.deepcopy(emul_base),
-            hf_model=forward_model,
-            gamma_threshold=GAMMA_THRESHOLD,
-        ),
-        "runner": "fixed",
-        "subsampling_rate": 1,
-        "chain_key": "chain_0",
-        "posterior_kind": "coarse",
-    },
+    # "AL-DAMCMC": {
+    #     "model": ActiveMCMCModel(
+    #         lf_model=copy.deepcopy(emul_base),
+    #         hf_model=forward_model,
+    #         gamma_threshold=GAMMA_THRESHOLD,
+    #     ),
+    #     "runner": "fixed",
+    #     "subsampling_rate": SUBSAMPLE_RATE,
+    #     "chain_key": "chain_coarse_0",
+    #     "posterior_kind": "both",
+    # },
+    # "AL-MCMC": {
+    #     "model": ActiveMCMCModel(
+    #         lf_model=copy.deepcopy(emul_base),
+    #         hf_model=forward_model,
+    #         gamma_threshold=GAMMA_THRESHOLD,
+    #     ),
+    #     "runner": "fixed",
+    #     "subsampling_rate": 1,
+    #     "chain_key": "chain_0",
+    #     "posterior_kind": "coarse",
+    # },
     "AL-ADAMCMC": {
         # Adaptive subchain length model (you may need to pass its extra hyperparameters here)
         "model": AdaptiveActiveMCMCModel(
@@ -306,7 +310,6 @@ for name, cfg in strategies.items():
     )
 
     plot_cumulative_hf_fraction(chain.forward_calls, burnin=0)
-    print(chain.samples[:, :2]),
     plot_chain(
         chain.samples[:, :2],
         used_hf=chain.forward_calls,
@@ -314,3 +317,16 @@ for name, cfg in strategies.items():
         names=("A", "f"),
         title=f"{name} post burn-in",
     )
+    chain_burnin = chain.burnin(N_BURNIN)
+    plot_chain(
+        chain_burnin.samples[:, :2],
+        used_hf=chain_burnin.forward_calls,
+        theta_true=theta_true[:2],
+        names=("A", "f"),
+        title=f"{name} post burn-in",
+    )
+
+
+plot_subchain_length_history(
+    strategies["AL-ADAMCMC"]["model"].adaptive_state.subchain_history
+)

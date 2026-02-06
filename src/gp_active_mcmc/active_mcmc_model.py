@@ -40,7 +40,8 @@ class ActiveMCMCModel:
 
         if avg_var > self.gamma_threshold**2:
             self._append_hf()
-            return self.fine(theta)
+            y_fine = self.fine(theta)  # to remove after bebugging
+            return y_fine
 
         self._append_lf()
         return CoarseOutput(y_pred, var)
@@ -49,7 +50,7 @@ class ActiveMCMCModel:
         """Return HF prediction, updating the surrogate."""
         y = self.hf_model(theta)
         self.used_hf_flags.pop()
-        # self._update_lf(theta, y)
+        self._update_lf(theta, y)
         self._append_hf()
         return y
 
@@ -70,9 +71,12 @@ class AdaptiveActiveMCMCModel(ActiveMCMCModel):
         self.adaptive_state = initial_adaptive_state
 
     def coarse(self, theta: np.ndarray) -> np.ndarray | CoarseOutput:
-        self.adaptive_state.step()
         self.adaptive_state.append_length()
         return super().coarse(theta)
+
+    def fine(self, theta: np.ndarray) -> np.ndarray:
+        self.adaptive_state.step()
+        return super().fine(theta)
 
     def _update_lf(self, theta: np.ndarray, y: np.ndarray) -> None:
         y_pred, _ = self.lf_model.predict(theta)
