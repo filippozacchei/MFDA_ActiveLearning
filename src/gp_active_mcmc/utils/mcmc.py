@@ -15,6 +15,10 @@ def extract_forward_frac(forward_calls: np.ndarray) -> float:
     return forward_calls.mean()
 
 
+def extract_mean_subchain_length(subchain_lengths: list[int]) -> float:
+    return np.mean(subchain_lengths)
+
+
 def posterior_rmse(
     samples: np.ndarray, theta_true: np.ndarray, burnin: int = 0
 ) -> float:
