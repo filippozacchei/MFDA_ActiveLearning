@@ -107,7 +107,7 @@ sigma_obs = SIGMA_OBS * np.ones_like(y_obs)
 # %%
 proposal = tda.AdaptiveMetropolis(
     C0=prior_cov,
-    sd=0.1,
+    sd=1,
     adaptive=True,
     period=100,
     gamma=1.01,
@@ -116,7 +116,7 @@ proposal = tda.AdaptiveMetropolis(
 
 adaptive_proposal = AdaptiveMetropolisShared(
     C0=prior_cov,
-    sd=0.1,
+    sd=1,
     adaptive=True,
     period=100,
     gamma=1.01,
@@ -230,17 +230,17 @@ strategies: dict[str, dict[str, object]] = {
         "chain_key": "chain_0",
         "posterior_kind": "coarse",
     },
-    "AL-DAMCMC": {
-        "model": ActiveMCMCModel(
-            lf_model=copy.deepcopy(emul_base),
-            hf_model=forward_model,
-            gamma_threshold=GAMMA_THRESHOLD,
-        ),
-        "runner": "fixed",
-        "subsampling_rate": SUBSAMPLE_RATE,
-        "chain_key": "chain_coarse_0",
-        "posterior_kind": "both",
-    },
+    # "AL-DAMCMC": {
+    #     "model": ActiveMCMCModel(
+    #         lf_model=copy.deepcopy(emul_base),
+    #         hf_model=forward_model,
+    #         gamma_threshold=GAMMA_THRESHOLD,
+    #     ),
+    #     "runner": "fixed",
+    #     "subsampling_rate": SUBSAMPLE_RATE,
+    #     "chain_key": "chain_coarse_0",
+    #     "posterior_kind": "both",
+    # },
     "AL-ADAMCMC": {
         "model": AdaptiveActiveMCMCModel(
             lf_model=copy.deepcopy(emul_base),
