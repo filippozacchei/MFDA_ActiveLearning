@@ -20,7 +20,7 @@ class AdaptiveState:
     total_steps: int = 0
     subchain_length: int = 10
     subsample_rate: float = 0.1
-    hf_errors: deque[float] = field(default_factory=lambda: deque(maxlen=50))
+    hf_errors: deque[float] = field(default_factory=lambda: deque(maxlen=10))
     subchain_history: list[int] = field(default_factory=list)
 
     def step(self):
