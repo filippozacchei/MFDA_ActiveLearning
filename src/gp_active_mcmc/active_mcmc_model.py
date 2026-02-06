@@ -1,149 +1,85 @@
-from typing import Protocol
+# active_mcmc.py
+from __future__ import annotations
+
 import numpy as np
 
+from .protocols import ActiveSurrogate, HighFidelityModel
 from .coarse_output import CoarseOutput
-
-
-class ActiveLF(Protocol):
-    """Protocol for a surrogate model with active learning capability."""
-
-    def predict(self, theta: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
-        """Return surrogate prediction and associated uncertainty."""
-
-    def update(self, theta: np.ndarray, y: np.ndarray) -> None:
-        """Update surrogate with a high-fidelity (HF) observation."""
-
-
-class HF(Protocol):
-    """Protocol for a high-fidelity forward model."""
-
-    def __call__(self, theta: np.ndarray) -> np.ndarray:
-        """Return high-fidelity model prediction."""
+from .adaptive_config import AdaptiveState, AdaptiveControl
 
 
 class ActiveMCMCModel:
-    """
-    MCMC model wrapper providing coarse (surrogate) and fine (HF) evaluations.
-    Updates the surrogate whenever HF is evaluated.
-    """
+    """MCMC model wrapper providing coarse (surrogate) and fine (HF) evaluations."""
 
     def __init__(
         self,
-        lf: ActiveLF,
-        hf: HF,
-        gamma_var: float,
-        update_fine: bool = True,
+        lf_model: ActiveSurrogate,
+        hf_model: HighFidelityModel,
+        gamma_threshold: float,
     ):
-        self.lf = lf
-        self.hf = hf
-        self.gamma_var = gamma_var
-        self.update_fine = update_fine
+        self.lf_model = lf_model
+        self.hf_model = hf_model
+        assert gamma_threshold >= 0, "gamma_threshold must be a non negative float"
+        self.gamma_threshold = gamma_threshold
 
-        self.n_hf = 0
-        self.used_hf: list[bool] = []
+        self.used_hf_flags: list[bool] = []
 
-    def coarse(self, theta: np.ndarray) -> np.ndarray:
-        """Return surrogate prediction, optionally calling HF if uncertainty is high."""
-        y_pred, var = self.lf.predict(theta)
-        u_bar = float(np.mean(var))
+    def _append_hf(self):
+        self.used_hf_flags.append(True)
 
-        if u_bar > self.gamma_var:
-            y = self.hf(theta)
-            self.update_lf(theta, y)
-            self.n_hf += 1
-            self.used_hf.append(True)
-            return y
+    def _append_lf(self):
+        self.used_hf_flags.append(False)
 
-        self.used_hf.append(False)
+    def _update_lf(self, theta: np.ndarray, y: np.ndarray) -> None:
+        self.lf_model.update(theta, y)
+
+    def coarse(self, theta: np.ndarray) -> np.ndarray | CoarseOutput:
+        """Return surrogate prediction, or HF if uncertainty exceeds threshold."""
+        y_pred, var = self.lf_model.predict(theta)
+        avg_var = float(np.mean(var))
+
+        if avg_var > self.gamma_threshold**2:
+            self._append_hf()
+            y_fine = self.fine(theta)  # to remove after bebugging
+            return y_fine
+
+        self._append_lf()
         return CoarseOutput(y_pred, var)
 
     def fine(self, theta: np.ndarray) -> np.ndarray:
-        """Return HF prediction, optionally updating the surrogate."""
-        y = self.hf(theta)
-        if self.update_fine:
-            self.update_lf(theta, y)
+        """Return HF prediction, updating the surrogate."""
+        y = self.hf_model(theta)
+        self.used_hf_flags.pop()
+        self._update_lf(theta, y)
+        self._append_hf()
         return y
-
-    def update_lf(self, theta: np.ndarray, y: np.ndarray) -> None:
-        """Update surrogate with a new HF observation."""
-        self.lf.update(theta, y)
 
 
 class AdaptiveActiveMCMCModel(ActiveMCMCModel):
-    """
-    Adaptive MCMC model that adjusts the HF subchain length based
-    on surrogate prediction error.
-    Subchain length increases when surrogate error is small and
-    wdecreases when error is high.
-    """
+    """Adaptive MCMC that adjusts HF subchain length based on surrogate prediction error."""
 
     def __init__(
         self,
-        lf: ActiveLF,
-        hf: HF,
-        gamma_var: float,
-        initial_subchain: int = 10,
-        adapt_rate: float = 0.1,
-        max_err_hist: int = 50,
-        update_every: int = 1,
-        target_error: float = 0.01,
-        min_subchain: int = 1,
-        max_subchain: int = 100,
-        update_fine: bool = True,
-        max_steps: int | None = None,
+        lf_model: ActiveSurrogate,
+        hf_model: HighFidelityModel,
+        gamma_threshold: float,
+        initial_adaptive_state: AdaptiveState,
+        adaptive_control: AdaptiveControl,
     ):
-        super().__init__(lf, hf, gamma_var, update_fine)
-        self.subchain_length = initial_subchain
-        self.adapt_rate = adapt_rate
-        self.hf_errors: list[float] = []
-        self.max_err_hist = max_err_hist
-        self.update_every = update_every
-        self.target_error = target_error
-        self.min_subchain = min_subchain
-        self.max_subchain = max_subchain
-        self.max_steps = max_steps
-        self.total_steps = 0
-        self.subchain_lengths = []
-        self.subsample_rate = 1 / self.subchain_length
+        super().__init__(lf_model, hf_model, gamma_threshold)
+        self.adaptive_control = adaptive_control
+        self.adaptive_state = initial_adaptive_state
 
-    def coarse(self, theta):
-        self.total_steps += 1
-        self.subchain_lengths.append(self.subchain_length)
-        print(self.subchain_length)
+    def coarse(self, theta: np.ndarray) -> np.ndarray | CoarseOutput:
+        self.adaptive_state.append_length()
         return super().coarse(theta)
 
-    def fine(self, theta: np.ndarray):
-        if self.max_steps is not None and self.total_steps >= self.max_steps:
-            y_pred, _ = self.lf.predict(theta)
-            return y_pred
+    def fine(self, theta: np.ndarray) -> np.ndarray:
+        self.adaptive_state.step()
+        return super().fine(theta)
 
-        y = self.hf(theta)
-        if self.update_fine:
-            self.update_lf(theta, y)
-        return y
-
-    def record_error(self, error: float) -> None:
-        """Record HF prediction error and adapt subchain length accordingly."""
-        self.hf_errors.append(error)
-        print(error)
-        if len(self.hf_errors) > self.max_err_hist:
-            self.hf_errors.pop(0)
-
-        if self.total_steps % self.update_every != 0 or len(self.hf_errors) <= 5:
-            return
-
-        # normalized prediction error relative to target
-        npe = np.mean(self.hf_errors) / self.target_error
-        delta = np.clip(npe - 1.0, -1.0, 1.0)
-
-        self.subsample_rate *= np.exp(self.adapt_rate * delta)
-        self.subsample_rate = np.clip(
-            self.subsample_rate, 1.0 / self.max_subchain, 1.0 / self.min_subchain
-        )
-        self.subchain_length = int(1.0 / self.subsample_rate)
-
-    def update_lf(self, theta: np.ndarray, y: np.ndarray) -> None:
-        """Update surrogate and record the prediction error for adaptive control."""
-        y_pred, _ = self.lf.predict(theta)
-        self.lf.update(theta, y)
-        self.record_error(np.mean(np.abs(y_pred - y)))
+    def _update_lf(self, theta: np.ndarray, y: np.ndarray) -> None:
+        y_pred, _ = self.lf_model.predict(theta)
+        self.adaptive_state.append_error(y_pred, y)
+        self.adaptive_state.update_subchain(self.adaptive_control)
+        super()._update_lf(theta, y)
