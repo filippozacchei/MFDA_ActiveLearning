@@ -13,8 +13,8 @@ def plot_prediction_at_theta(
     title: str | None = None,
 ) -> None:
     """Surrogate prediction with ±2σ band."""
-    y_hat, y_std = emul.predict(theta)
-
+    y_hat, y_var = emul.predict(theta)
+    y_std = np.sqrt(y_var)
     fig, ax = plt.subplots(figsize=(8, 4))
     ax.plot(t, y_obs, "k.", alpha=0.4, label="observations")
     ax.plot(t, y_hat, lw=2, label="surrogate mean")

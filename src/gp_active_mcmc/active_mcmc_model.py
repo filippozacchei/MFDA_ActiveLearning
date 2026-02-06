@@ -49,7 +49,7 @@ class ActiveMCMCModel:
         """Return HF prediction, updating the surrogate."""
         y = self.hf_model(theta)
         self.used_hf_flags.pop()
-        self._update_lf(theta, y)
+        # self._update_lf(theta, y)
         self._append_hf()
         return y
 

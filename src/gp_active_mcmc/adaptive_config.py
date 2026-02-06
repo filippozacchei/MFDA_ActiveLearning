@@ -36,6 +36,7 @@ class AdaptiveState:
 
     def update_subchain(self, control: AdaptiveControl):
         if self.to_update(control):
+            print("I am adapting")
             normalized_error = np.mean(self.hf_errors) / control.target_error
             delta = np.clip(normalized_error - 1.0, -1.0, 1.0)
             self.subsample_rate *= np.exp(control.adapt_rate * delta)

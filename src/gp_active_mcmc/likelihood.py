@@ -16,9 +16,9 @@ class GaussianLogLikeWithGP(AdaptiveGaussianLogLike):
 
         self.total_cov = self.cov + self.cov_bias
 
-        if hasattr(y_pred, "variance") and y_pred.variance is not None:
-            variance = np.atleast_1d(y_pred.variance)
-            self.total_cov += np.diag(variance)
+        # if hasattr(y_pred, "variance") and y_pred.variance is not None:
+        #     variance = np.atleast_1d(y_pred.variance)
+        #     self.total_cov += np.diag(variance)
 
         self.cov_inverse = np.linalg.inv(self.total_cov)
 
