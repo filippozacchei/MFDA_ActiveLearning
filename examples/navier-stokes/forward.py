@@ -1,205 +1,246 @@
 # %% [markdown]
-# # Forward surrogate demo (LF / MF / HF) — no POD, train/test split
+# # HF surrogate demo (POD–GP) — outlet profile with 2 inputs (h1, U_in)
 #
-# - LF: split train/test
-# - MF: split train/test
-# - HF: keep all in train (HF=5 is too small to split)
+# This mirrors the style of your POD–GP toy demo, but for the **HF Navier–Stokes**
+# outlet profile QoI:
+# - inputs: theta = [h1, U_in]
+# - output: outlet streamwise velocity profile u_x(y), resampled to T=100 points
+# - surrogate: POD(rank=5) + GP on POD coefficients (MultiOutputGP)
 #
-# Fit AR co-kriging on TRAIN only and plot one example per split.
+# Assumption
+# ----------
+# Your HF solver provides:
+#   forward_model(h1: float, U_in: float) -> (y: array, u: array)
 
 # %% Imports
 from __future__ import annotations
 
-from dataclasses import dataclass
-from pathlib import Path
-from typing import Literal
+from typing import Callable
 
-import matplotlib.pyplot as plt
 import numpy as np
+from scipy.stats import multivariate_normal
+from sklearn.model_selection import train_test_split
 
-from gp_active_mcmc.gp import AutoRegressiveCoKrigingN
+from gp_active_mcmc.gp import MultiOutputGP
+from gp_active_mcmc.pod import POD
+from gp_active_mcmc.podgp import PODGPSurrogate
+from gp_active_mcmc.utils.rng import set_seed
+
+from gp_active_mcmc.diagnostics.surrogate import plot_prediction_at_theta
+from gp_active_mcmc.diagnostics.metrics import rmse, coverage
+import matplotlib.pyplot as plt
+
+# %% [markdown]
+# ## Configuration
+
+# %%
+SEED = 7
+rng = set_seed(SEED)
+
+# QoI
+T = 100  # outlet profile length after resampling
+
+# Dataset
+N_SNAPSHOTS = 60  # tune based on HF cost
+
+# POD/GP
+POD_RANK = 5
+GP_KERNEL = "matern52"
+USE_ARD = True
+N_RETRAIN_MAX = 0
+UPDATE_EVERY = 25
+
+# Train/test
+TEST_SIZE = 0.25
+RANDOM_STATE = 0
+
+# Input bounds (sampling support)
+H1_MIN, H1_MAX = 0.05, 0.15
+U_MIN, U_MAX = 0.5, 1.5
+
+# %% [markdown]
+# ## Utilities
+
+# %%
+def resample_profile(y: np.ndarray, u: np.ndarray, *, T: int) -> np.ndarray:
+    """Resample u(y) onto a uniform grid on [min(y), max(y)] of length T."""
+    y = np.asarray(y).ravel()
+    u = np.asarray(u).ravel()
+    if y.size != u.size:
+        raise ValueError("y and u must have same length")
+    if y.size < 2:
+        raise ValueError("Need at least two points to resample")
+
+    if not np.all(np.diff(y) >= 0):
+        idx = np.argsort(y)
+        y = y[idx]
+        u = u[idx]
+
+    y_new = np.linspace(float(y.min()), float(y.max()), T)
+    return np.interp(y_new, y, u)
 
 
-KernelName = Literal["rbf", "matern32", "matern52"]
+def make_prior_box_gaussian(
+    *, h1_min: float, h1_max: float, u_min: float, u_max: float
+) -> multivariate_normal:
+    """Independent Gaussian prior roughly matching the box via ±2σ ≈ half-range."""
+    mean = np.array([0.5 * (h1_min + h1_max), 0.5 * (u_min + u_max)])
+    sig = np.array([0.25 * (h1_max - h1_min), 0.25 * (u_max - u_min)])
+    cov = np.diag(sig**2)
+    return multivariate_normal(mean=mean, cov=cov)
 
 
-# %% Dataset I/O
-@dataclass(frozen=True)
-class Dataset:
-    X: np.ndarray  # (N,1)
-    Y: np.ndarray  # (N,T)
-
-
-def _ensure_X(X: np.ndarray) -> np.ndarray:
-    X = np.asarray(X)
-    if X.ndim == 1:
-        X = X[:, None]
-    if X.ndim != 2 or X.shape[1] != 1:
-        raise ValueError(f"X must be (N,1) or (N,), got {X.shape}")
+def clip_box(X: np.ndarray) -> np.ndarray:
+    X = np.asarray(X, dtype=float)
+    X[:, 0] = np.clip(X[:, 0], H1_MIN, H1_MAX)
+    X[:, 1] = np.clip(X[:, 1], U_MIN, U_MAX)
     return X
 
 
-def _ensure_Y(Y: np.ndarray, *, T: int) -> np.ndarray:
-    Y = np.asarray(Y)
-    if Y.ndim != 2 or Y.shape[1] != T:
-        raise ValueError(f"Y must be (N,{T}), got {Y.shape}")
-    return Y
-
-
-def load_npz(path: Path, *, T: int) -> Dataset:
-    data = np.load(path)
-    X = _ensure_X(data["X"])
-    Y = _ensure_Y(data["Y"], T=T)
-    if X.shape[0] != Y.shape[0]:
-        raise ValueError(
-            f"Row mismatch in {path}: X has {X.shape[0]}, Y has {Y.shape[0]}"
-        )
-    return Dataset(X=X, Y=Y)
-
-
-# %% Model wrapper (pointwise = T independent AR models)
-@dataclass
-class PointwiseARCoKriging:
-    models: list[AutoRegressiveCoKrigingN]
-    T: int
-
-    def predict(self, X: np.ndarray, *, level: int) -> tuple[np.ndarray, np.ndarray]:
-        X = _ensure_X(X)
-        N = X.shape[0]
-        mu = np.zeros((N, self.T))
-        var = np.zeros((N, self.T))
-        for t, m in enumerate(self.models):
-            mu_t, var_t = m.predict(X, level=level)
-            mu[:, t] = mu_t
-            var[:, t] = var_t
-        return mu, var
-
-
-def fit_pointwise_ar_cokriging(
-    X_levels: list[np.ndarray],
-    Y_levels: list[np.ndarray],
+def generate_dataset(
     *,
+    solver: Callable[[float, float], tuple[np.ndarray, np.ndarray]],
+    prior: multivariate_normal,
+    n: int,
     T: int,
-    kernel_base: KernelName = "matern52",
-    kernel_delta: KernelName = "matern52",
-    ard: bool = True,
-    n_retrain_max: int = 0,
-    update_every: int = 25,
-) -> PointwiseARCoKriging:
-    X_levels = [_ensure_X(X) for X in X_levels]
-    Y_levels = [_ensure_Y(Y, T=T) for Y in Y_levels]
+    rng: np.random.Generator,
+) -> tuple[np.ndarray, np.ndarray]:
+    """
+    Returns
+    -------
+    X : (n,2) with columns [h1, U_in]
+    Y : (n,T) outlet profiles
+    """
+    X = np.asarray(prior.rvs(size=n, random_state=rng), dtype=float)
+    if X.ndim == 1:
+        X = X[None, :]
+    X = clip_box(X)
 
-    models: list[AutoRegressiveCoKrigingN] = []
-    for t in range(T):
-        models.append(
-            AutoRegressiveCoKrigingN(
-                X_levels=X_levels,
-                Y_levels=[Y[:, t] for Y in Y_levels],
-                kernel_base=kernel_base,
-                kernel_delta=kernel_delta,
-                ard=ard,
-                n_retrain_max=n_retrain_max,
-                update_every=update_every,
-            )
-        )
-    return PointwiseARCoKriging(models=models, T=T)
+    Y = np.zeros((n, T), dtype=float)
+    for i in range(n):
+        h1, u_in = float(X[i, 0]), float(X[i, 1])
+        y, u = solver(h1, U_in=u_in)
+        Y[i, :] = resample_profile(y, u, T=T)
+    return X, Y
 
 
-# %% Split helper
-def split_dataset(
-    ds: Dataset, *, test_frac: float, seed: int
-) -> tuple[Dataset, Dataset]:
-    rng = np.random.default_rng(seed)
-    n = ds.X.shape[0]
-    idx = np.arange(n)
-    rng.shuffle(idx)
-    n_test = int(round(test_frac * n))
-    test_idx = idx[:n_test]
-    train_idx = idx[n_test:]
-    return Dataset(ds.X[train_idx], ds.Y[train_idx]), Dataset(
-        ds.X[test_idx], ds.Y[test_idx]
-    )
+# %% [markdown]
+# ## Main (POD–GP)
 
-
-# %% Plot
-def plot_truth_pred(
-    *, name: str, split: str, h1: float, y_true: np.ndarray, y_pred: np.ndarray
-) -> None:
-    plt.figure()
-    plt.plot(y_true, label=f"{name} truth")
-    plt.plot(y_pred, "--", label=f"{name} pred")
-    plt.title(f"{name} — {split} (h1={h1:.4f})")
-    plt.xlabel("outlet sample index")
-    plt.ylabel(r"$u_x$")
-    plt.legend()
-    plt.tight_layout()
-    plt.show()
-
-
-# %% Main
+# %%
 def main() -> None:
-    T = 100
-    seed = 7
-    test_frac = 0.8
+    # --- import HF solver here (adjust path) ------------------------------
+    from utils.hf_boussinesq import forward_model as hf_solver  # noqa: WPS433
 
-    data_dir = Path("data")
-    lf = load_npz(data_dir / "lf.npz", T=T)
-    mf = load_npz(data_dir / "mf.npz", T=T)
-    hf = load_npz(data_dir / "hf.npz", T=T)
-
-    lf_tr, lf_te = split_dataset(lf, test_frac=test_frac, seed=seed + 0)
-    mf_tr, mf_te = split_dataset(mf, test_frac=test_frac, seed=seed + 1)
-    hf_tr, hf_te = split_dataset(hf, test_frac=test_frac, seed=seed + 2)
-
-    model = fit_pointwise_ar_cokriging(
-        X_levels=[lf_tr.X, mf_tr.X, hf_tr.X],
-        Y_levels=[lf_tr.Y, mf_tr.Y, hf_tr.Y],
-        T=T,
-        kernel_base="matern52",
-        kernel_delta="matern52",
-        ard=True,
-        n_retrain_max=0,
-        update_every=25,
+    prior = make_prior_box_gaussian(
+        h1_min=H1_MIN, h1_max=H1_MAX, u_min=U_MIN, u_max=U_MAX
     )
 
-    # LF: one train + one test
-    x = lf_tr.X[0:1]
-    y_pred, _ = model.predict(x, level=0)
-    plot_truth_pred(
-        name="LF", split="train", h1=float(x[0, 0]), y_true=lf_tr.Y[0], y_pred=y_pred[0]
+    # --------------------------------------------------------------
+    # Dataset generation
+    # --------------------------------------------------------------
+    X, Y = generate_dataset(solver=hf_solver, prior=prior, n=N_SNAPSHOTS, T=T, rng=rng)
+
+    # --------------------------------------------------------------
+    # Train–test split
+    # --------------------------------------------------------------
+    X_tr, X_te, Y_tr, Y_te = train_test_split(
+        X, Y, test_size=TEST_SIZE, random_state=RANDOM_STATE
     )
 
-    x = lf_te.X[0:1]
-    y_pred, _ = model.predict(x, level=0)
-    plot_truth_pred(
-        name="LF", split="test", h1=float(x[0, 0]), y_true=lf_te.Y[0], y_pred=y_pred[0]
-    )
+    # --------------------------------------------------------------
+    # POD + GP surrogate construction
+    # --------------------------------------------------------------
+    pod = POD(r=POD_RANK).fit(Y_tr)
+    A_tr = pod.project(Y_tr)[:, :POD_RANK]
 
-    # MF: one train + one test
-    x = mf_tr.X[0:1]
-    y_pred, _ = model.predict(x, level=1)
-    plot_truth_pred(
-        name="MF", split="train", h1=float(x[0, 0]), y_true=mf_tr.Y[0], y_pred=y_pred[0]
+    gps = MultiOutputGP(
+        X_train=X_tr,
+        Y_train=A_tr,
+        kernel=GP_KERNEL,
+        ard=USE_ARD,
+        n_retrain_max=N_RETRAIN_MAX,
+        update_every=UPDATE_EVERY,
     )
+    emul = PODGPSurrogate(pod=pod, gp=gps)
 
-    x = mf_te.X[0:1]
-    y_pred, _ = model.predict(x, level=1)
-    plot_truth_pred(
-        name="MF", split="test", h1=float(x[0, 0]), y_true=mf_te.Y[0], y_pred=y_pred[0]
-    )
+    # --------------------------------------------------------------
+    # Test-set performance and calibration
+    # --------------------------------------------------------------
+    z50, z90, z95 = 0.67449, 1.64485, 1.95996
 
-    # HF: only train
-    x = hf_tr.X[0:1]
-    y_pred, _ = model.predict(x, level=2)
-    plot_truth_pred(
-        name="HF", split="train", h1=float(x[0, 0]), y_true=hf_tr.Y[0], y_pred=y_pred[0]
-    )
+    n_test = X_te.shape[0]
+    test_rmse = np.zeros(n_test)
+    mean_pred_std = np.zeros(n_test)
+    cov50 = np.zeros(n_test)
+    cov90 = np.zeros(n_test)
+    cov95 = np.zeros(n_test)
 
-    x = hf_te.X[0:1]
-    y_pred, _ = model.predict(x, level=2)
-    plot_truth_pred(
-        name="HF", split="test", h1=float(x[0, 0]), y_true=hf_te.Y[0], y_pred=y_pred[0]
-    )
+    for i in range(n_test):
+        y_hat, y_var = emul.predict(X_te[i])   # (T,), (T,)
+        y_std = np.sqrt(np.maximum(y_var, 1e-14))
+        y_true = Y_te[i]
+
+        test_rmse[i] = rmse(y_hat, y_true)
+        mean_pred_std[i] = float(np.mean(y_std))
+
+        cov50[i] = coverage(y_true, y_hat, y_std, z=z50)
+        cov90[i] = coverage(y_true, y_hat, y_std, z=z90)
+        cov95[i] = coverage(y_true, y_hat, y_std, z=z95)
+
+    metrics = {
+        "rmse_mean": float(test_rmse.mean()),
+        "rmse_median": float(np.median(test_rmse)),
+        "mean_uncertainty": float(mean_pred_std.mean()),
+        "coverage_50": float(cov50.mean()),
+        "coverage_90": float(cov90.mean()),
+        "coverage_95": float(cov95.mean()),
+    }
+
+    print("HF POD–GP surrogate (no co-kriging)")
+    print(f"POD rank r = {POD_RANK}")
+    print(f"N_train = {X_tr.shape[0]}, N_test = {X_te.shape[0]}, T = {T}, input_dim = 2")
+    for k, v in metrics.items():
+        print(f"{k:>18s} : {v:.6f}")
+
+    # --------------------------------------------------------------
+    # Representative cases (best / median / worst)
+    # --------------------------------------------------------------
+    idx_best = int(np.argmin(test_rmse))
+    idx_worst = int(np.argmax(test_rmse))
+    idx_median = int(np.argsort(test_rmse)[len(test_rmse) // 2])
+
+    # dummy abscissa for plotting (outlet sample index)
+    t_plot = np.arange(T)
+
+    for label, idx in [("best", idx_best), ("median", idx_median), ("worst", idx_worst)]:
+        theta = X_te[idx]
+        y_true = Y_te[idx]
+        plot_prediction_at_theta(
+            emul,
+            theta,
+            t_plot,
+            y_true,
+            title=f"HF POD–GP — {label} test case (h1={theta[0]:.4f}, U_in={theta[1]:.3f})",
+        )
+
+    # --------------------------------------------------------------
+    # One train vs one test overlay (simple)
+    # --------------------------------------------------------------
+    def plot_truth_pred(theta: np.ndarray, y_true: np.ndarray, *, tag: str) -> None:
+        y_hat, _ = emul.predict(theta)
+        plt.figure()
+        plt.plot(y_true, label="truth")
+        plt.plot(y_hat, "--", label="pred")
+        plt.title(f"HF profile — {tag} (h1={theta[0]:.4f}, U_in={theta[1]:.3f})")
+        plt.xlabel("outlet sample index")
+        plt.ylabel(r"$u_x$")
+        plt.legend()
+        plt.tight_layout()
+        plt.show()
+
+    plot_truth_pred(X_tr[0], Y_tr[0], tag="train example")
+    plot_truth_pred(X_te[0], Y_te[0], tag="test example")
 
 
 if __name__ == "__main__":
