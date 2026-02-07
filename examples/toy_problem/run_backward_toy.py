@@ -59,7 +59,7 @@ N_INIT = 50
 POD_RANK = 20
 GP_KERNEL = "matern52"
 USE_ARD = True
-N_RETRAIN_MAX = 0
+N_RETRAIN_MAX = 1
 UPDATE_EVERY = 100
 
 # observation / active threshold

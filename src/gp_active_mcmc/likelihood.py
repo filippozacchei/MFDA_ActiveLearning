@@ -14,7 +14,7 @@ class GaussianLogLikeWithGP(AdaptiveGaussianLogLike):
     def loglike(self, y_pred: np.ndarray):
         y_pred = np.atleast_1d(y_pred)
 
-        self.total_cov = self.cov
+        self.total_cov = self.cov.copy()
 
         if hasattr(self, "cov_bias"):
             self.total_cov += self.cov_bias
