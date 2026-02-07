@@ -49,7 +49,7 @@ from gp_active_mcmc.adaptive_config import AdaptiveControl, AdaptiveState
 # ## Configuration
 
 # %%
-SEED = 1
+SEED = 2
 N_TOTAL = 5000  # interpreted as coarse evaluation budget for all three strategies
 N_BURNIN = 2000
 N_CHAINS = 1

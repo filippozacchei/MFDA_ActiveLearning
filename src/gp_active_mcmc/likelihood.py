@@ -14,7 +14,10 @@ class GaussianLogLikeWithGP(AdaptiveGaussianLogLike):
     def loglike(self, y_pred: np.ndarray):
         y_pred = np.atleast_1d(y_pred)
 
-        self.total_cov = self.cov + self.cov_bias
+        self.total_cov = self.cov
+
+        if hasattr(self, "cov_bias"):
+            self.total_cov += self.cov_bias
 
         if hasattr(y_pred, "variance") and y_pred.variance is not None:
             variance = np.atleast_1d(y_pred.variance)
