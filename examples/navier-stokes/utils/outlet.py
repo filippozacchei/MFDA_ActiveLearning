@@ -33,3 +33,17 @@ def sample_outlet_u_x(
             u_x[i] = uu[0]
 
     return OutletProfile(y=y, u_x=u_x)
+
+def resample_profile(y: np.ndarray, u: np.ndarray, *, T: int) -> np.ndarray:
+    y = np.asarray(y).ravel()
+    u = np.asarray(u).ravel()
+    if y.size != u.size:
+        raise ValueError("y and u must have same length")
+    if y.size < 2:
+        raise ValueError("Need at least two points to resample")
+    if not np.all(np.diff(y) >= 0):
+        idx = np.argsort(y)
+        y = y[idx]
+        u = u[idx]
+    y_new = np.linspace(float(y.min()), float(y.max()), T)
+    return np.interp(y_new, y, u)

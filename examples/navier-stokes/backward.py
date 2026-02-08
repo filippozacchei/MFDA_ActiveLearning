@@ -46,8 +46,10 @@ from gp_active_mcmc.pod import POD
 from gp_active_mcmc.podgp import PODGPSurrogate
 from gp_active_mcmc.sampler import sample_active_chain, sample_adaptive_active_chain
 from gp_active_mcmc.utils.rng import set_seed
+from utils.outlet import resample_profile
 
 import matplotlib.pyplot as plt
+from utils.mf_ipcs import forward_model as hf_solver
 
 # %% [markdown]
 # ## Configuration
@@ -65,7 +67,7 @@ N_BURNIN = 800
 N_CHAINS = 1
 
 # surrogate / training
-N_INIT = 40          # HF snapshots used to build the initial emulator
+N_INIT = 10          # HF snapshots used to build the initial emulator
 POD_RANK = 5
 GP_KERNEL = "matern52"
 USE_ARD = True
@@ -73,15 +75,16 @@ N_RETRAIN_MAX = 1
 UPDATE_EVERY = 50
 
 # observation / active threshold
-SIGMA_OBS = 0.05
-GAMMA_THRESHOLD = 0.1
+SIGMA_OBS = 0.01
+GAMMA_THRESHOLD = 0.01
 
 # adaptive strategy (chunking)
 SUBSAMPLE_RATE = 5
-CHUNK_SIZE = 200  # in coarse eval units
+CHUNK_SIZE = 50  # in coarse eval units
 
 # prior box (sampling support)
 H1_MIN, H1_MAX = 0.05, 0.15
+L_MIN, L_MAX = 0.3, 0.5
 U_MIN, U_MAX = 0.5, 1.5
 
 # %% [markdown]
@@ -90,56 +93,30 @@ U_MIN, U_MAX = 0.5, 1.5
 # Assumption: `hf_solver(h1, U_in) -> (y, u)`.
 
 # %%
-def resample_profile(y: np.ndarray, u: np.ndarray, *, T: int) -> np.ndarray:
-    y = np.asarray(y).ravel()
-    u = np.asarray(u).ravel()
-    if y.size != u.size:
-        raise ValueError("y and u must have same length")
-    if y.size < 2:
-        raise ValueError("Need at least two points to resample")
-    if not np.all(np.diff(y) >= 0):
-        idx = np.argsort(y)
-        y = y[idx]
-        u = u[idx]
-    y_new = np.linspace(float(y.min()), float(y.max()), T)
-    return np.interp(y_new, y, u)
 
-
-def clip_box(theta: np.ndarray) -> np.ndarray:
-    th = np.asarray(theta, dtype=float).copy()
-    th[0] = np.clip(th[0], H1_MIN, H1_MAX)
-    th[1] = np.clip(th[1], U_MIN, U_MAX)
-    return th
-
-
-def make_forward_model_hf(*, T: int):
-    from utils.hf_boussinesq import forward_model as hf_solver  # adjust if needed
+def make_forward_model(*, T: int):
 
     def f(theta: np.ndarray) -> np.ndarray:
         theta = np.asarray(theta, dtype=float).ravel()
-        if theta.size != 2:
-            raise ValueError("theta must have length 2: [h1, U_in]")
-        theta = clip_box(theta)
-        y, u = hf_solver(float(theta[0]), U_in=float(theta[1]))
+        y, u = hf_solver(float(theta[0]), U_in=float(theta[1]), L_down=float(theta[2]))
         return resample_profile(y, u, T=T)
 
     return f
 
-
-forward_model = make_forward_model_hf(T=T)
+forward_model = make_forward_model(T=T)
 
 # %% [markdown]
 # ## Prior and synthetic observation
 #
-# Prior is Gaussian but clipped to the box in the forward model.
 
 # %%
-prior_mean = np.array([0.10, 1.0])
-prior_cov = np.diag([(0.25 * (H1_MAX - H1_MIN)) ** 2, (0.25 * (U_MAX - U_MIN)) ** 2])
+prior_mean = np.array([0.10, 1.0, 0.4])
+prior_cov = np.diag([(0.25 * (H1_MAX - H1_MIN)) ** 2, 
+                     (0.25 * (U_MAX - U_MIN)) ** 2,
+                     (0.25 * (L_MAX - L_MIN)) ** 2])
 prior = multivariate_normal(mean=prior_mean, cov=prior_cov)
 
 theta_true = prior.rvs(random_state=rng)
-theta_true = clip_box(theta_true)
 
 y_clean = forward_model(theta_true)
 y_obs = y_clean + SIGMA_OBS * rng.standard_normal(size=T)
@@ -156,7 +133,7 @@ proposal = tda.AdaptiveMetropolis(
     C0=prior_cov,
     sd=1.0,
     adaptive=True,
-    period=50,
+    period=100,
     gamma=1.01,
     t0=0,
 )
@@ -165,7 +142,7 @@ adaptive_proposal = AdaptiveMetropolisShared(
     C0=prior_cov,
     sd=1.0,
     adaptive=True,
-    period=50,
+    period=100,
     gamma=1.01,
     t0=0,
 )
@@ -174,7 +151,7 @@ adaptive_proposal = AdaptiveMetropolisShared(
 # ## Build initial POD–GP surrogate (trained on HF snapshots)
 
 # %%
-x_train = np.array([clip_box(prior.rvs(random_state=rng)) for _ in range(N_INIT)])
+x_train = np.array([prior.rvs(random_state=rng) for _ in range(N_INIT)])
 y_train = np.array([forward_model(theta) for theta in x_train])  # (N_INIT, T)
 
 pod = POD(r=POD_RANK).fit(y_train)
@@ -311,6 +288,7 @@ for name, cfg in strategies.items():
         t_plot,
         y_obs,
         title=r"Prediction at $\theta_\mathrm{true}$ before MCMC",
+        y_true=y_clean
     )
 
     runner = str(cfg["runner"])
@@ -342,6 +320,7 @@ for name, cfg in strategies.items():
         t_plot,
         y_obs,
         title=r"Prediction at $\theta_\mathrm{true}$ after MCMC, " + f"{name}",
+        y_true=y_clean
     )
 
     plot_cumulative_hf_fraction(chain.forward_calls, burnin=0)

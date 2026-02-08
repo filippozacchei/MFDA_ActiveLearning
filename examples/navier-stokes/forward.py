@@ -30,6 +30,8 @@ from gp_active_mcmc.diagnostics.surrogate import plot_prediction_at_theta
 from gp_active_mcmc.diagnostics.metrics import rmse, coverage
 import matplotlib.pyplot as plt
 
+from utils.outlet import resample_profile
+from utils.mf_ipcs import forward_model as hf_solver
 # %% [markdown]
 # ## Configuration
 
@@ -41,7 +43,7 @@ rng = set_seed(SEED)
 T = 100  # outlet profile length after resampling
 
 # Dataset
-N_SNAPSHOTS = 60  # tune based on HF cost
+N_SNAPSHOTS = 10  # tune based on HF cost
 
 # POD/GP
 POD_RANK = 5
@@ -57,44 +59,19 @@ RANDOM_STATE = 0
 # Input bounds (sampling support)
 H1_MIN, H1_MAX = 0.05, 0.15
 U_MIN, U_MAX = 0.5, 1.5
+L_MIN, L_MAX = 0.3, 0.5
 
 # %% [markdown]
 # ## Utilities
 
-# %%
-def resample_profile(y: np.ndarray, u: np.ndarray, *, T: int) -> np.ndarray:
-    """Resample u(y) onto a uniform grid on [min(y), max(y)] of length T."""
-    y = np.asarray(y).ravel()
-    u = np.asarray(u).ravel()
-    if y.size != u.size:
-        raise ValueError("y and u must have same length")
-    if y.size < 2:
-        raise ValueError("Need at least two points to resample")
+mean = np.array([0.5 * (H1_MIN + H1_MIN), 
+                 0.5 * (U_MIN + U_MAX),
+                 0.5 * (L_MIN + L_MAX)])
+sig = np.array([0.25 * (H1_MAX - H1_MIN), 
+                0.25 * (U_MAX - U_MIN),
+                0.25 * (L_MAX - L_MIN)])
+cov = np.diag(sig**2)
 
-    if not np.all(np.diff(y) >= 0):
-        idx = np.argsort(y)
-        y = y[idx]
-        u = u[idx]
-
-    y_new = np.linspace(float(y.min()), float(y.max()), T)
-    return np.interp(y_new, y, u)
-
-
-def make_prior_box_gaussian(
-    *, h1_min: float, h1_max: float, u_min: float, u_max: float
-) -> multivariate_normal:
-    """Independent Gaussian prior roughly matching the box via ±2σ ≈ half-range."""
-    mean = np.array([0.5 * (h1_min + h1_max), 0.5 * (u_min + u_max)])
-    sig = np.array([0.25 * (h1_max - h1_min), 0.25 * (u_max - u_min)])
-    cov = np.diag(sig**2)
-    return multivariate_normal(mean=mean, cov=cov)
-
-
-def clip_box(X: np.ndarray) -> np.ndarray:
-    X = np.asarray(X, dtype=float)
-    X[:, 0] = np.clip(X[:, 0], H1_MIN, H1_MAX)
-    X[:, 1] = np.clip(X[:, 1], U_MIN, U_MAX)
-    return X
 
 
 def generate_dataset(
@@ -114,12 +91,11 @@ def generate_dataset(
     X = np.asarray(prior.rvs(size=n, random_state=rng), dtype=float)
     if X.ndim == 1:
         X = X[None, :]
-    X = clip_box(X)
 
     Y = np.zeros((n, T), dtype=float)
     for i in range(n):
-        h1, u_in = float(X[i, 0]), float(X[i, 1])
-        y, u = solver(h1, U_in=u_in)
+        h1, u_in, l = float(X[i, 0]), float(X[i, 1]), float(X[i,2])
+        y, u = solver(h1, U_in=u_in, L_down=l)
         Y[i, :] = resample_profile(y, u, T=T)
     return X, Y
 
@@ -130,11 +106,7 @@ def generate_dataset(
 # %%
 def main() -> None:
     # --- import HF solver here (adjust path) ------------------------------
-    from utils.hf_boussinesq import forward_model as hf_solver  # noqa: WPS433
-
-    prior = make_prior_box_gaussian(
-        h1_min=H1_MIN, h1_max=H1_MAX, u_min=U_MIN, u_max=U_MAX
-    )
+    prior = multivariate_normal(mean=mean, cov=cov)
 
     # --------------------------------------------------------------
     # Dataset generation
