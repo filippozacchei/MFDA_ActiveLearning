@@ -20,10 +20,10 @@ class BFSGeometry:
 
 @dataclass(frozen=True)
 class MeshOptions:
-    lc_min: float = 1e-4
+    lc_min: float = 1e-3
     lc_max: float = 1e-2
     gdim: int = 2
-    order: int = 2
+    order: int = 1
     recombine: bool = False
     algorithm: int = 8
     optimize: str | None = "Netgen"

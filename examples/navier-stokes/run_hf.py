@@ -42,5 +42,5 @@ def plot_vs_inlet_velocity(*, h2: float, inlet_velocities: list[float]) -> None:
 
 
 if __name__ == "__main__":
-    plot_vs_height(heights=[0.05, 0.08, 0.10, 0.12, 0.15], U_in=1.5)
-    plot_vs_inlet_velocity(h2=0.10, inlet_velocities=[0.5, 0.75, 1.0, 1.25, 1.5])
+    plot_vs_height(heights=[0.025, 0.08, 0.10, 0.12, 0.175], U_in=1.5)
+    plot_vs_inlet_velocity(h2=0.10, inlet_velocities=[0.25, 0.75, 1.0, 1.25, 1.75])

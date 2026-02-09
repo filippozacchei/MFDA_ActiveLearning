@@ -55,7 +55,7 @@ from utils.mf_ipcs import forward_model as hf_solver
 # ## Configuration
 
 # %%
-SEED = 2
+SEED = 123
 rng = set_seed(SEED)
 
 # QoI
@@ -67,25 +67,25 @@ N_BURNIN = 800
 N_CHAINS = 1
 
 # surrogate / training
-N_INIT = 10          # HF snapshots used to build the initial emulator
+N_INIT = 25  # HF snapshots used to build the initial emulator
 POD_RANK = 5
 GP_KERNEL = "matern52"
 USE_ARD = True
-N_RETRAIN_MAX = 1
-UPDATE_EVERY = 50
+N_RETRAIN_MAX = 0
+UPDATE_EVERY = 100
 
 # observation / active threshold
-SIGMA_OBS = 0.01
-GAMMA_THRESHOLD = 0.01
+SIGMA_OBS = 0.1
+GAMMA_THRESHOLD = 0.1
 
 # adaptive strategy (chunking)
 SUBSAMPLE_RATE = 5
-CHUNK_SIZE = 50  # in coarse eval units
+CHUNK_SIZE = 200  # in coarse eval units
 
 # prior box (sampling support)
 H1_MIN, H1_MAX = 0.05, 0.15
 L_MIN, L_MAX = 0.3, 0.5
-U_MIN, U_MAX = 0.5, 1.5
+U_MIN, U_MAX = 0.25, 1.00
 
 # %% [markdown]
 # ## HF forward model wrapper (outlet profile, resampled to T points)
@@ -94,14 +94,15 @@ U_MIN, U_MAX = 0.5, 1.5
 
 # %%
 
-def make_forward_model(*, T: int):
 
+def make_forward_model(*, T: int):
     def f(theta: np.ndarray) -> np.ndarray:
         theta = np.asarray(theta, dtype=float).ravel()
         y, u = hf_solver(float(theta[0]), U_in=float(theta[1]), L_down=float(theta[2]))
         return resample_profile(y, u, T=T)
 
     return f
+
 
 forward_model = make_forward_model(T=T)
 
@@ -111,9 +112,13 @@ forward_model = make_forward_model(T=T)
 
 # %%
 prior_mean = np.array([0.10, 1.0, 0.4])
-prior_cov = np.diag([(0.25 * (H1_MAX - H1_MIN)) ** 2, 
-                     (0.25 * (U_MAX - U_MIN)) ** 2,
-                     (0.25 * (L_MAX - L_MIN)) ** 2])
+prior_cov = np.diag(
+    [
+        (0.25 * (H1_MAX - H1_MIN)) ** 2,
+        (0.25 * (U_MAX - U_MIN)) ** 2,
+        (0.25 * (L_MAX - L_MIN)) ** 2,
+    ]
+)
 prior = multivariate_normal(mean=prior_mean, cov=prior_cov)
 
 theta_true = prior.rvs(random_state=rng)
@@ -130,7 +135,7 @@ t_plot = np.arange(T)
 
 # %%
 proposal = tda.AdaptiveMetropolis(
-    C0=prior_cov,
+    C0=0.1 * prior_cov,
     sd=1.0,
     adaptive=True,
     period=100,
@@ -139,7 +144,7 @@ proposal = tda.AdaptiveMetropolis(
 )
 
 adaptive_proposal = AdaptiveMetropolisShared(
-    C0=prior_cov,
+    C0=0.1 * prior_cov,
     sd=1.0,
     adaptive=True,
     period=100,
@@ -171,11 +176,12 @@ emul_base = PODGPSurrogate(pod=pod, gp=gp)
 # %% [markdown]
 # ## Helpers
 
+
 # %%
 def make_posteriors(model: ActiveMCMCModel) -> tuple[tda.Posterior, tda.Posterior]:
     cov = (sigma_obs**2) * np.eye(len(y_obs))
-    like_coarse = GaussianLogLikeWithGP(y_obs, cov)          # uses GP variance
-    like_fine = tda.AdaptiveGaussianLogLike(y_obs, cov)      # standard Gaussian LL
+    like_coarse = GaussianLogLikeWithGP(y_obs, cov)  # uses GP variance
+    like_fine = tda.AdaptiveGaussianLogLike(y_obs, cov)  # standard Gaussian LL
     post_coarse = tda.Posterior(prior, like_coarse, model.coarse)
     post_fine = tda.Posterior(prior, like_fine, model.fine)
     return post_coarse, post_fine
@@ -228,6 +234,7 @@ def run_active_mcmc_adaptive(
         store_coarse_chain=True,
         theta_true=theta_true,
     )
+
 
 # %% [markdown]
 # ## Define strategies
@@ -288,7 +295,7 @@ for name, cfg in strategies.items():
         t_plot,
         y_obs,
         title=r"Prediction at $\theta_\mathrm{true}$ before MCMC",
-        y_true=y_clean
+        y_true=y_clean,
     )
 
     runner = str(cfg["runner"])
@@ -320,7 +327,7 @@ for name, cfg in strategies.items():
         t_plot,
         y_obs,
         title=r"Prediction at $\theta_\mathrm{true}$ after MCMC, " + f"{name}",
-        y_true=y_clean
+        y_true=y_clean,
     )
 
     plot_cumulative_hf_fraction(chain.forward_calls, burnin=0)

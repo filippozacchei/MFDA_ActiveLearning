@@ -32,6 +32,7 @@ import matplotlib.pyplot as plt
 
 from utils.outlet import resample_profile
 from utils.mf_ipcs import forward_model as hf_solver
+
 # %% [markdown]
 # ## Configuration
 
@@ -43,7 +44,7 @@ rng = set_seed(SEED)
 T = 100  # outlet profile length after resampling
 
 # Dataset
-N_SNAPSHOTS = 10  # tune based on HF cost
+N_SNAPSHOTS = 50  # tune based on HF cost
 
 # POD/GP
 POD_RANK = 5
@@ -53,25 +54,22 @@ N_RETRAIN_MAX = 0
 UPDATE_EVERY = 25
 
 # Train/test
-TEST_SIZE = 0.25
+TEST_SIZE = 0.5
 RANDOM_STATE = 0
 
 # Input bounds (sampling support)
 H1_MIN, H1_MAX = 0.05, 0.15
-U_MIN, U_MAX = 0.5, 1.5
+U_MIN, U_MAX = 0.25, 1.25
 L_MIN, L_MAX = 0.3, 0.5
 
 # %% [markdown]
 # ## Utilities
 
-mean = np.array([0.5 * (H1_MIN + H1_MIN), 
-                 0.5 * (U_MIN + U_MAX),
-                 0.5 * (L_MIN + L_MAX)])
-sig = np.array([0.25 * (H1_MAX - H1_MIN), 
-                0.25 * (U_MAX - U_MIN),
-                0.25 * (L_MAX - L_MIN)])
+mean = np.array([0.5 * (H1_MIN + H1_MIN), 0.5 * (U_MIN + U_MAX), 0.5 * (L_MIN + L_MAX)])
+sig = np.array(
+    [0.25 * (H1_MAX - H1_MIN), 0.25 * (U_MAX - U_MIN), 0.25 * (L_MAX - L_MIN)]
+)
 cov = np.diag(sig**2)
-
 
 
 def generate_dataset(
@@ -94,7 +92,7 @@ def generate_dataset(
 
     Y = np.zeros((n, T), dtype=float)
     for i in range(n):
-        h1, u_in, l = float(X[i, 0]), float(X[i, 1]), float(X[i,2])
+        h1, u_in, l = float(X[i, 0]), float(X[i, 1]), float(X[i, 2])
         y, u = solver(h1, U_in=u_in, L_down=l)
         Y[i, :] = resample_profile(y, u, T=T)
     return X, Y
@@ -102,6 +100,7 @@ def generate_dataset(
 
 # %% [markdown]
 # ## Main (POD–GP)
+
 
 # %%
 def main() -> None:
@@ -149,7 +148,7 @@ def main() -> None:
     cov95 = np.zeros(n_test)
 
     for i in range(n_test):
-        y_hat, y_var = emul.predict(X_te[i])   # (T,), (T,)
+        y_hat, y_var = emul.predict(X_te[i])  # (T,), (T,)
         y_std = np.sqrt(np.maximum(y_var, 1e-14))
         y_true = Y_te[i]
 
@@ -171,7 +170,9 @@ def main() -> None:
 
     print("HF POD–GP surrogate (no co-kriging)")
     print(f"POD rank r = {POD_RANK}")
-    print(f"N_train = {X_tr.shape[0]}, N_test = {X_te.shape[0]}, T = {T}, input_dim = 2")
+    print(
+        f"N_train = {X_tr.shape[0]}, N_test = {X_te.shape[0]}, T = {T}, input_dim = 2"
+    )
     for k, v in metrics.items():
         print(f"{k:>18s} : {v:.6f}")
 
@@ -185,7 +186,11 @@ def main() -> None:
     # dummy abscissa for plotting (outlet sample index)
     t_plot = np.arange(T)
 
-    for label, idx in [("best", idx_best), ("median", idx_median), ("worst", idx_worst)]:
+    for label, idx in [
+        ("best", idx_best),
+        ("median", idx_median),
+        ("worst", idx_worst),
+    ]:
         theta = X_te[idx]
         y_true = Y_te[idx]
         plot_prediction_at_theta(
