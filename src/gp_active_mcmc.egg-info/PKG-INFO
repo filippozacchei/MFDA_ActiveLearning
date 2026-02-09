@@ -1,11 +1,61 @@
 Metadata-Version: 2.4
-Name: gp-active-mcmc
+Name: gp_active_mcmc
 Version: 0.1.0
-Summary: MCMC-guided active learning for GP surrogate likelihoods
-License-Expression: MIT
-Requires-Python: >=3.10
+Summary: Active/adaptive multi-fidelity MCMC with GP surrogates
+Author: Filippo Zacchei
+License: MIT License
+        
+        Copyright (c) 2026 Filippo Zacchei
+        
+        Permission is hereby granted, free of charge, to any person obtaining a copy
+        of this software and associated documentation files (the "Software"), to deal
+        in the Software without restriction, including without limitation the rights
+        to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+        copies of the Software, and to permit persons to whom the Software is
+        furnished to do so, subject to the following conditions:
+        
+        The above copyright notice and this permission notice shall be included in all
+        copies or substantial portions of the Software.
+        
+        THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+        IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+        FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+        AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+        LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+        OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+        SOFTWARE.
+        
+Requires-Python: ==3.10.19
+Description-Content-Type: text/markdown
 License-File: LICENSE
+Requires-Dist: numpy==1.26.4
+Requires-Dist: scipy==1.12.0
+Requires-Dist: scikit-learn==1.7.2
+Requires-Dist: tinyda==0.9.21
+Requires-Dist: ray==2.53.0
+Requires-Dist: GPy==1.13.2
+Provides-Extra: docs
+Requires-Dist: mkdocs==1.6.1; extra == "docs"
+Requires-Dist: mkdocs-material>=9.5; extra == "docs"
+Requires-Dist: mkdocstrings[python]>=0.24; extra == "docs"
+Requires-Dist: mkdocs-gen-files>=0.5; extra == "docs"
+Requires-Dist: mkdocs-literate-nav>=0.6; extra == "docs"
+Requires-Dist: mkdocs-section-index>=0.3; extra == "docs"
+Provides-Extra: examples
+Requires-Dist: pyvista; extra == "examples"
+Requires-Dist: gmsh==4.15.0; extra == "examples"
+Requires-Dist: python-gmsh==4.15.0; extra == "examples"
 Provides-Extra: dev
-Requires-Dist: black; extra == "dev"
-Requires-Dist: flake8; extra == "dev"
+Requires-Dist: pytest>=8; extra == "dev"
+Requires-Dist: pytest-cov>=5; extra == "dev"
+Requires-Dist: ruff>=0.6; extra == "dev"
+Requires-Dist: black>=24.0; extra == "dev"
+Requires-Dist: mypy>=1.10; extra == "dev"
 Dynamic: license-file
+
+# Active GP–MCMC with POD Surrogates
+
+Adaptive Metropolis–Hastings with an actively learned Gaussian process surrogate for time-dependent forward models.
+
+The sampler reduces expensive forward evaluations by combining POD-based model reduction, GP emulation with uncertainty quantification, and adaptive MCMC in a whitened parameter space, while preserving a surrogate-consistent target distribution.
+
