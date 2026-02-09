@@ -5,23 +5,17 @@
 from __future__ import annotations
 
 import numpy as np
-from gp_active_mcmc.gp import GPSurrogate
+from gp_active_mcmc.gp import MultiOutputGP
 from gp_active_mcmc.pod import POD
 from gp_active_mcmc.podgp import PODGPSurrogate
 from gp_active_mcmc.toy import make_timeline, toy_forward
-from gp_active_mcmc.utils import set_seed
+from gp_active_mcmc.utils.rng import set_seed
 from scipy.stats import multivariate_normal
 from sklearn.model_selection import train_test_split
-from utils import (
-    binned_reliability,
-    coverage,
-    plot_error_vs_uncertainty,
-    plot_pair_scatter_train_test,
-    plot_pod_energy_curves,
-    plot_pod_reconstruction_error_vs_rank,
-    plot_prediction_at_theta,
-    rmse,
-)
+
+from gp_active_mcmc.diagnostics.pod import *
+from gp_active_mcmc.diagnostics.surrogate import *
+from gp_active_mcmc.diagnostics.metrics import *
 
 rng = set_seed(7)
 
@@ -40,7 +34,7 @@ prior = multivariate_normal(prior_mean, prior_cov)
 # --------------------------------------------------------------
 # Dataset generation
 # --------------------------------------------------------------
-N_SNAPSHOTS = 100
+N_SNAPSHOTS = 200
 POD_RANK = 20
 GP_KERNEL = "matern52"
 USE_ARD = False
@@ -62,12 +56,8 @@ X_tr, X_te, Y_tr, Y_te = train_test_split(X, Y, test_size=0.25, random_state=0)
 A_tr = pod.project(Y_tr)
 
 
-gps = [
-    GPSurrogate(X_tr, A_tr[:, k], kernel=GP_KERNEL, ard=USE_ARD)
-    for k in range(POD_RANK)
-]
-
-emul = PODGPSurrogate(pod=pod, gps=gps)
+gps = MultiOutputGP(X_train=X_tr, Y_train=A_tr[:, :POD_RANK])
+emul = PODGPSurrogate(pod=pod, gp=gps)
 
 # --------------------------------------------------------------
 # POD diagnostics
@@ -86,11 +76,11 @@ plot_pod_reconstruction_error_vs_rank(
     center=True,
 )
 
-plot_pair_scatter_train_test(
-    X_tr,
-    X_te,
-    names=("A", "f", "tau"),
-)
+# plot_pair_scatter_train_test(
+#     X_tr,
+#     X_te,
+#     names=("A", "f", "tau"),
+# )
 
 # --------------------------------------------------------------
 # Test-set performance and calibration
@@ -111,9 +101,9 @@ for i in range(n_test):
     test_rmse[i] = rmse(y_hat, y_true)
     mean_pred_std[i] = np.mean(y_std)
 
-    cov50[i] = coverage(y_true, y_hat, y_std, z50)
-    cov90[i] = coverage(y_true, y_hat, y_std, z90)
-    cov95[i] = coverage(y_true, y_hat, y_std, z95)
+    cov50[i] = coverage(y_true, y_hat, y_std, z=z50)
+    cov90[i] = coverage(y_true, y_hat, y_std, z=z90)
+    cov95[i] = coverage(y_true, y_hat, y_std, z=z95)
 
 metrics = {
     "rmse_mean": test_rmse.mean(),

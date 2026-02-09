@@ -1,26 +1,30 @@
 # %% [markdown]
-# # Backward toy: clean Active-MCMC demo (VSCode live script)
+# # Backward Navier–Stokes (HF) inverse problem: clean Active-MCMC demo (VSCode live script)
 #
-# This example performs Bayesian inversion for the toy forward model using:
-# - a POD–GP surrogate (low fidelity), and
-# - the true toy forward model (high fidelity),
-# combined through an Active-MCMC mechanism.
+# Bayesian inversion for the Navier–Stokes outlet profile QoI using:
+# - **LF surrogate**: POD–GP trained on HF snapshots (cheap emulator)
+# - **HF model**: Navier–Stokes forward solver
+# combined through Active-MCMC.
 #
-# Three strategies are run:
+# Two strategies are run:
 # 1) **AL-MCMC**: surrogate-only likelihood (subsampling_rate = 1)
-# 2) **AL-DAMCMC**: fixed periodic HF correction (fixed subsampling)
-# 3) **AL-ADAMCMC**: adaptive subchain length with chunked sampling
+# 2) **AL-ADAMCMC**: adaptive subchain length with chunked sampling (recommended)
 #
-# Diagnostics and plots are delegated to `gp_active_mcmc.diagnostics.*`.
+# Notes
+# -----
+# - Parameters: theta = [h1, U_in]
+# - Observation: outlet profile u_x(y) sampled on T=100 points
+# - Likelihood: Gaussian with diagonal covariance sigma_obs^2 I
 #
-# **How to run**
-# - In VSCode: open this file and run cells (`# %%`) interactively.
-# - From terminal: `python run_backward_toy_notebook.py` (plots will pop up).
+# How to run
+# - VSCode: run cells (`# %%`)
+# - Terminal: `python run_backward_ns_hf.py`
 
 # %% Imports
 from __future__ import annotations
 
 import copy
+from dataclasses import dataclass
 
 import numpy as np
 import tinyDA as tda
@@ -29,6 +33,7 @@ from scipy.stats import multivariate_normal
 from gp_active_mcmc.proposal import AdaptiveMetropolisShared
 from gp_active_mcmc.active_mcmc_chain import ActiveMCMCChain
 from gp_active_mcmc.active_mcmc_model import ActiveMCMCModel, AdaptiveActiveMCMCModel
+from gp_active_mcmc.adaptive_config import AdaptiveControl, AdaptiveState
 from gp_active_mcmc.diagnostics.mcmc import (
     plot_chain,
     plot_cumulative_hf_fraction,
@@ -40,74 +45,98 @@ from gp_active_mcmc.likelihood import GaussianLogLikeWithGP
 from gp_active_mcmc.pod import POD
 from gp_active_mcmc.podgp import PODGPSurrogate
 from gp_active_mcmc.sampler import sample_active_chain, sample_adaptive_active_chain
-from gp_active_mcmc.toy import make_forward_model, make_observation, make_timeline
 from gp_active_mcmc.utils.rng import set_seed
-from gp_active_mcmc.adaptive_config import AdaptiveControl, AdaptiveState
+from utils.outlet import resample_profile
 
+import matplotlib.pyplot as plt
+from utils.mf_ipcs import forward_model as hf_solver
 
 # %% [markdown]
 # ## Configuration
 
 # %%
-SEED = 2
-N_TOTAL = 5000  # interpreted as coarse evaluation budget for all three strategies
-N_BURNIN = 2000
+SEED = 123
+rng = set_seed(SEED)
+
+# QoI
+T = 100  # outlet profile length
+
+# MCMC budget (coarse eval units)
+N_TOTAL = 2000
+N_BURNIN = 800
 N_CHAINS = 1
 
 # surrogate / training
-N_INIT = 50
-POD_RANK = 20
+N_INIT = 25  # HF snapshots used to build the initial emulator
+POD_RANK = 5
 GP_KERNEL = "matern52"
 USE_ARD = True
-N_RETRAIN_MAX = 1
+N_RETRAIN_MAX = 0
 UPDATE_EVERY = 100
 
 # observation / active threshold
 SIGMA_OBS = 0.1
 GAMMA_THRESHOLD = 0.1
 
-# fixed-subsample strategy
-SUBSAMPLE_RATE = 5
-
 # adaptive strategy (chunking)
+SUBSAMPLE_RATE = 5
 CHUNK_SIZE = 200  # in coarse eval units
 
-# toy time grid
-N_STEPS = 500
-T_END = 0.05
+# prior box (sampling support)
+H1_MIN, H1_MAX = 0.05, 0.15
+L_MIN, L_MAX = 0.3, 0.5
+U_MIN, U_MAX = 0.25, 1.00
 
-rng = set_seed(SEED)
+# %% [markdown]
+# ## HF forward model wrapper (outlet profile, resampled to T points)
+#
+# Assumption: `hf_solver(h1, U_in) -> (y, u)`.
 
+# %%
+
+
+def make_forward_model(*, T: int):
+    def f(theta: np.ndarray) -> np.ndarray:
+        theta = np.asarray(theta, dtype=float).ravel()
+        y, u = hf_solver(float(theta[0]), U_in=float(theta[1]), L_down=float(theta[2]))
+        return resample_profile(y, u, T=T)
+
+    return f
+
+
+forward_model = make_forward_model(T=T)
 
 # %% [markdown]
 # ## Prior and synthetic observation
+#
 
 # %%
-prior_mean = np.array([0.8, 150.0, 0.01])
-prior_cov = np.diag([0.5**2, 40.0**2, 0.01**2])
+prior_mean = np.array([0.10, 1.0, 0.4])
+prior_cov = np.diag(
+    [
+        (0.25 * (H1_MAX - H1_MIN)) ** 2,
+        (0.25 * (U_MAX - U_MIN)) ** 2,
+        (0.25 * (L_MAX - L_MIN)) ** 2,
+    ]
+)
 prior = multivariate_normal(mean=prior_mean, cov=prior_cov)
 
-t = make_timeline(T=N_STEPS, t_end=T_END)
-forward_model = make_forward_model(t)
-
 theta_true = prior.rvs(random_state=rng)
-y_obs = make_observation(rng, theta_true, t, SIGMA_OBS)
+
+y_clean = forward_model(theta_true)
+y_obs = y_clean + SIGMA_OBS * rng.standard_normal(size=T)
 sigma_obs = SIGMA_OBS * np.ones_like(y_obs)
 
+# x-axis for plotting in diagnostics
+t_plot = np.arange(T)
 
 # %% [markdown]
 # ## Proposal (tinyDA)
-#
-# tinyDA deepcopies the proposal internally. If you are chunking (re-entering tinyDA
-# repeatedly), you may want to share the adaptive state across deepcopies.
-#
-# - `proposal` is the vanilla tinyDA `AdaptiveMetropolis`.
-# - `adaptive_proposal` is a wrapper that shares adaptive state across deepcopies.
 
 # %%
 proposal = tda.AdaptiveMetropolis(
-    C0=prior_cov,
-    sd=1,
+    C0=0.1 * prior_cov,
+    sd=1.0,
     adaptive=True,
     period=100,
     gamma=1.01,
@@ -115,28 +144,27 @@ proposal = tda.AdaptiveMetropolis(
 )
 
 adaptive_proposal = AdaptiveMetropolisShared(
-    C0=prior_cov,
-    sd=1,
+    C0=0.1 * prior_cov,
+    sd=1.0,
     adaptive=True,
     period=100,
     gamma=1.01,
     t0=0,
 )
 
-
 # %% [markdown]
-# ## Build initial POD–GP surrogate
+# ## Build initial POD–GP surrogate (trained on HF snapshots)
 
 # %%
 x_train = np.array([prior.rvs(random_state=rng) for _ in range(N_INIT)])
-y_train = np.array([forward_model(theta) for theta in x_train])
+y_train = np.array([forward_model(theta) for theta in x_train])  # (N_INIT, T)
 
 pod = POD(r=POD_RANK).fit(y_train)
-a_train = pod.project(y_train)[:, :POD_RANK]
+a_train = pod.project(y_train)[:, :POD_RANK]  # (N_INIT, r)
 
 gp = MultiOutputGP(
-    x_train,
-    a_train,
+    X_train=x_train,
+    Y_train=a_train,
     kernel=GP_KERNEL,
     ard=USE_ARD,
     n_retrain_max=N_RETRAIN_MAX,
@@ -145,19 +173,15 @@ gp = MultiOutputGP(
 
 emul_base = PODGPSurrogate(pod=pod, gp=gp)
 
-
 # %% [markdown]
-# ## Helpers (kept minimal and local)
+# ## Helpers
 
 
 # %%
 def make_posteriors(model: ActiveMCMCModel) -> tuple[tda.Posterior, tda.Posterior]:
-    """Create coarse and fine posteriors for a given ActiveMCMCModel."""
     cov = (sigma_obs**2) * np.eye(len(y_obs))
-
-    like_coarse = GaussianLogLikeWithGP(y_obs, cov)
-    like_fine = tda.AdaptiveGaussianLogLike(y_obs, cov)
-
+    like_coarse = GaussianLogLikeWithGP(y_obs, cov)  # uses GP variance
+    like_fine = tda.AdaptiveGaussianLogLike(y_obs, cov)  # standard Gaussian LL
     post_coarse = tda.Posterior(prior, like_coarse, model.coarse)
     post_fine = tda.Posterior(prior, like_fine, model.fine)
     return post_coarse, post_fine
@@ -172,7 +196,6 @@ def run_active_mcmc_fixed(
     n_total: int,
     subsampling_rate: int,
 ) -> ActiveMCMCChain:
-    """Run a fixed-subsampling strategy using the repository wrapper."""
     n_samples = n_total // subsampling_rate
     return sample_active_chain(
         model=model,
@@ -198,7 +221,6 @@ def run_active_mcmc_adaptive(
     chunk_size: int,
     n_total: int,
 ) -> ActiveMCMCChain:
-    """Run the adaptive-subchain strategy using chunked sampling."""
     return sample_adaptive_active_chain(
         model=model,
         posterior=posterior,
@@ -230,17 +252,6 @@ strategies: dict[str, dict[str, object]] = {
         "chain_key": "chain_0",
         "posterior_kind": "coarse",
     },
-    # "AL-DAMCMC": {
-    #     "model": ActiveMCMCModel(
-    #         lf_model=copy.deepcopy(emul_base),
-    #         hf_model=forward_model,
-    #         gamma_threshold=GAMMA_THRESHOLD,
-    #     ),
-    #     "runner": "fixed",
-    #     "subsampling_rate": SUBSAMPLE_RATE,
-    #     "chain_key": "chain_coarse_0",
-    #     "posterior_kind": "both",
-    # },
     "AL-ADAMCMC": {
         "model": AdaptiveActiveMCMCModel(
             lf_model=copy.deepcopy(emul_base),
@@ -259,7 +270,6 @@ strategies: dict[str, dict[str, object]] = {
 }
 
 theta0 = prior_mean.copy()
-
 
 # %% [markdown]
 # ## Run strategies and plot diagnostics
@@ -282,9 +292,10 @@ for name, cfg in strategies.items():
     plot_prediction_at_theta(
         model.lf_model,
         theta_true,
-        t,
+        t_plot,
         y_obs,
         title=r"Prediction at $\theta_\mathrm{true}$ before MCMC",
+        y_true=y_clean,
     )
 
     runner = str(cfg["runner"])
@@ -313,17 +324,20 @@ for name, cfg in strategies.items():
     plot_prediction_at_theta(
         model.lf_model,
         theta_true,
-        t,
+        t_plot,
         y_obs,
         title=r"Prediction at $\theta_\mathrm{true}$ after MCMC, " + f"{name}",
+        y_true=y_clean,
     )
 
     plot_cumulative_hf_fraction(chain.forward_calls, burnin=0)
+
+    # parameter trace (2D) for h1 and U_in
     plot_chain(
         chain.samples[:, :2],
         used_hf=chain.forward_calls,
         theta_true=theta_true[:2],
-        names=("A", "f"),
+        names=("h1", "U_in"),
         title=f"{name} post burn-in",
     )
 
@@ -332,10 +346,12 @@ for name, cfg in strategies.items():
         chain_burnin.samples[:, :2],
         used_hf=chain_burnin.forward_calls,
         theta_true=theta_true[:2],
-        names=("A", "f"),
+        names=("h1", "U_in"),
         title=f"{name} post burn-in",
     )
 
-plot_subchain_length_history(
-    strategies["AL-ADAMCMC"]["model"].adaptive_state.subchain_history
-)
+# adaptive subchain diagnostics (if present)
+if "AL-ADAMCMC" in strategies:
+    plot_subchain_length_history(
+        strategies["AL-ADAMCMC"]["model"].adaptive_state.subchain_history
+    )

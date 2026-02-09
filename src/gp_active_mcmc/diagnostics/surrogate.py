@@ -10,6 +10,7 @@ def plot_prediction_at_theta(
     t: np.ndarray,
     y_obs: np.ndarray,
     *,
+    y_true: np.ndarray | None = None,
     title: str | None = None,
 ) -> None:
     """Surrogate prediction with ±2σ band."""
@@ -25,6 +26,8 @@ def plot_prediction_at_theta(
         alpha=0.25,
         label=r"$\pm 2\sigma$",
     )
+    if isinstance(y_true,np.ndarray):
+        ax.plot(t,y_true,lw=2, label="true profile")
 
     ax.set_xlabel("t")
     ax.set_ylabel("y")
