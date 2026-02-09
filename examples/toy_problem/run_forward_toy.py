@@ -8,14 +8,14 @@ import numpy as np
 from gp_active_mcmc.gp import MultiOutputGP
 from gp_active_mcmc.pod import POD
 from gp_active_mcmc.podgp import PODGPSurrogate
-from gp_active_mcmc.toy import make_timeline, toy_forward
+from examples.toy_problem.toy import make_timeline, toy_forward
 from gp_active_mcmc.utils.rng import set_seed
 from scipy.stats import multivariate_normal
 from sklearn.model_selection import train_test_split
 
 from gp_active_mcmc.diagnostics.pod import *
 from gp_active_mcmc.diagnostics.surrogate import *
-from gp_active_mcmc.diagnostics.metrics import *
+from gp_active_mcmc.utils.metrics import *
 
 rng = set_seed(7)
 

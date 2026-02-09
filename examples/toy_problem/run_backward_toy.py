@@ -40,7 +40,7 @@ from gp_active_mcmc.likelihood import GaussianLogLikeWithGP
 from gp_active_mcmc.pod import POD
 from gp_active_mcmc.podgp import PODGPSurrogate
 from gp_active_mcmc.sampler import sample_active_chain, sample_adaptive_active_chain
-from gp_active_mcmc.toy import make_forward_model, make_observation, make_timeline
+from examples.toy_problem.toy import make_forward_model, make_observation, make_timeline
 from gp_active_mcmc.utils.rng import set_seed
 from gp_active_mcmc.adaptive_config import AdaptiveControl, AdaptiveState
 

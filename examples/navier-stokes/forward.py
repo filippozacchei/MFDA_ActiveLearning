@@ -27,7 +27,7 @@ from gp_active_mcmc.podgp import PODGPSurrogate
 from gp_active_mcmc.utils.rng import set_seed
 
 from gp_active_mcmc.diagnostics.surrogate import plot_prediction_at_theta
-from gp_active_mcmc.diagnostics.metrics import rmse, coverage
+from gp_active_mcmc.utils.metrics import rmse, coverage
 import matplotlib.pyplot as plt
 
 from utils.outlet import resample_profile

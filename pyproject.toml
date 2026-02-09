@@ -22,7 +22,11 @@ include = ["gp_active_mcmc*"]
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 addopts = "-q --strict-markers --tb=short"
+filterwarnings = [
+  "ignore:Assigning the 'data' attribute is an inherently unsafe operation.*:DeprecationWarning:paramz\\.",
+]
 
 [tool.black]
 line-length = 88
 target-version = ["py310"]
+
