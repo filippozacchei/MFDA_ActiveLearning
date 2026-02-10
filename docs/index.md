@@ -45,10 +45,9 @@ Documentation is generated with:
 
 - mkdocs `1.6.1`
 
-Install documentation dependencies (if you enable the `docs` extra in `pyproject.toml`):
+Install documentation dependencies and:
 
 ```bash
-pip install -e ".[docs]"
 mkdocs serve
 ```
 
