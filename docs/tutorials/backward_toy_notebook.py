@@ -296,6 +296,13 @@ fig2, ax2 = plot_cumulative_hf_fraction(
     show=True,
 )
 
+fig_s1, ax_s1 = plot_prediction_at_theta(
+    model_single,
+    theta=theta_true,
+    y_obs=y_obs,
+    y_true=hf_forward(theta_true),
+    title="Surrogate prediction (after MCMC sampling)",
+)
 # %% [markdown]
 # # Part 2 — DA-MCMC guided active learning with an adaptive subchain (recommended)
 #
@@ -351,3 +358,11 @@ fig4, ax4 = plot_cumulative_hf_fraction(
 
 if chain_adapt.extras.subchain_length is not None:
     fig5, ax5 = plot_subchain_length_history(chain_adapt.extras.subchain_length, show=True)
+
+fig_s2, ax_s2 = plot_prediction_at_theta(
+    model_adapt,
+    theta=theta_true,
+    y_obs=y_obs,
+    y_true=hf_forward(theta_true),
+    title="Surrogate prediction (after DA-MCMC sampling)",
+)

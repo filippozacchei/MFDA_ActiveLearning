@@ -71,6 +71,7 @@ Not reliable and seed-dependent.
 
 ![Samples using MCMC-Active Learning](../assets/navier-stokes/samples1.png)
 ![HF Fraction using MCMC-Active Learning](../assets/navier-stokes/hf_usage_1.png)
+![Prediction after MCMC sampling](../assets/navier-stokes/prediction1.png)
 
 ### Posterior using DA-MCMC Active Learning with Adaptive Subchain
 
@@ -80,6 +81,8 @@ Robust and accurate.
 ![Samples using DA-MCMC-Active Learning](../assets/navier-stokes/samples2.png)
 ![HF Fraction using DA-MCMC-Active Learning](../assets/navier-stokes/hf_usage_2.png)
 ![Subchain Lengths using DA-MCMC-Active Learning](../assets/navier-stokes/subchain.png)
+![Prediction after MCMC sampling](../assets/navier-stokes/prediction2.png)
+
 
 Summary
 ```
