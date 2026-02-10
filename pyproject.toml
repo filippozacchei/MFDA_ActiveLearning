@@ -8,7 +8,7 @@ version = "0.1.0"
 description = "Active/adaptive multi-fidelity MCMC with GP surrogates"
 readme = "README.md"
 requires-python = ">=3.10"
-license = { file = "LICENSE" }
+license = "MIT"
 authors = [{ name = "Filippo Zacchei" }]
 dependencies = [
   "numpy==1.26.4",
@@ -55,6 +55,14 @@ testpaths = ["tests"]
 log_level = "INFO"
 xfail_strict = true
 addopts = ["-ra", "--strict-config", "--strict-markers"]
+
+filterwarnings = [
+  "error",
+  # If these become too noisy, keep them as "default" instead of failing the suite.
+  "default::DeprecationWarning",
+  "default::PendingDeprecationWarning",
+  "default::ImportWarning",
+]
 
 [tool.ruff]
 line-length = 100
