@@ -9,7 +9,7 @@ import tinyDA as tda
 class AdaptiveMetropolisShared(tda.AdaptiveMetropolis):
     """Adaptive Metropolis proposal with controlled deep-copy semantics.
 
-    This proposal extends [`tinyDA.AdaptiveMetropolis`][tinyDA.AdaptiveMetropolis] by
+    This proposal extends `tinyDA.AdaptiveMetropolis` by
     defining what happens when the object is deep-copied.
 
     Why this matters
@@ -33,7 +33,7 @@ class AdaptiveMetropolisShared(tda.AdaptiveMetropolis):
     Parameters
     ----------
     *args, **kwargs
-        Passed through to [`tinyDA.AdaptiveMetropolis`][tinyDA.AdaptiveMetropolis].
+        Passed through to `tinyDA.AdaptiveMetropolis`.
     share_across_deepcopy
         Controls deepcopy behaviour:
 

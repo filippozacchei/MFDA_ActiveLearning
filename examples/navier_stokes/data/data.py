@@ -150,15 +150,9 @@ def main() -> None:
     from utils.hf_boussinesq import forward_model as hf_solver
 
     # IMPORTANT: pass velocity as positional to avoid keyword mismatch
-    ds_lf = build_dataset(
-        solver=lambda h: lf_solver(h, U_in=U_in), h1_values=design.X_lf, ny=ny
-    )
-    ds_mf = build_dataset(
-        solver=lambda h: mf_solver(h, U_in=U_in), h1_values=design.X_mf, ny=ny
-    )
-    ds_hf = build_dataset(
-        solver=lambda h: hf_solver(h, U_in=U_in), h1_values=design.X_hf, ny=ny
-    )
+    ds_lf = build_dataset(solver=lambda h: lf_solver(h, U_in=U_in), h1_values=design.X_lf, ny=ny)
+    ds_mf = build_dataset(solver=lambda h: mf_solver(h, U_in=U_in), h1_values=design.X_mf, ny=ny)
+    ds_hf = build_dataset(solver=lambda h: hf_solver(h, U_in=U_in), h1_values=design.X_hf, ny=ny)
 
     save_npz_dataset(Path("data/lf.npz"), ds_lf)
     save_npz_dataset(Path("data/mf.npz"), ds_mf)

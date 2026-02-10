@@ -18,27 +18,17 @@ class ActiveGPLogLike(tda.AdaptiveGaussianLogLike):
        (for example [`CoarseOutput`][gp_active_mcmc.inference.coarse_output.CoarseOutput]).
 
     If a predictive variance vector is present, the likelihood inflates the observation
-    covariance using a diagonal term:
+    covariance using a diagonal term:"""
 
-    $$
+    r"""
+    \[
     C_{\mathrm{total}} = C_{\mathrm{obs}} + \mathrm{diag}(v_{\mathrm{pred}}) + C_{\mathrm{bias}}.
-    $$
-
+    \]
+    """
+    """
     This makes surrogate uncertainty explicit in the likelihood: higher predictive
     variance corresponds to a broader effective noise model and therefore a less
     concentrated likelihood.
-
-    Parameters
-    ----------
-    data
-        Observed data vector of shape ``(n_obs,)``.
-    covariance
-        Observation-noise covariance matrix of shape ``(n_obs, n_obs)``.
-        Commonly ``sigma_obs**2 * I``.
-    cov_bias
-        Optional additional covariance term (same shape as `covariance`). If present, it
-        is always added to the total covariance, regardless of whether surrogate variance
-        is used.
 
     Notes
     -----

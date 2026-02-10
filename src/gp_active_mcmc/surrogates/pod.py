@@ -297,7 +297,7 @@ def pod_energy(
     """Compute the cumulative POD energy curve for a snapshot matrix.
 
     This is a lightweight helper for choosing a POD rank without instantiating a
-    [`POD`][gp_active_mcmc.pod.POD] object.
+    [`POD`][gp_active_mcmc.surrogates.POD] object.
 
     Parameters
     ----------

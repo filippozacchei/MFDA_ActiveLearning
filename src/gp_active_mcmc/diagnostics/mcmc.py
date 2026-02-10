@@ -102,12 +102,12 @@ def plot_cumulative_hf_fraction(
     Notes
     -----
     In active-learning runs, HF usage flags are typically recorded by
-    [`ActiveMCMCModel.log.used_hf`][gp_active_mcmc.inference.model.EvaluationLog] and
+    [`ActiveMCMCModel.log.used_hf`][gp_active_mcmc.inference.EvaluationLog] and
     attached to the chain extras.
 
     See Also
     --------
-    [`plot_subchain_length_history`][gp_active_mcmc.diagnostics.chain.plot_subchain_length_history]
+    [`plot_subchain_length_history`][gp_active_mcmc.diagnostics.mcmc.plot_subchain_length_history]
         Visualise how the adaptive subchain length changes over time.
     """
     if burnin < 0:
@@ -315,7 +315,7 @@ def plot_chain_2d(
 
     See Also
     --------
-    [`plot_cumulative_hf_fraction`][gp_active_mcmc.diagnostics.chain.plot_cumulative_hf_fraction]
+    [`plot_cumulative_hf_fraction`][gp_active_mcmc.diagnostics.mcmc.plot_cumulative_hf_fraction]
         Cumulative HF usage fraction over time.
     """
     chain = np.asarray(samples, dtype=float)

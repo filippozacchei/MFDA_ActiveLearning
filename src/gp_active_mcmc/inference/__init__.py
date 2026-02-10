@@ -10,7 +10,7 @@ from gp_active_mcmc.inference.adaptive_subchain import (
 from gp_active_mcmc.inference.chain import ChainExtras, MCMCChain, SamplingResult
 from gp_active_mcmc.inference.coarse_output import CoarseOutput
 from gp_active_mcmc.inference.likelihood import ActiveGPLogLike
-from gp_active_mcmc.inference.model import ActiveMCMCModel, EvaluationLog
+from gp_active_mcmc.inference.model import ActiveMCMCModel, EvaluationLog, AdaptiveHook
 from gp_active_mcmc.inference.proposal import AdaptiveMetropolisShared
 from gp_active_mcmc.inference.sampling import (
     ChunkedMCMCConfig,
@@ -19,9 +19,10 @@ from gp_active_mcmc.inference.sampling import (
 )
 
 __all__ = [
-    " AdaptiveSubchain",
+    "AdaptiveSubchain",
     "AdaptiveSubchainControl",
-    "AdaptiveSubchainState" "ChainExtras",
+    "AdaptiveSubchainState",
+    "ChainExtras",
     "MCMCChain",
     "SamplingResult",
     "CoarseOutput",
@@ -32,4 +33,5 @@ __all__ = [
     "ChunkedMCMCConfig",
     "sample_active_chain",
     "sample_adaptive_active_chain",
+    "AdaptiveHook",
 ]

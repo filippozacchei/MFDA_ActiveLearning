@@ -366,7 +366,8 @@ class SamplingResult:
     """Return type for sampling entrypoints.
 
     The sampling entrypoints in
-    [`gp_active_mcmc.inference.sampling`][gp_active_mcmc.inference.sampling]
+    [`gp_active_mcmc.inference.sample_active_chain`][gp_active_mcmc.inference.sample_active_chain]
+    and [`gp_active_mcmc.inference.sample_adaptive_active_chain`][gp_active_mcmc.inference.sample_adaptive_active_chain]
     return a `SamplingResult` to keep the public API stable:
 
     - `chain`: the samples and aligned diagnostics as an

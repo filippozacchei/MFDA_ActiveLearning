@@ -24,12 +24,12 @@ class PODGPSurrogate:
 
     The surrogate then provides predictions in the original observation space by
     reconstructing:
+    """
 
-    .. math::
+    r"""
+    \[\hat{y(\theta)} = \mu + \hat{a(\theta)}\Phi,\]
 
-        \\hat y(\\theta) = \\mu + \\hat a(\\theta) \\Phi,
-
-    where ``μ`` is the POD mean (stored in `pod.mean_`) and ``Φ`` are the POD modes
+    where $\mu$ is the POD mean (stored in `pod.mean_`) and $\Phi$ are the POD modes
     (rows of `pod.components_`). In code, the reconstruction is performed by
     [`POD.inverse_transform`][gp_active_mcmc.pod.POD.inverse_transform].
 
@@ -39,9 +39,7 @@ class PODGPSurrogate:
     This class maps coefficient variances to an **output-space pointwise variance**
     under an independence assumption across coefficients:
 
-    .. math::
-
-        \\mathrm{Var}[y_i] \\approx \\sum_{j=1}^{r} \\Phi_{j,i}^2\\, \\mathrm{Var}[a_j],
+    \[\mathrm{Var}[y_i] \approx \sum_{j=1}^{r} \Phi_{j,i}^2\, \mathrm{Var}[a_j]\],
 
     where ``i`` indexes the observation component (e.g., time index) and ``j`` the POD mode.
 

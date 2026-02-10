@@ -36,13 +36,6 @@ class CoarseOutput(np.ndarray):
       correlations are not represented.
     - `variance` must be non-negative and have the same shape as the mean.
 
-    Parameters
-    ----------
-    mean
-        Predictive mean array.
-    variance
-        Predictive marginal variance array (same shape as `mean`).
-
     Attributes
     ----------
     variance

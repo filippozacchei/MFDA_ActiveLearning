@@ -63,7 +63,7 @@ def plot_prediction_at_theta(
     Parameters
     ----------
     model
-        Any object implementing [`PredictMeanVar`][gp_active_mcmc.diagnostics.surrogate.PredictMeanVar].
+        Any object implementing `predict` with mean and variance output.
         The model must provide `predict(theta) -> (mean, variance)` in observation space.
     theta
         Parameter vector at which the prediction is evaluated.

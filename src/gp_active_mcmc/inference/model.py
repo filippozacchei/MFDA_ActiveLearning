@@ -218,10 +218,8 @@ class ActiveMCMCModel:
         - `predict(theta) -> (mean, var)` where both arrays have shape `(n_obs,)`
         - `update(theta, y_hf)` to incorporate new HF evaluations
 
-        (Duck-typed via [`ActiveSurrogate`][gp_active_mcmc.protocols.ActiveSurrogate].)
     hf_model
         High-fidelity forward model callable as `hf_model(theta) -> y` where `y` has shape `(n_obs,)`.
-        (Duck-typed via [`HighFidelityModel`][gp_active_mcmc.protocols.HighFidelityModel].)
     gamma_threshold
         Uncertainty threshold used by [`coarse`][gp_active_mcmc.inference.model.ActiveMCMCModel.coarse].
         A coarse call triggers HF if `mean(y_var) > gamma_threshold**2`.

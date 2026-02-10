@@ -77,7 +77,7 @@ conda install -c conda-forge fenics-dolfinx=0.9.0 mpich gmsh=4.15.0 python-gmsh=
 Main subpackages:
 
 - [`gp_active_mcmc.surrogates`][]: POD, GP, and POD–GP surrogate components.
-- [Inference](api/inference.md) ([`gp_active_mcmc.inference`][]): likelihoods, proposals, adaptive subchain policy, samplers, and result containers.
+- [`gp_active_mcmc.inference`][]: likelihoods, proposals, adaptive subchain policy, samplers, and result containers.
 - [`gp_active_mcmc.utils`][]: pure numerical helpers and post-processing utilities (no plotting).
 - [`gp_active_mcmc.diagnostics`][]: plotting utilities returning `(fig, ax)` (no `plt.show()` calls).
 

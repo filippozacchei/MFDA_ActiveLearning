@@ -19,7 +19,7 @@ class ChunkedMCMCConfig:
     """Configuration for chunked sampling.
 
     Chunked sampling is used when an algorithm needs to periodically re-enter `tinyDA`
-    (i.e., call [`tda.sample`][tinyDA.sample] multiple times) rather than running one long
+    (i.e., call `tda.sample` multiple times) rather than running one long
     sampling call.
 
     In this library, chunking is primarily used to support
@@ -143,7 +143,7 @@ def sample_active_chain(
     -----------------------------
     The `posterior` argument determines the algorithmic mode:
 
-    - If `posterior` is a single [`tinyDA.Posterior`][tinyDA.Posterior], the run corresponds to
+    - If `posterior` is a single `tinyDA.Posterior`, the run corresponds to
       **MCMC-guided active learning** (single level).
     - If `posterior` is a list of two posteriors `[coarse, fine]`, the run corresponds to
       **delayed-acceptance MCMC (DA-MCMC) guided active learning**.
@@ -162,7 +162,7 @@ def sample_active_chain(
         Either a single posterior (single-level) or a list of two posteriors `[coarse, fine]`
         for DA-MCMC.
     proposal
-        Proposal passed to [`tinyDA.sample`][tinyDA.sample]. The proposal is deep-copied to
+        Proposal passed to `tinyDA.sample`. The proposal is deep-copied to
         avoid mutating the caller's instance.
     iterations
         Number of `tinyDA` iterations to run.
@@ -256,7 +256,7 @@ def sample_adaptive_active_chain(
     Why chunking is needed
     ----------------------
     In adaptive runs, the subsampling rate may change over time (because the subchain length
-    is adapted online). Since [`tinyDA.sample`][tinyDA.sample] takes a fixed `subsampling_rate`
+    is adapted online). Since `tinyDA.sample` takes a fixed `subsampling_rate`
     per call, we run multiple shorter calls ("chunks") and update the subsampling rate between
     chunks.
 

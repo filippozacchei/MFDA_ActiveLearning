@@ -3,7 +3,7 @@ repo_url: https://github.com/filippozacchei/MFDA_ActiveLearning
 repo_name: filippozacchei/MFDA_ActiveLearning
 
 theme:
-  name: readthedocs
+  name: material
   features:
     - navigation.tabs
     - navigation.sections
@@ -46,14 +46,20 @@ plugins:
       include_source: true
       execute: true
 
+markdown_extensions:
+  - pymdownx.arithmatex:
+      generic: true
+
 nav:
   - Home: index.md
   - User Guide:
       - Quickstart: guide/quickstart.md
-      - Examples: guide/examples.md
+      - Overview: guide/summary.md
   - Tutorials:
       - Backward toy (Active-MCMC): tutorials/backward_toy_notebook.py
       - Forward toy (POD-GP): tutorials/forward_toy_notebook.py
+      - Backward Navier-Stokes (Active-MCMC): tutorials/ns_backward_notebook.py
+      - Forward Navier-Stokes: tutorials/ns_forward_notebook.py
   - API Reference:
       - Inference: api/inference.md
       - Surrogates: api/surrogates.md
@@ -66,3 +72,4 @@ extra_css:
 extra_javascript:
   - https://polyfill.io/v3/polyfill.min.js?features=es6
   - https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-mml-chtml.js
+

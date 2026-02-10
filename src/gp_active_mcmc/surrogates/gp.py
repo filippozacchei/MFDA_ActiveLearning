@@ -125,7 +125,7 @@ class SingleOutputGP:
     noise_variance
         Initial observation noise variance for the GP likelihood.
     update_every
-        Retraining period: after every `update_every` calls to [`update`][gp_active_mcmc.gp.SingleOutputGP.update],
+        Retraining period: after every `update_every` calls to [`update`][gp_active_mcmc.surrogates.SingleOutputGP.update],
         the GP hyperparameters are re-optimised (until `n_retrain_max` is reached).
         Set `update_every<=0` to disable re-optimisation.
     n_retrain_max
@@ -133,14 +133,14 @@ class SingleOutputGP:
 
     Notes
     -----
-    - [`update`][gp_active_mcmc.gp.SingleOutputGP.update] appends exactly **one**
+    - [`update`][gp_active_mcmc.surrogates.SingleOutputGP.update] appends exactly **one**
       new observation with shape `(1, n_dim) -> (1, 1)`.
     - Hyperparameter optimisation uses `GPy`'s `.optimize()` routine.
     - This class intentionally avoids any I/O and does not expose plotting.
 
     See Also
     --------
-    [`MultiOutputGP`][gp_active_mcmc.gp.MultiOutputGP]
+    [`MultiOutputGP`][gp_active_mcmc.surrogates.MultiOutputGP]
         Multi-output wrapper implemented as independent single-output GPs.
     """
 
@@ -284,7 +284,7 @@ class MultiOutputGP:
     """Multi-output GP implemented as independent single-output GPs.
 
     This class represents a vector-valued regression function by training one
-    [`SingleOutputGP`][gp_active_mcmc.gp.SingleOutputGP] per output dimension.
+    [`SingleOutputGP`][gp_active_mcmc.surrogates.SingleOutputGP] per output dimension.
     Outputs are therefore conditionally independent given inputs.
 
     Shapes
@@ -323,7 +323,7 @@ class MultiOutputGP:
 
     See Also
     --------
-    [`SingleOutputGP`][gp_active_mcmc.gp.SingleOutputGP]
+    [`SingleOutputGP`][gp_active_mcmc.surrogates.SingleOutputGP]
         Underlying scalar GP used per output dimension.
     """
 
