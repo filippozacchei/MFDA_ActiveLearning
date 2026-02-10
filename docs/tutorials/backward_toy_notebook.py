@@ -54,7 +54,7 @@ from gp_active_mcmc.surrogates import POD, PODGPSurrogate, MultiOutputGP
 # Alternative patterns:
 # - `from gp_active_mcmc.toy import ...` if you move the toy utilities into the package
 # - `from examples.toy_problem.toy import ...` if you keep them under `examples/`
-from toy import make_forward_model, make_observation, make_timeline
+from examples.toy_problem.toy import make_forward_model, make_observation, make_timeline
 
 # Diagnostics return (fig, ax) and never force `plt.show()` unless `show=True`.
 from gp_active_mcmc.diagnostics import (
@@ -63,6 +63,9 @@ from gp_active_mcmc.diagnostics import (
     plot_subchain_length_history,
     plot_prediction_at_theta,
 )
+
+import copy
+
 
 # %% [markdown]
 # ## Configuration

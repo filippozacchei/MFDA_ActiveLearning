@@ -1,19 +1,57 @@
-from typing import Protocol
+# gp_active_mcmc/protocols.py
+from __future__ import annotations
+
+from typing import Protocol, runtime_checkable
 import numpy as np
+from numpy.typing import ArrayLike, NDArray
 
 
+@runtime_checkable
 class ActiveSurrogate(Protocol):
-    """Protocol for a surrogate model with active learning capability."""
+    """Surrogate model interface used by active learning / Active-MCMC components.
 
-    def predict(self, theta: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
-        """Return surrogate prediction and associated uncertainty."""
+    Implementations typically provide a predictive mean and an uncertainty
+    quantification (e.g., predictive variance or covariance).
+    """
 
-    def update(self, theta: np.ndarray, y: np.ndarray) -> None:
-        """Update surrogate with a high-fidelity (HF) observation."""
+    def predict(self, theta: ArrayLike) -> tuple[NDArray[np.floating], NDArray[np.floating]]:
+        """Predict model output at parameter(s) ``theta``.
+
+        Parameters
+        ----------
+        theta
+            Parameter vector or batch of parameters. Common shapes:
+            - (d,) for one parameter vector
+            - (n, d) for a batch of n vectors
+
+        Returns
+        -------
+        mean
+            Predictive mean. Common shapes:
+            - (m,) or (T, m) for one theta
+            - (n, m) or (n, T, m) for batched theta
+        uncertainty
+            Uncertainty summary aligned with ``mean``. This can be predictive
+            variance (same shape as mean) or a covariance representation, but
+            the interpretation must be documented by the implementation.
+        """
+
+    def update(self, theta: ArrayLike, y: ArrayLike) -> None:
+        """Update the surrogate using a new high-fidelity observation.
+
+        Parameters
+        ----------
+        theta
+            Parameter vector (shape (d,)) or batch (shape (n, d)).
+        y
+            High-fidelity observation(s) corresponding to theta. Shape must be
+            consistent with the surrogate's output representation.
+        """
 
 
+@runtime_checkable
 class HighFidelityModel(Protocol):
-    """Protocol for a high-fidelity forward model."""
+    """Forward model interface for high-fidelity evaluations."""
 
-    def __call__(self, theta: np.ndarray) -> np.ndarray:
-        """Return high-fidelity model prediction."""
+    def __call__(self, theta: ArrayLike) -> NDArray[np.floating]:
+        """Evaluate the forward model at parameter(s) ``theta``."""

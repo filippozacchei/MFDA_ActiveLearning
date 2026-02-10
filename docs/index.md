@@ -1,4 +1,4 @@
-# GP-Active MCMC
+# gp_active_mcmc
 
 `gp_active_mcmc` is a research-oriented Python package for **multi-fidelity Bayesian inference**
 using **Gaussian-process surrogates** and **Active/Adaptive MCMC** strategies. It couples a fast,
@@ -57,7 +57,7 @@ mkdocs serve
 The Navier–Stokes example uses the FEniCS/DOLFINx ecosystem and a standard MPI toolchain.
 These are typically installed via **conda-forge** (not reliably via `pip`):
 
-- `fenics-dolfinx=0.9.0` (conda-forge)
+- `fenics-dolfinx=0.9.0` (conda-forge, version=0.10 does not work)
 - `mpich` (conda-forge)
 - `gmsh=4.15.0`
 - `python-gmsh=4.15.0`

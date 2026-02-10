@@ -1,265 +1,362 @@
 from __future__ import annotations
 
-import numpy as np
-import numpy.typing as npt
-import matplotlib.pyplot as plt
-
 from collections.abc import Sequence
 from typing import Any
 
+import matplotlib.pyplot as plt
+import numpy as np
+from matplotlib.axes import Axes
+from matplotlib.figure import Figure
+from numpy.typing import ArrayLike
 
-# ---------------------------------------------------------------------
-# Forward / high-fidelity usage diagnostics
-# ---------------------------------------------------------------------
+
+def _is_sequence_but_not_array(x: Any) -> bool:
+    """Return True for non-string Sequences that are not NumPy arrays.
+
+    This is used to distinguish a single 1D array of flags from a list/tuple of
+    multiple series.
+
+    Parameters
+    ----------
+    x
+        Candidate object.
+
+    Returns
+    -------
+    is_seq
+        True if `x` is a `Sequence` (e.g. list/tuple) but not a NumPy array and not a
+        string/bytes object.
+    """
+    return isinstance(x, Sequence) and not isinstance(x, (np.ndarray, str, bytes))
+
+
+def _as_1d_bool(x: ArrayLike, *, name: str) -> np.ndarray:
+    """Convert an array-like to a 1D boolean array.
+
+    Parameters
+    ----------
+    x
+        Input array-like.
+    name
+        Name used in error messages.
+
+    Returns
+    -------
+    flags
+        1D boolean array.
+
+    Raises
+    ------
+    ValueError
+        If `x` is not one-dimensional.
+    """
+    arr = np.asarray(x)
+    if arr.ndim != 1:
+        raise ValueError(f"{name} must be 1D. Got shape {arr.shape}.")
+    return arr.astype(bool, copy=False)
 
 
 def plot_cumulative_hf_fraction(
-    used_hf: npt.ArrayLike | Sequence[npt.ArrayLike],
+    used_hf: ArrayLike | Sequence[ArrayLike],
     *,
     burnin: int = 0,
     labels: Sequence[str] | None = None,
-) -> None:
-    """
-    Plot the cumulative fraction of high-fidelity evaluations.
+    title: str = "High-fidelity usage over iterations",
+    show: bool = False,
+) -> tuple[Figure, Axes] | None:
+    """Plot cumulative HF usage fraction over iterations.
 
-    This function accepts either:
-    - a single 1D array-like of HF flags, or
-    - a sequence of 1D array-likes (multiple runs), optionally labelled.
+    Given a boolean series `used_hf` indicating whether the high-fidelity (HF) model was
+    used at each MCMC step, this function plots the cumulative HF fraction.
+
+    The function supports plotting multiple runs by passing a sequence of arrays.
 
     Parameters
     ----------
     used_hf
-        Boolean or {0,1} array-like indicating high-fidelity usage per iteration,
-        or a sequence of such arrays.
+        Either a single boolean array of shape ``(n_steps,)`` or a sequence of such arrays.
+        True indicates that the HF model was used at that step.
     burnin
-        Number of initial samples to discard (non-negative).
+        Number of initial steps to discard before computing the cumulative fraction.
+        Must be non-negative.
     labels
-        Optional labels for multiple runs. If provided, its length must match
-        the number of runs.
+        Optional labels for each series when `used_hf` is a sequence. If provided, its
+        length must match the number of series.
+    title
+        Title for the plot.
+    show
+        If True, call `plt.show()` before returning. For MkDocs/Jupyter usage, leaving this
+        False is recommended.
+
+    Returns
+    -------
+    fig, ax or None
+        Returns `(fig, ax)` if at least one series contains data after burn-in.
+        Returns `None` if nothing can be plotted (e.g. all series empty after burn-in).
+
+    Raises
+    ------
+    ValueError
+        If `burnin` is negative or if `labels` has the wrong length.
 
     Notes
     -----
-    The function silently returns (no plot) if, after burn-in, there are no points
-    to plot for *all* provided series.
+    In active-learning runs, HF usage flags are typically recorded by
+    [`ActiveMCMCModel.log.used_hf`][gp_active_mcmc.inference.EvaluationLog] and
+    attached to the chain extras.
+
+    See Also
+    --------
+    [`plot_subchain_length_history`][gp_active_mcmc.diagnostics.mcmc.plot_subchain_length_history]
+        Visualise how the adaptive subchain length changes over time.
     """
     if burnin < 0:
-        raise ValueError("`burnin` must be non-negative.")
+        raise ValueError("burnin must be non-negative.")
 
-    # Normalize input to a list of 1D numpy arrays (duck-typed, no fragile isinstance checks)
     series: list[np.ndarray] = []
     if _is_sequence_but_not_array(used_hf):
         for x in used_hf:  # type: ignore[union-attr]
-            series.append(_as_1d_float_array(x, name="used_hf item"))
+            series.append(_as_1d_bool(x, name="used_hf item"))
     else:
-        series.append(_as_1d_float_array(used_hf, name="used_hf"))
+        series.append(_as_1d_bool(used_hf, name="used_hf"))
 
     if labels is not None and len(labels) != len(series):
-        raise ValueError(
-            "`labels` length must match the number of series in `used_hf`."
-        )
+        raise ValueError("labels length must match number of series.")
 
-    plt.figure(figsize=(8, 4))
-
+    fig, ax = plt.subplots(figsize=(7, 4))
     plotted_any = False
+
     for i, flags in enumerate(series):
-        if flags.ndim != 1:
-            raise ValueError("Each `used_hf` series must be 1D.")
         if flags.size == 0 or burnin >= flags.size:
             continue
 
-        tail = flags[burnin:]
-        iterations = np.arange(1, tail.size + 1, dtype=float)
-        cumulative_fraction = np.cumsum(tail) / iterations
+        tail = flags[burnin:].astype(float)
+        it = np.arange(1, tail.size + 1, dtype=float)
+        cum = np.cumsum(tail) / it
 
-        if labels is None:
-            plt.plot(iterations, cumulative_fraction)
-        else:
-            plt.plot(iterations, cumulative_fraction, label=labels[i])
-
+        ax.plot(it, cum, label=None if labels is None else labels[i])
         plotted_any = True
 
     if not plotted_any:
-        plt.close()
-        return
+        plt.close(fig)
+        return None
 
-    plt.xlabel("Iteration")
-    plt.ylabel("Cumulative HF fraction")
-    plt.title("High-fidelity usage over iterations")
-    plt.grid(True)
-
+    ax.set_xlabel("Iteration")
+    ax.set_ylabel("Cumulative HF fraction")
+    ax.set_title(title)
+    ax.grid(True)
     if labels is not None:
-        plt.legend()
+        ax.legend()
 
-    plt.tight_layout()
-    plt.show()
+    fig.tight_layout()
 
+    if show:
+        plt.show()
 
-def _as_1d_float_array(x: npt.ArrayLike, *, name: str) -> np.ndarray:
-    """Convert array-like to a 1D float numpy array with basic validation."""
-    arr = np.asarray(x)
-    if arr.ndim != 1:
-        raise ValueError(f"`{name}` must be 1D (got ndim={arr.ndim}).")
-    # Convert bool/int flags to float for cumulative sum/division
-    return arr.astype(float, copy=False)
+    return fig, ax
 
 
-def _is_sequence_but_not_array(x: Any) -> bool:
-    """True for sequences (e.g., list/tuple) but False for numpy arrays."""
-    return isinstance(x, Sequence) and not isinstance(x, (np.ndarray, str, bytes))
-
-
-# ---------------------------------------------------------------------
-# Adaptive subchain diagnostics
-# ---------------------------------------------------------------------
-def plot_subchain_length_history(subchain_lengths: list[int]) -> None:
-    """
-    Plot the evolution of adaptive subchain lengths.
+def plot_subchain_length_history(
+    subchain_length: ArrayLike,
+    *,
+    title: str = "Adaptive subchain length history",
+    show: bool = False,
+) -> tuple[Figure, Axes] | None:
+    """Plot the adaptive subchain length history.
 
     Parameters
     ----------
-    subchain_lengths : list[int]
-        Subchain length at each coarse iteration.
+    subchain_length
+        1D integer array of subchain lengths. Values must be positive.
+    title
+        Plot title.
+    show
+        If True, call `plt.show()` before returning.
+
+    Returns
+    -------
+    fig, ax or None
+        Returns `(fig, ax)` if `subchain_length` is non-empty, otherwise `None`.
+
+    Raises
+    ------
+    ValueError
+        If any subchain length is non-positive.
+
+    See Also
+    --------
+    [`AdaptiveSubchainState.subchain_history`][gp_active_mcmc.inference.adaptive_subchain.AdaptiveSubchainState]
+        Field where the adaptive policy records the subchain length per coarse call.
     """
-    if not subchain_lengths:
-        return
+    s = np.asarray(subchain_length, dtype=int).ravel()
+    if s.size == 0:
+        return None
+    if np.any(s <= 0):
+        raise ValueError("All subchain lengths must be positive.")
 
-    assert all(l > 0 for l in subchain_lengths), "All subchain lengths must be positive"
+    fig, ax = plt.subplots(figsize=(7, 4))
+    ax.plot(s, marker="o", ms=3)
+    ax.set_xlabel("Coarse iteration")
+    ax.set_ylabel("Subchain length")
+    ax.set_title(title)
+    ax.grid(True)
+    fig.tight_layout()
 
-    plt.figure(figsize=(8, 4))
-    plt.plot(subchain_lengths, marker="o", ms=3)
-    plt.xlabel("Coarse iteration")
-    plt.ylabel("Subchain length")
-    plt.title("Adaptive subchain length history")
-    plt.grid(True)
-    plt.tight_layout()
-    plt.show()
+    if show:
+        plt.show()
+
+    return fig, ax
 
 
-# ---------------------------------------------------------------------
-# Surrogate accuracy diagnostics
-# ---------------------------------------------------------------------
 def plot_surrogate_error_history(
-    errors: list[float],
+    errors: ArrayLike,
     *,
     target: float | None = None,
-) -> None:
-    """
-    Plot surrogate–HF discrepancy over fine iterations.
+    title: str = "Surrogate accuracy over time",
+    show: bool = False,
+) -> tuple[Figure, Axes] | None:
+    """Plot surrogate–HF discrepancy over fine evaluations.
 
     Parameters
     ----------
-    errors : list[float]
-        Error metric per fine iteration.
-    target : float or None, optional
-        Target error threshold to display.
+    errors
+        1D array of non-negative error values (e.g. RMSE between LF mean and HF output)
+        recorded at fine evaluations.
+    target
+        Optional target error level. If provided, a horizontal reference line is drawn.
+    title
+        Plot title.
+    show
+        If True, call `plt.show()` before returning.
+
+    Returns
+    -------
+    fig, ax or None
+        Returns `(fig, ax)` if `errors` is non-empty, otherwise `None`.
+
+    Raises
+    ------
+    ValueError
+        If any error is negative or if `target` is negative.
+
+    See Also
+    --------
+    [`AdaptiveSubchainState.hf_errors`][gp_active_mcmc.inference.adaptive_subchain.AdaptiveSubchainState]
+        Error history recorded by the adaptive policy.
     """
-    if not errors:
-        return
+    e = np.asarray(errors, dtype=float).ravel()
+    if e.size == 0:
+        return None
+    if np.any(e < 0.0):
+        raise ValueError("Errors must be non-negative.")
+    if target is not None and target < 0.0:
+        raise ValueError("target must be non-negative.")
 
-    assert all(e >= 0 for e in errors), "Errors must be non-negative"
-
-    plt.figure(figsize=(8, 4))
-    plt.plot(errors, label="Surrogate error")
-
+    fig, ax = plt.subplots(figsize=(7, 4))
+    ax.plot(e, label="surrogate error")
     if target is not None:
-        assert target >= 0, "`target` must be non-negative"
-        plt.axhline(
-            target,
-            linestyle="--",
-            linewidth=1.5,
-            label="Target error",
-        )
+        ax.axhline(target, linestyle="--", linewidth=1.5, label="target")
+    ax.set_xlabel("Fine iteration")
+    ax.set_ylabel("Error")
+    ax.set_title(title)
+    ax.legend()
+    ax.grid(True)
+    fig.tight_layout()
 
-    plt.xlabel("Fine iteration")
-    plt.ylabel("Error")
-    plt.title("Surrogate accuracy over time")
-    plt.legend()
-    plt.grid(True)
-    plt.tight_layout()
-    plt.show()
+    if show:
+        plt.show()
+
+    return fig, ax
 
 
-# ---------------------------------------------------------------------
-# MCMC chain visualization
-# ---------------------------------------------------------------------
-def plot_chain(
-    chain: np.ndarray,
+def plot_chain_2d(
+    samples: ArrayLike,
     *,
-    used_hf: np.ndarray | None = None,
-    theta_true: np.ndarray | None = None,
+    used_hf: ArrayLike | None = None,
+    theta_true: ArrayLike | None = None,
     title: str | None = None,
     names: tuple[str, str] = ("θ₁", "θ₂"),
-) -> None:
-    """
-    Two-dimensional visualization of an MCMC chain.
+    show: bool = False,
+) -> tuple[Figure, Axes]:
+    """Scatter plot of a 2D chain, optionally highlighting HF steps.
 
     Parameters
     ----------
-    chain : np.ndarray
-        Array of shape (N, 2) containing chain samples.
-    used_hf : np.ndarray or None, optional
-        Boolean array indicating high-fidelity usage.
-    theta_true : np.ndarray or None, optional
-        True parameter value (2D).
-    title : str or None, optional
-        Plot title.
-    names : tuple[str, str], optional
-        Axis labels.
+    samples
+        Sample array of shape ``(n_steps, 2)``.
+    used_hf
+        Optional boolean array of shape ``(n_steps,)`` indicating whether HF was used at
+        each step. If provided, surrogate-only steps and HF steps are plotted with
+        different markers.
+    theta_true
+        Optional reference parameter of shape ``(2,)`` to overlay as a star marker.
+    title
+        Optional title.
+    names
+        Axis labels for the two parameters.
+    show
+        If True, call `plt.show()` before returning.
+
+    Returns
+    -------
+    fig, ax
+        Matplotlib figure and axes.
+
+    Raises
+    ------
+    ValueError
+        If `samples` is not shape ``(n_steps, 2)``, if `used_hf` has the wrong length,
+        or if `theta_true` is not shape ``(2,)``.
+
+    Notes
+    -----
+    This function is intended for quick diagnostics and documentation examples. For
+    higher-dimensional chains, prefer pair plots or marginal traces.
+
+    See Also
+    --------
+    [`plot_cumulative_hf_fraction`][gp_active_mcmc.diagnostics.mcmc.plot_cumulative_hf_fraction]
+        Cumulative HF usage fraction over time.
     """
-    assert (
-        chain.ndim == 2 and chain.shape[1] == 2
-    ), f"`chain` must have shape (N, 2) instead has shape: {chain.shape}"
+    chain = np.asarray(samples, dtype=float)
+    if chain.ndim != 2 or chain.shape[1] != 2:
+        raise ValueError(f"samples must have shape (n_steps, 2). Got shape {chain.shape}.")
 
-    if used_hf is not None:
-        assert (
-            used_hf.shape[0] == chain.shape[0] or used_hf.shape[0] == chain.shape[0] + 1
-        ), "`used_hf` must match chain length"
-    if used_hf.shape[0] == chain.shape[0] + 1:
-        chain = np.vstack([chain[0], chain])
+    uhf = None if used_hf is None else _as_1d_bool(used_hf, name="used_hf")
+    if uhf is not None and uhf.shape[0] != chain.shape[0]:
+        raise ValueError("used_hf must have the same length as number of samples.")
 
-    if theta_true is not None:
-        assert theta_true.shape == (2,), "`theta_true` must be 2-D"
+    tt = None if theta_true is None else np.asarray(theta_true, dtype=float).ravel()
+    if tt is not None and tt.shape != (2,):
+        raise ValueError("theta_true must be shape (2,).")
 
     fig, ax = plt.subplots(figsize=(6, 5))
 
-    if used_hf is None:
+    if uhf is None:
         ax.scatter(chain[:, 0], chain[:, 1], s=25, alpha=0.6)
     else:
-        hf_idx = np.where(used_hf)[0]
-        sur_idx = np.where(~used_hf)[0]
+        sur_idx = np.where(~uhf)[0]
+        hf_idx = np.where(uhf)[0]
 
         if sur_idx.size:
-            ax.scatter(
-                chain[sur_idx, 0],
-                chain[sur_idx, 1],
-                s=20,
-                alpha=0.4,
-                label="Surrogate",
-            )
-
+            ax.scatter(chain[sur_idx, 0], chain[sur_idx, 1], s=20, alpha=0.4, label="surrogate")
         if hf_idx.size:
-            ax.scatter(
-                chain[hf_idx, 0],
-                chain[hf_idx, 1],
-                s=40,
-                marker="x",
-                label="High-fidelity",
-            )
+            ax.scatter(chain[hf_idx, 0], chain[hf_idx, 1], s=40, marker="x", label="high-fidelity")
 
-    if theta_true is not None:
-        ax.scatter(
-            theta_true[0],
-            theta_true[1],
-            s=140,
-            marker="*",
-            c="k",
-            label=r"$\theta_{\mathrm{true}}$",
-        )
+        ax.legend()
+
+    if tt is not None:
+        ax.scatter(tt[0], tt[1], s=140, marker="*", c="k", label=r"$\theta_{\mathrm{true}}$")
+        ax.legend()
 
     ax.set_xlabel(names[0])
     ax.set_ylabel(names[1])
-    ax.set_title(title)
+    if title is not None:
+        ax.set_title(title)
     ax.grid(True)
-    ax.legend()
     fig.tight_layout()
-    plt.show()
+
+    if show:
+        plt.show()
+
+    return fig, ax
