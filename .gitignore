@@ -22,3 +22,4 @@ outputs/
 *mypy_cache
 *cache
 *nox
+*site
