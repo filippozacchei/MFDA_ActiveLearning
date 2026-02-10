@@ -5,8 +5,7 @@ using **Gaussian-process surrogates** and **Active/Adaptive MCMC** strategies. I
 uncertain *low-fidelity* (LF) surrogate with an accurate but expensive *high-fidelity* (HF) model,
 switching to HF evaluations when needed and optionally adapting the HF subchain length during sampling.
 
-The codebase is organised to keep scientific logic, sampling/inference workflows, and diagnostics
-separated, with unit tests for core components.
+The goal is to rely on the GP surrogate as much as possible during MCMC sampling, and leverage GP predictive uncertainty to decide when/where to switch to HF solver. This mantains the accuracy of teh MCMC sampling and reduces at minimum the costs of the data-fit model training phase.
 
 ---
 
