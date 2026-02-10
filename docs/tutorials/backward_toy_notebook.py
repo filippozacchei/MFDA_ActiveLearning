@@ -66,7 +66,6 @@ from gp_active_mcmc.diagnostics import (
 
 import copy
 
-
 # %% [markdown]
 # ## Configuration
 #

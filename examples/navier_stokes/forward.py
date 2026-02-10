@@ -41,7 +41,6 @@ from gp_active_mcmc.diagnostics.pod import plot_pod_energy
 from utils.outlet import resample_profile
 from utils.solver import forward_model as hf_solver
 
-
 # %% [markdown]
 # ## Configuration
 #

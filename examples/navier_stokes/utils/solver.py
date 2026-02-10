@@ -39,7 +39,6 @@ from .bfs_mesh import build_bfs_mesh
 from .outlet import sample_outlet_u_x
 from .types import BFSGeometry, MeshOptions, BoundaryMarkers, OutletProfile
 
-
 """Medium-fidelity Navier–Stokes solver for the backward-facing step (BFS).
 
 This module provides a *medium-fidelity* forward model for incompressible flow in a

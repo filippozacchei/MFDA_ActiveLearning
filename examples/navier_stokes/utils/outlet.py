@@ -6,7 +6,6 @@ from dolfinx.geometry import bb_tree, compute_collisions_points, compute_collidi
 
 from .types import OutletProfile
 
-
 """Outlet sampling utilities (QoI extraction).
 
 This module defines the quantity of interest (QoI) used in the Navier–Stokes example:
