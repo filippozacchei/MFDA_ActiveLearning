@@ -4,12 +4,16 @@ import numpy as np
 import pytest
 import copy
 
-from gp_active_mcmc.inference.coarse_output import CoarseOutput
 from gp_active_mcmc.inference.likelihood import ActiveGPLogLike
 from gp_active_mcmc.inference.proposal import AdaptiveMetropolisShared
-from gp_active_mcmc.inference.adaptive_subchain import AdaptiveSubchainState, AdaptiveSubchainControl, AdaptiveSubchain
+from gp_active_mcmc.inference.adaptive_subchain import (
+    AdaptiveSubchainState,
+    AdaptiveSubchainControl,
+    AdaptiveSubchain,
+)
 from gp_active_mcmc.inference.coarse_output import CoarseOutput
 from gp_active_mcmc.inference.model import ActiveMCMCModel
+
 
 def _manual_gaussian_loglike(y: np.ndarray, m: np.ndarray, C: np.ndarray) -> float:
     """Reference implementation using the closed-form MVN log-likelihood."""
@@ -22,7 +26,6 @@ def _manual_gaussian_loglike(y: np.ndarray, m: np.ndarray, C: np.ndarray) -> flo
         raise ValueError("Covariance must be positive definite.")
     diff = y - m
     quad = float(diff @ np.linalg.solve(C, diff))
-    n = y.shape[0]
     return float(-0.5 * quad)
 
 
@@ -79,7 +82,6 @@ def test_likelihood_rejects_variance_wrong_shape() -> None:
     C_obs = np.eye(3) * 0.1
     like = ActiveGPLogLike(y_obs, C_obs)
 
-    pred = CoarseOutput(np.zeros(3), np.ones(3))
     pred_bad = CoarseOutput(np.zeros(3), np.ones(3))
 
     # Force a shape mismatch by monkeypatching variance (simulates user error / bad surrogate)
@@ -150,6 +152,7 @@ def test_deepcopy_clones_instance_when_disabled() -> None:
     assert prop2.nested["a"] is not prop.nested["a"]
     assert prop2.nested["b"] is not prop.nested["b"]
     np.testing.assert_allclose(prop2.nested["b"], prop.nested["b"])
+
 
 class DummySurrogate:
     def __init__(self, *, var_scale: float = 0.0):
@@ -244,4 +247,3 @@ def test_adaptive_hook_updates_state_on_coarse_and_fine() -> None:
     assert len(state.hf_errors) == 1
     assert model.log.used_hf == [True]
     assert len(lf.update_calls) == 1
-

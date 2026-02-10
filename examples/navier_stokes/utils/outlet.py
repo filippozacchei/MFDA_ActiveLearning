@@ -1,6 +1,11 @@
 # examples/navier_stokes/utils/outlet.py
 from __future__ import annotations
 
+import numpy as np
+from dolfinx.geometry import bb_tree, compute_collisions_points, compute_colliding_cells
+
+from .types import OutletProfile
+
 """Outlet sampling utilities (QoI extraction).
 
 This module defines the quantity of interest (QoI) used in the Navier–Stokes example:
@@ -24,13 +29,6 @@ containing each point. We use:
 Points that do not collide with any cell are left as NaN by default (configurable),
 because silently filling zeros can hide geometry/mesh issues.
 """
-
-from dataclasses import replace
-
-import numpy as np
-from dolfinx.geometry import bb_tree, compute_collisions_points, compute_colliding_cells
-
-from .types import OutletProfile
 
 
 def sample_outlet_u_x(

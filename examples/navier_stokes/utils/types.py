@@ -1,6 +1,11 @@
 # examples/navier_stokes/utils/types.py
 from __future__ import annotations
 
+from dataclasses import dataclass
+from typing import Literal
+
+import numpy as np
+
 """Lightweight domain types for the Navier–Stokes backward-facing step example.
 
 This module defines *pure* dataclasses used across the example code.
@@ -20,10 +25,6 @@ Coordinate convention (typical for BFS benchmarks):
 All lengths are assumed to be in consistent units (e.g., meters).
 """
 
-from dataclasses import dataclass
-from typing import Literal
-
-import numpy as np
 
 BoundaryName = Literal["fluid", "inlet", "outlet", "wall"]
 

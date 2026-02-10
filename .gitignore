@@ -15,4 +15,10 @@ outputs/
 # Python bytecode
 *__pycache__/*
 *.py[cod]
-.DS_Store
+*DS_Store
+*vscode
+*ruff_cache
+*pytest_cache
+*mypy_cache
+*cache
+*nox

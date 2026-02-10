@@ -28,7 +28,6 @@ from __future__ import annotations
 from typing import Callable
 
 import numpy as np
-import matplotlib.pyplot as plt
 from scipy.stats import multivariate_normal
 from sklearn.model_selection import train_test_split
 
@@ -41,7 +40,6 @@ from gp_active_mcmc.diagnostics.pod import plot_pod_energy
 # Local Navier–Stokes utilities (example-specific; not part of gp_active_mcmc)
 from utils.outlet import resample_profile
 from utils.solver import forward_model as hf_solver
-
 
 # %% [markdown]
 # ## Configuration

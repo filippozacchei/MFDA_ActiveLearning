@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import matplotlib
+
 matplotlib.use("Agg")
 
 import numpy as np
@@ -14,6 +15,7 @@ from gp_active_mcmc.diagnostics.mcmc import (
     plot_surrogate_error_history,
 )
 from gp_active_mcmc.diagnostics.pod import pod_energy_from_snapshots, plot_pod_energy
+
 
 class DummyModel:
     def predict(self, theta):
@@ -37,7 +39,6 @@ def test_plot_prediction_at_theta_returns_fig_ax() -> None:
     y_obs = np.zeros_like(t)
     fig, ax = plot_prediction_at_theta(model, theta=np.array([0.0, 0.0]), t=t, y_obs=y_obs)
     assert fig is not None and ax is not None
-
 
 
 def test_plot_cumulative_hf_fraction_handles_empty() -> None:

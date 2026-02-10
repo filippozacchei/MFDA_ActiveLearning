@@ -1,5 +1,43 @@
 # examples/navier_stokes/utils/mf_ipcs.py
 from __future__ import annotations
+from dataclasses import dataclass
+
+import numpy as np
+import tqdm.autonotebook
+from mpi4py import MPI
+from petsc4py import PETSc
+from basix.ufl import element
+from dolfinx.fem import (
+    Constant,
+    Function,
+    dirichletbc,
+    form,
+    functionspace,
+    locate_dofs_topological,
+)
+from dolfinx.fem.petsc import (
+    assemble_matrix,
+    assemble_vector,
+    apply_lifting,
+    create_vector,
+    set_bc,
+)
+from ufl import (
+    TrialFunction,
+    TestFunction,
+    dot,
+    grad,
+    div,
+    nabla_grad,
+    dx,
+    lhs,
+    inner,
+)
+
+
+from .bfs_mesh import build_bfs_mesh
+from .outlet import sample_outlet_u_x
+from .types import BFSGeometry, MeshOptions, BoundaryMarkers, OutletProfile
 
 """Medium-fidelity Navier–Stokes solver for the backward-facing step (BFS).
 
@@ -47,45 +85,6 @@ This is a compact educational implementation. For production CFD you would typic
 - implement proper pressure nullspace handling (rather than pressure pinning),
 - tune Krylov/AMG options for scalability.
 """
-
-from dataclasses import dataclass
-
-import numpy as np
-import tqdm.autonotebook
-from mpi4py import MPI
-from petsc4py import PETSc
-from basix.ufl import element
-from dolfinx.fem import (
-    Constant,
-    Function,
-    dirichletbc,
-    form,
-    functionspace,
-    locate_dofs_topological,
-)
-from dolfinx.fem.petsc import (
-    assemble_matrix,
-    assemble_vector,
-    apply_lifting,
-    create_vector,
-    set_bc,
-)
-from ufl import (
-    TrialFunction,
-    TestFunction,
-    dot,
-    grad,
-    div,
-    nabla_grad,
-    dx,
-    lhs,
-    rhs,
-    inner,
-)
-
-from .bfs_mesh import build_bfs_mesh
-from .outlet import sample_outlet_u_x
-from .types import BFSGeometry, MeshOptions, BoundaryMarkers, OutletProfile
 
 
 @dataclass(frozen=True, slots=True)

@@ -3,7 +3,10 @@ from __future__ import annotations
 import numpy as np
 import pytest
 
-from gp_active_mcmc.inference.adaptive_subchain import AdaptiveSubchainControl, AdaptiveSubchainState
+from gp_active_mcmc.inference.adaptive_subchain import (
+    AdaptiveSubchainControl,
+    AdaptiveSubchainState,
+)
 
 
 def test_adaptive_state_append_length_and_step() -> None:
@@ -38,7 +41,14 @@ def test_append_error_rejects_shape_mismatch() -> None:
 
 
 def test_update_subchain_shrinks_when_error_high() -> None:
-    control = AdaptiveSubchainControl(update_every=2, target_error=0.1, min_subchain=1, max_subchain=100, grow_factor=2.0, shrink_factor=0.5)
+    control = AdaptiveSubchainControl(
+        update_every=2,
+        target_error=0.1,
+        min_subchain=1,
+        max_subchain=100,
+        grow_factor=2.0,
+        shrink_factor=0.5,
+    )
     state = AdaptiveSubchainState(subchain_length=10)
 
     # two HF steps to trigger update
@@ -52,7 +62,14 @@ def test_update_subchain_shrinks_when_error_high() -> None:
 
 
 def test_update_subchain_grows_when_error_low() -> None:
-    control = AdaptiveSubchainControl(update_every=2, target_error=1.0, min_subchain=1, max_subchain=100, grow_factor=2.0, shrink_factor=0.5)
+    control = AdaptiveSubchainControl(
+        update_every=2,
+        target_error=1.0,
+        min_subchain=1,
+        max_subchain=100,
+        grow_factor=2.0,
+        shrink_factor=0.5,
+    )
     state = AdaptiveSubchainState(subchain_length=10)
 
     state.hf_errors.append(0.1)  # below target
@@ -65,7 +82,14 @@ def test_update_subchain_grows_when_error_low() -> None:
 
 
 def test_update_subchain_respects_bounds() -> None:
-    control = AdaptiveSubchainControl(update_every=1, target_error=0.0, min_subchain=3, max_subchain=8, grow_factor=10.0, shrink_factor=0.1)
+    control = AdaptiveSubchainControl(
+        update_every=1,
+        target_error=0.0,
+        min_subchain=3,
+        max_subchain=8,
+        grow_factor=10.0,
+        shrink_factor=0.1,
+    )
     state = AdaptiveSubchainState(subchain_length=5)
 
     # err <= target => grow, but bounded by max_subchain
