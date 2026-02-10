@@ -41,6 +41,7 @@ Requires-Dist: mkdocstrings[python]>=0.24; extra == "docs"
 Requires-Dist: mkdocs-gen-files>=0.5; extra == "docs"
 Requires-Dist: mkdocs-literate-nav>=0.6; extra == "docs"
 Requires-Dist: mkdocs-section-index>=0.3; extra == "docs"
+Requires-Dist: mkdocs-jupyter; extra == "docs"
 Provides-Extra: examples
 Requires-Dist: pyvista; extra == "examples"
 Requires-Dist: gmsh==4.15.0; extra == "examples"

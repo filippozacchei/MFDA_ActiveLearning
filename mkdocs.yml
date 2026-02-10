@@ -1,10 +1,15 @@
 site_name: gp_active_mcmc
+repo_url: https://github.com/filippozacchei/MFDA_ActiveLearning
+repo_name: filippozacchei/MFDA_ActiveLearning
+
 theme:
   name: readthedocs
   features:
     - navigation.tabs
     - navigation.sections
     - toc.follow
+    - content.code.copy
+  highlightjs: true
 
 plugins:
   - search
@@ -14,22 +19,50 @@ plugins:
         python:
           options:
             docstring_style: numpy
+
+            # Headings & layout (improves scanability)
+            heading_level: 2
             show_root_heading: true
-            show_root_full_path: true
+            show_root_full_path: false
+
+            # Signatures: keep informative but avoid visual clutter
             show_signature: true
-            show_signature_annotations: true
+            show_signature_annotations: false
+            separate_signature: true
+
+            # Presentation
             show_symbol_type_heading: true
             show_source: false
-            heading_level: 2
 
+            # Navigation inside long pages
+            show_category_heading: true
+            members_order: source
+            merge_init_into_class: true
+
+            # Reduce noise from "dataclass fields as parameters"
+            show_if_no_docstring: false
+
+  - mkdocs-jupyter:
+      include_source: true
+      execute: true
 
 nav:
   - Home: index.md
   - User Guide:
       - Quickstart: guide/quickstart.md
       - Examples: guide/examples.md
+  - Tutorials:
+      - Backward toy (Active-MCMC): tutorials/backward_toy_notebook.py
+      - Forward toy (POD-GP): tutorials/forward_toy_notebook.py
   - API Reference:
       - Inference: api/inference.md
       - Surrogates: api/surrogates.md
       - Diagnostics: api/diagnostics.md
       - Utils: api/utils.md
+
+extra_css:
+  - stylesheets/extra.css
+
+extra_javascript:
+  - https://polyfill.io/v3/polyfill.min.js?features=es6
+  - https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-mml-chtml.js

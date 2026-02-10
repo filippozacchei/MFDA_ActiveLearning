@@ -7,34 +7,92 @@ import tinyDA as tda
 
 
 class AdaptiveMetropolisShared(tda.AdaptiveMetropolis):
-    """Adaptive Metropolis proposal with configurable deepcopy semantics.
+    """Adaptive Metropolis proposal with controlled deep-copy semantics.
 
-    Motivation
-    ----------
-    Some MCMC workflows (e.g., multiple chains or chunked sampling) may deepcopy
-    a proposal object. Depending on the application, you may want:
+    This proposal extends [`tinyDA.AdaptiveMetropolis`][tinyDA.AdaptiveMetropolis] by
+    defining what happens when the object is deep-copied.
 
-    - shared proposal state across deepcopies (default): adaptation history and
-      covariance updates are shared, so all copies behave as one evolving proposal.
-    - independent proposal state: deepcopies produce a separate object with a
-      deep-copied internal state.
+    Why this matters
+    ----------------
+    Some sampling workflows deep-copy the proposal (explicitly or implicitly), for example:
+
+    - **chunked sampling**, where the sampler is re-entered multiple times, and
+    - certain multi-chain patterns.
+
+    For adaptive proposals, deep-copying changes the algorithmic behaviour:
+
+    - **Shared state**: adaptation continues across chunks as if there were a single proposal.
+      This is typically what you want for chunked active sampling.
+    - **Independent state**: each deepcopy adapts independently, which is appropriate only
+      when you truly want independent proposals (e.g., fully independent chains).
+
+    In this library, shared state is often the default because
+    [`sample_adaptive_active_chain`][gp_active_mcmc.inference.sampling.sample_adaptive_active_chain]
+    runs `tinyDA` repeatedly in chunks and we want a single evolving proposal.
 
     Parameters
     ----------
+    *args, **kwargs
+        Passed through to [`tinyDA.AdaptiveMetropolis`][tinyDA.AdaptiveMetropolis].
     share_across_deepcopy
-        If True, ``copy.deepcopy(proposal)`` returns the same instance.
-        If False, ``deepcopy`` produces an independent clone.
+        Controls deepcopy behaviour:
+
+        - True (default): ``copy.deepcopy(proposal)`` returns the same instance
+          (proposal state is shared).
+        - False: deepcopies produce independent clones with a deep-copied internal state.
+
+    Notes
+    -----
+    Returning `self` from `__deepcopy__` is a deliberate deviation from standard Python
+    semantics. It preserves adaptation history in workflows where deepcopies are an
+    implementation detail rather than a user intent.
+
+    See Also
+    --------
+    [`sample_adaptive_active_chain`][gp_active_mcmc.inference.sampling.sample_adaptive_active_chain]
+        Chunked sampler where shared proposal state is typically desired.
+    [`ChunkedMCMCConfig`][gp_active_mcmc.inference.sampling.ChunkedMCMCConfig]
+        Configuration controlling chunk size for adaptive sampling.
+
+    Examples
+    --------
+    Shared adaptation across chunks:
+
+    >>> prop = AdaptiveMetropolisShared(C0=C0, period=100, share_across_deepcopy=True)
+
+    Independent adaptation (useful for truly independent chains):
+
+    >>> prop = AdaptiveMetropolisShared(C0=C0, period=100, share_across_deepcopy=False)
     """
-    def __init__(self, *args: Any, share_across_deepcopy: bool = True, **kwargs: Any) -> None:
+
+    def __init__(
+        self,
+        *args: Any,
+        share_across_deepcopy: bool = True,
+        **kwargs: Any,
+    ) -> None:
         super().__init__(*args, **kwargs)
         self._share_across_deepcopy = bool(share_across_deepcopy)
 
     def __deepcopy__(self, memo: dict[int, object]) -> "AdaptiveMetropolisShared":
+        """Deep-copy the proposal according to `share_across_deepcopy`.
+
+        Parameters
+        ----------
+        memo
+            Standard deepcopy memo dictionary used to preserve object identity and
+            avoid infinite recursion.
+
+        Returns
+        -------
+        proposal
+            If `share_across_deepcopy=True`, returns `self` (shared state).
+            Otherwise returns a deep-copied independent clone.
+        """
         if self._share_across_deepcopy:
             memo[id(self)] = self
             return self
 
-        # Deep-copy attributes
         cls = self.__class__
         new_obj = cls.__new__(cls)  # type: ignore[misc]
         memo[id(self)] = new_obj

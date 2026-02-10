@@ -5,25 +5,55 @@ from dataclasses import dataclass, field
 import numpy as np
 from numpy.typing import NDArray
 
-
 FloatArray = NDArray[np.floating]
 
 
 @dataclass(frozen=True, slots=True)
 class AdaptiveSubchainControl:
-    """Control parameters for adaptive HF subchain length.
+    """Hyperparameters for adaptive subchain-length control.
 
-    Semantics
-    ---------
-    The adaptive mechanism adjusts the HF subchain length based on an error
-    statistic computed when HF is evaluated.
+    This control block specifies *how* the adaptive policy reacts to observed LF–HF
+    discrepancy during sampling.
 
-    - If the error is above `target_error`, the subchain length is reduced
-      (more frequent HF corrections).
-    - If the error is below `target_error`, the subchain length is increased
+    In DA-MCMC guided active learning, the sampler periodically performs a **fine**
+    (HF) correction. The number of coarse steps taken between fine corrections is the
+    **subchain length** (often called the subsampling rate).
+
+    The update rule is:
+
+    - if the most recent LF–HF error is **above** `target_error`, decrease the subchain
+      length (more frequent HF corrections);
+    - if the error is **below** `target_error`, increase the subchain length
       (less frequent HF corrections).
 
-    Updates occur every `update_every` HF steps.
+    Updates are attempted every `update_every` HF evaluations.
+
+    Parameters
+    ----------
+    update_every
+        Number of HF evaluations between policy updates. Must be positive.
+    target_error
+        Target level for the LF–HF error statistic (non-negative).
+    min_subchain
+        Lower bound on the subchain length (minimum spacing between HF corrections is 1).
+    max_subchain
+        Upper bound on the subchain length.
+    grow_factor
+        Multiplicative factor used when error is below target. Must be > 1.
+    shrink_factor
+        Multiplicative factor used when error is above target. Must be in (0, 1).
+
+    Notes
+    -----
+    The default values are tuned for toy problems. In real applications, `target_error`
+    should reflect acceptable surrogate error in the observation space used by the likelihood.
+
+    See Also
+    --------
+    [AdaptiveSubchain][gp_active_mcmc.inference.adaptive_subchain.AdaptiveSubchain]
+        Adaptive policy that uses this control block.
+    [ActiveMCMCModel][gp_active_mcmc.inference.model.ActiveMCMCModel]
+        The active model that calls the policy hooks during coarse/fine evaluations.
     """
 
     update_every: int = 10
@@ -50,25 +80,42 @@ class AdaptiveSubchainControl:
 
 @dataclass(slots=True)
 class AdaptiveSubchainState:
-    """Mutable adaptive state for HF subchain control.
+    """Mutable state for adaptive subchain control.
+
+    This object stores the *current* subchain length and the histories needed for
+    diagnostics and adaptation.
 
     Parameters
     ----------
     subchain_length
-        Current HF subchain length (how many coarse steps are taken between HF evaluations).
+        Current subchain length (number of coarse steps between HF corrections).
+        Must be positive.
 
-    Stored history
-    --------------
+    Attributes
+    ----------
     subchain_history
-        Records subchain lengths at each coarse call.
+        Records the subchain length at each coarse evaluation (aligned with coarse calls).
     hf_errors
-        Records the HF-vs-LF error statistic computed at each fine call.
+        LF–HF error values computed at each fine evaluation.
     total_hf_steps
-        Counts the number of HF evaluations.
+        Total number of HF evaluations performed.
+    _hf_since_update
+        Internal counter tracking HF evaluations since the last update.
 
     Notes
     -----
-    The error statistic used here is RMSE between LF mean and HF output.
+    The error statistic used here is **RMSE** between the LF predictive mean and the HF
+    output in observation space:
+
+    $$
+        \\mathrm{RMSE}(\\mu_{\\mathrm{LF}}, y_{\\mathrm{HF}}) =
+        \\sqrt{\\frac{1}{n}\\sum_{i=1}^{n}(\\mu_{\\mathrm{LF}, i} - y_{\\mathrm{HF}, i})^2}.
+    $$
+
+    See Also
+    --------
+    [AdaptiveSubchainControl][gp_active_mcmc.inference.adaptive_subchain.AdaptiveSubchainControl]
+        Control parameters used to update the subchain length.
     """
 
     subchain_length: int = 10
@@ -76,7 +123,6 @@ class AdaptiveSubchainState:
     hf_errors: list[float] = field(default_factory=list)
     total_hf_steps: int = 0
 
-    # internal counter for update scheduling
     _hf_since_update: int = 0
 
     def __post_init__(self) -> None:
@@ -84,26 +130,59 @@ class AdaptiveSubchainState:
             raise ValueError("subchain_length must be positive.")
 
     def append_length(self) -> None:
-        """Record the current subchain length (called at each coarse evaluation)."""
+        """Record the current subchain length.
+
+        This should be called exactly once per *coarse* evaluation so that
+        `subchain_history` remains aligned with coarse calls.
+        """
         self.subchain_history.append(int(self.subchain_length))
 
     def step(self) -> None:
-        """Advance the HF step counters (called exactly once per fine evaluation)."""
+        """Advance HF counters.
+
+        This should be called exactly once per *fine* evaluation.
+        """
         self.total_hf_steps += 1
         self._hf_since_update += 1
 
     def append_error(self, lf_mean: FloatArray, y_hf: FloatArray) -> None:
-        """Compute and record an error statistic between LF mean and HF output."""
+        """Compute and record an LF–HF error statistic (RMSE).
+
+        Parameters
+        ----------
+        lf_mean
+            LF predictive mean at the current parameter value (before surrogate update).
+        y_hf
+            HF model output at the current parameter value.
+
+        Raises
+        ------
+        ValueError
+            If `lf_mean` and `y_hf` have different shapes.
+        """
         lf = np.asarray(lf_mean, dtype=float).ravel()
         hf = np.asarray(y_hf, dtype=float).ravel()
         if lf.shape != hf.shape:
-            raise ValueError(f"lf_mean and y_hf must have same shape. Got {lf.shape} vs {hf.shape}.")
+            raise ValueError(
+                f"lf_mean and y_hf must have same shape. Got {lf.shape} vs {hf.shape}."
+            )
 
         rmse = float(np.sqrt(np.mean((lf - hf) ** 2)))
         self.hf_errors.append(rmse)
 
     def update_subchain(self, control: AdaptiveSubchainControl) -> None:
-        """Update subchain length according to the control policy (periodic)."""
+        """Update the subchain length according to `control`.
+
+        The update is performed only when:
+
+        - at least `control.update_every` HF evaluations have occurred since the last update, and
+        - at least one error value is available.
+
+        Parameters
+        ----------
+        control
+            Policy hyperparameters controlling update frequency, bounds, and scaling.
+        """
         if self._hf_since_update < control.update_every:
             return
         if not self.hf_errors:
@@ -119,29 +198,66 @@ class AdaptiveSubchainState:
         new_len = max(control.min_subchain, min(control.max_subchain, new_len))
         self.subchain_length = int(new_len)
 
-        # reset scheduling counter
         self._hf_since_update = 0
+
 
 @dataclass(slots=True)
 class AdaptiveSubchain:
-    """Adaptive subchain length driven by AdaptiveState/AdaptiveControl.
+    """Adaptive subchain policy for DA-MCMC guided active learning.
+
+    `AdaptiveSubchain` implements the hook interface
+    [AdaptiveHook][gp_active_mcmc.inference.model.AdaptiveHook] used by
+    [ActiveMCMCModel][gp_active_mcmc.inference.model.ActiveMCMCModel].
 
     Semantics
     ---------
-    - Each coarse call records the current subchain length (history).
-    - Each fine call:
-      - appends a prediction error (LF mean vs HF),
-      - updates the subchain length policy,
-      - increments total HF steps.
+    - On each **coarse** call: record the current subchain length.
+    - On each **fine** call:
+      1. compute and store LF–HF error (currently RMSE in observation space),
+      2. update the subchain length if the update schedule triggers,
+      3. increment HF counters.
+
+    Intended usage
+    --------------
+    This policy is intended to be used with:
+
+    - **two posteriors** `[coarse, fine]` (DA-MCMC is mandatory), and
+    - a chunked sampler such as
+      [sample_adaptive_active_chain][gp_active_mcmc.inference.sampling.sample_adaptive_active_chain],
+      because `tinyDA` requires a fixed subsampling rate within each call.
+
+    Parameters
+    ----------
+    state
+        Mutable adaptive state (current length, histories, counters).
+    control
+        Control parameters (targets, bounds, and update schedule).
+
+    See Also
+    --------
+    [ActiveMCMCModel][gp_active_mcmc.inference.model.ActiveMCMCModel]
+        The active model that triggers `on_coarse_call` / `on_fine_call`.
+    [ChunkedMCMCConfig][gp_active_mcmc.inference.sampling.ChunkedMCMCConfig]
+        Chunk configuration used by the adaptive sampler.
     """
 
     state: AdaptiveSubchainState
     control: AdaptiveSubchainControl
 
     def on_coarse_call(self) -> None:
+        """Hook called by the active model at the start of a coarse evaluation."""
         self.state.append_length()
 
     def on_fine_call(self, *, y_hf: FloatArray, y_lf: FloatArray) -> None:
+        """Hook called by the active model during fine evaluation.
+
+        Parameters
+        ----------
+        y_hf
+            HF output at the current parameter value.
+        y_lf
+            LF predictive mean at the current parameter value (before surrogate update).
+        """
         self.state.append_error(y_lf, y_hf)
         self.state.update_subchain(self.control)
         self.state.step()

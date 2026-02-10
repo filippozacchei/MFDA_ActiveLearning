@@ -46,7 +46,7 @@ from gp_active_mcmc.diagnostics.surrogate import (
 #
 # If you keep the toy utilities under `examples/toy_problem/toy.py`, this alternative
 # import is fine as long as the examples package is on `PYTHONPATH`.
-from toy import make_timeline, toy_forward
+from examples.toy_problem.toy import make_timeline, toy_forward
 
 # %% [markdown]
 # ## Configuration
