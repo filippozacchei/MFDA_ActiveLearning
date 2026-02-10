@@ -1,25 +1,44 @@
 import nox
 
-python_versions = ["3.10"]
+PYTHON_VERSIONS = ("3.10",)
+CODE_LOCATIONS = ("src", "tests", "examples", "docs", "noxfile.py")
+
+nox.options.sessions = ("lint", "tests", "typecheck", "docs")
+nox.options.reuse_existing_virtualenvs = True
 
 
-@nox.session(python=python_versions)
-def tests(session):
-    """Run all unit tests with pytest."""
-    session.install("-r", "requirements.txt")
-    session.run("pytest", "tests")
+def install(session, extra: str | None = None) -> None:
+    """Install the project in editable mode with an optional extra."""
+    target = "."
+    if extra:
+        target += f"[{extra}]"
+    session.install("-e", target)
 
 
-@nox.session(python=python_versions)
-def lint(session):
-    """Run linters: black, flake8."""
-    session.install("-r", "requirements-dev.txt")
-    session.run("black", "--check", "code")
-    session.run("flake8", "code")
+@nox.session(python=PYTHON_VERSIONS)
+def tests(session: nox.Session) -> None:
+    """Run the pytest suite with the dev extra."""
+    install(session, "dev")
+    session.run("pytest", "-q", "--strict-markers", "--tb=short")
 
 
-@nox.session(python=python_versions)
-def format(session):
-    """Auto-format code with black."""
-    session.install("-r", "requirements-dev.txt")
-    session.run("black", "code")
+@nox.session(python=PYTHON_VERSIONS)
+def lint(session: nox.Session) -> None:
+    """Run formatting and style checks."""
+    install(session, "dev")
+    session.run("ruff", "check", *CODE_LOCATIONS)
+    session.run("black", "--check", *CODE_LOCATIONS)
+
+
+@nox.session(python=PYTHON_VERSIONS)
+def typecheck(session: nox.Session) -> None:
+    """Run mypy on the source tree."""
+    install(session, "dev")
+    session.run("mypy", "src")
+
+
+@nox.session(python=PYTHON_VERSIONS)
+def docs(session: nox.Session) -> None:
+    """Build the MkDocs site (executes notebooks)."""
+    install(session, "docs")
+    session.run("mkdocs", "build", "--strict")

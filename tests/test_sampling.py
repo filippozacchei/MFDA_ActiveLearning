@@ -3,7 +3,7 @@ from __future__ import annotations
 import numpy as np
 import pytest
 
-from gp_active_mcmc.inference.sampling import ChunkedMCMCConfig, sample_active_chain
+from gp_active_mcmc.inference.sampling import sample_active_chain
 
 
 class _Link:
@@ -23,7 +23,6 @@ class _Model:
 def test_sample_active_chain_builds_result(monkeypatch: pytest.MonkeyPatch) -> None:
     # fake tinyDA.sample output
     def _fake_sample(**kwargs):
-        chain_key = kwargs.get("store_coarse_chain") and "chain_0" or "chain_0"
         return {"chain_0": [_Link(np.array([0.0, 0.0])), _Link(np.array([1.0, 0.0]))]}
 
     import gp_active_mcmc.inference.sampling as sampling_mod

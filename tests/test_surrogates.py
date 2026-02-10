@@ -87,6 +87,7 @@ def test_transform_requires_matching_time_dimension() -> None:
     pod = POD(rank=4, randomized=False).fit(Y)
 
     Y_bad = Y[:, :-1]  # wrong n_time
+
     with pytest.raises(ValueError, match="incompatible time dimension"):
         _ = pod.transform(Y_bad)
 

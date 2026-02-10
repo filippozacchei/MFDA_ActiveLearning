@@ -300,6 +300,7 @@ fig_s1, ax_s1 = plot_prediction_at_theta(
     model_single,
     theta=theta_true,
     y_obs=y_obs,
+    t=t,
     y_true=hf_forward(theta_true),
     title="Surrogate prediction (after MCMC sampling)",
 )
@@ -364,5 +365,6 @@ fig_s2, ax_s2 = plot_prediction_at_theta(
     theta=theta_true,
     y_obs=y_obs,
     y_true=hf_forward(theta_true),
+    t=t,
     title="Surrogate prediction (after DA-MCMC sampling)",
 )

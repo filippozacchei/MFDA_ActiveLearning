@@ -1,4 +1,10 @@
 from __future__ import annotations
+from dataclasses import dataclass
+from typing import Optional
+
+import numpy as np
+from numpy.typing import ArrayLike, NDArray
+from sklearn.utils.extmath import randomized_svd
 
 """Proper Orthogonal Decomposition (POD).
 
@@ -25,13 +31,6 @@ scikit-learn conventions
 In this library, POD is typically used to compress high-dimensional model outputs before
 training a surrogate model (e.g. a GP) on POD coefficients.
 """
-
-from dataclasses import dataclass
-from typing import Optional
-
-import numpy as np
-from numpy.typing import ArrayLike, NDArray
-from sklearn.utils.extmath import randomized_svd
 
 FloatArray = NDArray[np.floating]
 
@@ -230,8 +229,7 @@ class POD:
 
         if Y_arr.shape[1] != self.mean_.shape[0]:
             raise ValueError(
-                "Y has incompatible observation dimension: "
-                f"got {Y_arr.shape[1]}, expected {self.mean_.shape[0]}."
+                f"Y has incompatible time dimension: got {Y_arr.shape[1]}, expected {self.mean_.shape[0]}."
             )
 
         return (Y_arr - self.mean_) @ self.components_.T  # (n, r)

@@ -1,5 +1,12 @@
 # examples/navier_stokes/utils/bfs_mesh.py
 from __future__ import annotations
+from dataclasses import dataclass
+import numpy as np
+import gmsh
+from mpi4py import MPI
+from dolfinx.io import gmshio
+
+from .types import BFSGeometry, MeshOptions, BoundaryMarkers
 
 """Mesh generation for the backward-facing step (BFS) benchmark.
 
@@ -27,15 +34,6 @@ center-of-mass:
 - x ≈ L_total   -> outlet
 - otherwise     -> wall
 """
-
-from dataclasses import dataclass
-
-import numpy as np
-import gmsh
-from mpi4py import MPI
-from dolfinx.io import gmshio
-
-from .types import BFSGeometry, MeshOptions, BoundaryMarkers
 
 
 @dataclass(frozen=True, slots=True)

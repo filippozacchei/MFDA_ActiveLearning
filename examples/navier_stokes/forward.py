@@ -28,7 +28,6 @@ from __future__ import annotations
 from typing import Callable
 
 import numpy as np
-import matplotlib.pyplot as plt
 from scipy.stats import multivariate_normal
 from sklearn.model_selection import train_test_split
 
