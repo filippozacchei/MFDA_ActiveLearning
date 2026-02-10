@@ -32,7 +32,7 @@ def main() -> None:
         y=np.linspace(0.0, H, 120),
     )
 
-    out = Path("examples/navier-stokes/outputs/velocity.gif")
+    out = Path("examples/navier_stokes/outputs/velocity.gif")
     make_velocity_animation(
         mesh=mesh,
         frames=frames,

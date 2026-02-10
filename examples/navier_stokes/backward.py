@@ -82,8 +82,8 @@ rng = set_seed(SEED)
 T = 100  # outlet profile length after resampling
 
 # MCMC budgets (measured in coarse-evaluation units)
-N_COARSE_EVALS = 2_000
-BURNIN = 800
+N_COARSE_EVALS = 1_000
+BURNIN = 100
 
 # Surrogate training
 N_INIT = 25  # number of HF snapshots for initial surrogate
@@ -95,20 +95,20 @@ UPDATE_EVERY = 100
 N_RETRAIN_MAX = 0
 
 # Observation noise and active coupling
-SIGMA_OBS = 0.10
-GAMMA_THRESHOLD = 0.10  # triggers HF in coarse() when mean(var) > gamma_threshold**2
+SIGMA_OBS = 0.01
+GAMMA_THRESHOLD = 0.01  # triggers HF in coarse() when mean(var) > gamma_threshold**2
 
 # Adaptive subchains (recommended strategy)
 INIT_SUBCHAIN = 5  # initial subchain length
 CHUNK_SIZE = 200  # coarse-evaluation units per chunk
-TARGET_ERROR = 0.05  # RMSE target between LF mean and HF output at fine calls
+TARGET_ERROR = 0.005  # RMSE target between LF mean and HF output at fine calls
 UPDATE_EVERY_HF = 5  # update control every N HF evaluations
 MIN_SUBCHAIN = 1
 MAX_SUBCHAIN = 500
 
 # Prior support (informative but not strictly enforced by MVN prior)
 H1_MIN, H1_MAX = 0.05, 0.15
-U_MIN, U_MAX = 0.25, 1.00
+U_MIN, U_MAX = 0.5, 1.50
 L_MIN, L_MAX = 0.30, 0.50
 
 # %% [markdown]
@@ -248,7 +248,7 @@ result_active = sample_active_chain(
     store_coarse_chain=True,
 )
 
-chain_active = result_active.chain
+chain_active = result_active.chain.burnin(burnin=BURNIN)
 samples_active = chain_active.samples
 used_hf_active = chain_active.extras.used_hf
 
@@ -314,6 +314,16 @@ plot_prediction_at_theta(
     show=True,
 )
 
+proposal = AdaptiveMetropolisShared(
+    C0=0.1 * prior_cov,
+    sd=1.0,
+    adaptive=True,
+    period=100,
+    share_across_deepcopy=True,
+)
+
+theta0 = prior_mean.copy()
+
 result_adapt = sample_adaptive_active_chain(
     model=model_adaptive,
     posterior=posterior_da,
@@ -327,7 +337,7 @@ result_adapt = sample_adaptive_active_chain(
     store_coarse_chain=True,
 )
 
-chain_adapt = result_adapt.chain
+chain_adapt = result_adapt.chain.burnin(burnin=BURNIN)
 samples_adapt = chain_adapt.samples
 used_hf_adapt = chain_adapt.extras.used_hf
 subchain_hist = chain_adapt.extras.subchain_length
@@ -361,5 +371,5 @@ if subchain_hist is not None:
 # ## Summaries
 
 # %%
-print("Active MCMC summary:", chain_active.summary(theta_true=theta_true, burnin=BURNIN))
-print("Adaptive DA-MCMC summary:", chain_adapt.summary(theta_true=theta_true, burnin=BURNIN))
+print("Active MCMC summary:", chain_active.summary(theta_true=theta_true))
+print("Adaptive DA-MCMC summary:", chain_adapt.summary(theta_true=theta_true))

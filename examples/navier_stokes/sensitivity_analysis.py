@@ -48,7 +48,7 @@ def plot_vs_upstream_height(
         ax.plot(prof.u_x, prof.y, label=f"h2={h2:.3f}")
     ax.set_xlabel(r"$u_x$ at outlet")
     ax.set_ylabel("y")
-    ax.set_title("MF: outlet profile vs downstream height")
+    ax.set_title("MF: outlet profile vs upstream height")
     ax.grid(True)
     ax.legend()
     fig.tight_layout()

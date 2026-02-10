@@ -36,6 +36,7 @@ from gp_active_mcmc.surrogates import MultiOutputGP, POD, PODGPSurrogate
 from gp_active_mcmc.utils.rng import set_seed
 from gp_active_mcmc.utils.metrics import rmse, coverage
 from gp_active_mcmc.diagnostics.surrogate import plot_prediction_at_theta
+from gp_active_mcmc.diagnostics.pod import plot_pod_energy
 
 # Local Navier–Stokes utilities (example-specific; not part of gp_active_mcmc)
 from utils.outlet import resample_profile
@@ -279,6 +280,8 @@ def main() -> None:
     X, Y = generate_dataset(solver=hf_solver, prior=prior, n=N_SNAPSHOTS, T=T, rng=rng)
 
     X_tr, X_te, Y_tr, Y_te = train_test_split(X, Y, test_size=TEST_SIZE, random_state=RANDOM_STATE)
+
+    plot_pod_energy(Y_tr, r_max=len(Y_tr))
 
     # --------------------------------------------------------------
     # Surrogate

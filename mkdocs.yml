@@ -58,8 +58,7 @@ nav:
   - Tutorials:
       - Backward toy (Active-MCMC): tutorials/backward_toy_notebook.py
       - Forward toy (POD-GP): tutorials/forward_toy_notebook.py
-      - Backward Navier-Stokes (Active-MCMC): tutorials/ns_backward_notebook.py
-      - Forward Navier-Stokes: tutorials/ns_forward_notebook.py
+      - Navier-Stokes: tutorials/navier_stokes.md
   - API Reference:
       - Inference: api/inference.md
       - Surrogates: api/surrogates.md
