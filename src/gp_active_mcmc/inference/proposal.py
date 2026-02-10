@@ -94,7 +94,7 @@ class AdaptiveMetropolisShared(tda.AdaptiveMetropolis):
             return self
 
         cls = self.__class__
-        new_obj = cls.__new__(cls)  # type: ignore[misc]
+        new_obj = cls.__new__(cls)
         memo[id(self)] = new_obj
         for k, v in self.__dict__.items():
             setattr(new_obj, k, copy.deepcopy(v, memo))

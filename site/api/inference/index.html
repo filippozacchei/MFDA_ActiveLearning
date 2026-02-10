@@ -1,0 +1,6239 @@
+
+<!doctype html>
+<html lang="en" class="no-js">
+  <head>
+    
+      <meta charset="utf-8">
+      <meta name="viewport" content="width=device-width,initial-scale=1">
+      
+      
+      
+      
+        <link rel="prev" href="../../tutorials/navier_stokes/">
+      
+      
+        <link rel="next" href="../surrogates/">
+      
+      
+        
+      
+      
+      <link rel="icon" href="../../assets/images/favicon.png">
+      <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.7.1">
+    
+    
+      
+        <title>Inference - gp_active_mcmc</title>
+      
+    
+    
+      <link rel="stylesheet" href="../../assets/stylesheets/main.484c7ddc.min.css">
+      
+      
+
+
+    
+    
+      
+    
+    
+      
+        
+        
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+        <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Roboto:300,300i,400,400i,700,700i%7CRoboto+Mono:400,400i,700,700i&display=fallback">
+        <style>:root{--md-text-font:"Roboto";--md-code-font:"Roboto Mono"}</style>
+      
+    
+    
+      <link rel="stylesheet" href="../../assets/_mkdocstrings.css">
+    
+      <link rel="stylesheet" href="../../stylesheets/extra.css">
+    
+    <script>__md_scope=new URL("../..",location),__md_hash=e=>[...e].reduce(((e,_)=>(e<<5)-e+_.charCodeAt(0)),0),__md_get=(e,_=localStorage,t=__md_scope)=>JSON.parse(_.getItem(t.pathname+"."+e)),__md_set=(e,_,t=localStorage,a=__md_scope)=>{try{t.setItem(a.pathname+"."+e,JSON.stringify(_))}catch(e){}}</script>
+    
+      
+
+    
+    
+  </head>
+  
+  
+    <body dir="ltr">
+  
+    
+    <input class="md-toggle" data-md-toggle="drawer" type="checkbox" id="__drawer" autocomplete="off">
+    <input class="md-toggle" data-md-toggle="search" type="checkbox" id="__search" autocomplete="off">
+    <label class="md-overlay" for="__drawer"></label>
+    <div data-md-component="skip">
+      
+        
+        <a href="#inference" class="md-skip">
+          Skip to content
+        </a>
+      
+    </div>
+    <div data-md-component="announce">
+      
+    </div>
+    
+    
+      
+
+<header class="md-header" data-md-component="header">
+  <nav class="md-header__inner md-grid" aria-label="Header">
+    <a href="../.." title="gp_active_mcmc" class="md-header__button md-logo" aria-label="gp_active_mcmc" data-md-component="logo">
+      
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3m0 3.54C9.64 9.35 6.5 8 3 8v11c3.5 0 6.64 1.35 9 3.54 2.36-2.19 5.5-3.54 9-3.54V8c-3.5 0-6.64 1.35-9 3.54"/></svg>
+
+    </a>
+    <label class="md-header__button md-icon" for="__drawer">
+      
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M3 6h18v2H3zm0 5h18v2H3zm0 5h18v2H3z"/></svg>
+    </label>
+    <div class="md-header__title" data-md-component="header-title">
+      <div class="md-header__ellipsis">
+        <div class="md-header__topic">
+          <span class="md-ellipsis">
+            gp_active_mcmc
+          </span>
+        </div>
+        <div class="md-header__topic" data-md-component="header-topic">
+          <span class="md-ellipsis">
+            
+              Inference
+            
+          </span>
+        </div>
+      </div>
+    </div>
+    
+    
+      <script>var palette=__md_get("__palette");if(palette&&palette.color){if("(prefers-color-scheme)"===palette.color.media){var media=matchMedia("(prefers-color-scheme: light)"),input=document.querySelector(media.matches?"[data-md-color-media='(prefers-color-scheme: light)']":"[data-md-color-media='(prefers-color-scheme: dark)']");palette.color.media=input.getAttribute("data-md-color-media"),palette.color.scheme=input.getAttribute("data-md-color-scheme"),palette.color.primary=input.getAttribute("data-md-color-primary"),palette.color.accent=input.getAttribute("data-md-color-accent")}for(var[key,value]of Object.entries(palette.color))document.body.setAttribute("data-md-color-"+key,value)}</script>
+    
+    
+    
+      
+      
+        <label class="md-header__button md-icon" for="__search">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        </label>
+        <div class="md-search" data-md-component="search" role="dialog">
+  <label class="md-search__overlay" for="__search"></label>
+  <div class="md-search__inner" role="search">
+    <form class="md-search__form" name="search">
+      <input type="text" class="md-search__input" name="query" aria-label="Search" placeholder="Search" autocapitalize="off" autocorrect="off" autocomplete="off" spellcheck="false" data-md-component="search-query" required>
+      <label class="md-search__icon md-icon" for="__search">
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20 11v2H8l5.5 5.5-1.42 1.42L4.16 12l7.92-7.92L13.5 5.5 8 11z"/></svg>
+      </label>
+      <nav class="md-search__options" aria-label="Search">
+        
+        <button type="reset" class="md-search__icon md-icon" title="Clear" aria-label="Clear" tabindex="-1">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M19 6.41 17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg>
+        </button>
+      </nav>
+      
+    </form>
+    <div class="md-search__output">
+      <div class="md-search__scrollwrap" tabindex="0" data-md-scrollfix>
+        <div class="md-search-result" data-md-component="search-result">
+          <div class="md-search-result__meta">
+            Initializing search
+          </div>
+          <ol class="md-search-result__list" role="presentation"></ol>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+      
+    
+    
+      <div class="md-header__source">
+        <a href="https://github.com/filippozacchei/MFDA_ActiveLearning" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M439.6 236.1 244 40.5c-5.4-5.5-12.8-8.5-20.4-8.5s-15 3-20.4 8.4L162.5 81l51.5 51.5c27.1-9.1 52.7 16.8 43.4 43.7l49.7 49.7c34.2-11.8 61.2 31 35.5 56.7-26.5 26.5-70.2-2.9-56-37.3L240.3 199v121.9c25.3 12.5 22.3 41.8 9.1 55-6.4 6.4-15.2 10.1-24.3 10.1s-17.8-3.6-24.3-10.1c-17.6-17.6-11.1-46.9 11.2-56v-123c-20.8-8.5-24.6-30.7-18.6-45L142.6 101 8.5 235.1C3 240.6 0 247.9 0 255.5s3 15 8.5 20.4l195.6 195.7c5.4 5.4 12.7 8.4 20.4 8.4s15-3 20.4-8.4l194.7-194.7c5.4-5.4 8.4-12.8 8.4-20.4s-3-15-8.4-20.4"/></svg>
+  </div>
+  <div class="md-source__repository">
+    filippozacchei/MFDA_ActiveLearning
+  </div>
+</a>
+      </div>
+    
+  </nav>
+  
+</header>
+    
+    <div class="md-container" data-md-component="container">
+      
+      
+        
+          
+            
+<nav class="md-tabs" aria-label="Tabs" data-md-component="tabs">
+  <div class="md-grid">
+    <ul class="md-tabs__list">
+      
+        
+  
+  
+  
+  
+    <li class="md-tabs__item">
+      <a href="../.." class="md-tabs__link">
+        
+  
+  
+    
+  
+  Home
+
+      </a>
+    </li>
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../guide/quickstart/" class="md-tabs__link">
+          
+  
+  
+  User Guide
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../tutorials/backward_toy_notebook/" class="md-tabs__link">
+          
+  
+  
+  Tutorials
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+    
+  
+  
+    
+    
+      <li class="md-tabs__item md-tabs__item--active">
+        <a href="./" class="md-tabs__link">
+          
+  
+  
+  API Reference
+
+        </a>
+      </li>
+    
+  
+
+      
+    </ul>
+  </div>
+</nav>
+          
+        
+      
+      <main class="md-main" data-md-component="main">
+        <div class="md-main__inner md-grid">
+          
+            
+              
+              <div class="md-sidebar md-sidebar--primary" data-md-component="sidebar" data-md-type="navigation" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+
+  
+
+
+<nav class="md-nav md-nav--primary md-nav--lifted" aria-label="Navigation" data-md-level="0">
+  <label class="md-nav__title" for="__drawer">
+    <a href="../.." title="gp_active_mcmc" class="md-nav__button md-logo" aria-label="gp_active_mcmc" data-md-component="logo">
+      
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3m0 3.54C9.64 9.35 6.5 8 3 8v11c3.5 0 6.64 1.35 9 3.54 2.36-2.19 5.5-3.54 9-3.54V8c-3.5 0-6.64 1.35-9 3.54"/></svg>
+
+    </a>
+    gp_active_mcmc
+  </label>
+  
+    <div class="md-nav__source">
+      <a href="https://github.com/filippozacchei/MFDA_ActiveLearning" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M439.6 236.1 244 40.5c-5.4-5.5-12.8-8.5-20.4-8.5s-15 3-20.4 8.4L162.5 81l51.5 51.5c27.1-9.1 52.7 16.8 43.4 43.7l49.7 49.7c34.2-11.8 61.2 31 35.5 56.7-26.5 26.5-70.2-2.9-56-37.3L240.3 199v121.9c25.3 12.5 22.3 41.8 9.1 55-6.4 6.4-15.2 10.1-24.3 10.1s-17.8-3.6-24.3-10.1c-17.6-17.6-11.1-46.9 11.2-56v-123c-20.8-8.5-24.6-30.7-18.6-45L142.6 101 8.5 235.1C3 240.6 0 247.9 0 255.5s3 15 8.5 20.4l195.6 195.7c5.4 5.4 12.7 8.4 20.4 8.4s15-3 20.4-8.4l194.7-194.7c5.4-5.4 8.4-12.8 8.4-20.4s-3-15-8.4-20.4"/></svg>
+  </div>
+  <div class="md-source__repository">
+    filippozacchei/MFDA_ActiveLearning
+  </div>
+</a>
+    </div>
+  
+  <ul class="md-nav__list" data-md-scrollfix>
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../.." class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Home
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_2" >
+        
+          
+          <label class="md-nav__link" for="__nav_2" id="__nav_2_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    User Guide
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_2_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_2">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    User Guide
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../guide/quickstart/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Quickstart
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../guide/summary/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Overview
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_3" >
+        
+          
+          <label class="md-nav__link" for="__nav_3" id="__nav_3_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Tutorials
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_3_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_3">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Tutorials
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../tutorials/backward_toy_notebook/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Backward toy: Bayesian inversion with Active-MCMC (documentation notebook)
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../tutorials/forward_toy_notebook/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Forward toy: build and validate a POD–GP surrogate
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../tutorials/navier_stokes/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Navier-Stokes
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+    
+  
+  
+  
+    
+    
+    
+    
+      
+        
+        
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--active md-nav__item--section md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_4" checked>
+        
+          
+          <label class="md-nav__link" for="__nav_4" id="__nav_4_label" tabindex="">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    API Reference
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_4_label" aria-expanded="true">
+          <label class="md-nav__title" for="__nav_4">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    API Reference
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+    
+  
+  
+  
+    <li class="md-nav__item md-nav__item--active">
+      
+      <input class="md-nav__toggle md-toggle" type="checkbox" id="__toc">
+      
+      
+        
+      
+      
+        <label class="md-nav__link md-nav__link--active" for="__toc">
+          
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Inference
+  
+
+    
+  </span>
+  
+  
+
+          <span class="md-nav__icon md-icon"></span>
+        </label>
+      
+      <a href="./" class="md-nav__link md-nav__link--active">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Inference
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+      
+        
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#gp_active_mcmc.inference" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        inference
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="inference">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#gp_active_mcmc.inference-classes" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Classes
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Classes">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#gp_active_mcmc.inference.AdaptiveSubchain" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        AdaptiveSubchain
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="AdaptiveSubchain">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#gp_active_mcmc.inference.AdaptiveSubchain-functions" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Functions
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Functions">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#gp_active_mcmc.inference.AdaptiveSubchain.on_coarse_call" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        on_coarse_call
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#gp_active_mcmc.inference.AdaptiveSubchain.on_fine_call" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        on_fine_call
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#gp_active_mcmc.inference.AdaptiveSubchainControl" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        AdaptiveSubchainControl
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#gp_active_mcmc.inference.AdaptiveSubchainState" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        AdaptiveSubchainState
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="AdaptiveSubchainState">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#gp_active_mcmc.inference.AdaptiveSubchainState-functions" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Functions
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Functions">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#gp_active_mcmc.inference.AdaptiveSubchainState.append_length" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        append_length
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#gp_active_mcmc.inference.AdaptiveSubchainState.step" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        step
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#gp_active_mcmc.inference.AdaptiveSubchainState.append_error" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        append_error
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#gp_active_mcmc.inference.AdaptiveSubchainState.update_subchain" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        update_subchain
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#gp_active_mcmc.inference.ChainExtras" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        ChainExtras
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="ChainExtras">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#gp_active_mcmc.inference.ChainExtras-functions" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Functions
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Functions">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#gp_active_mcmc.inference.ChainExtras.slice" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        slice
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#gp_active_mcmc.inference.MCMCChain" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        MCMCChain
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="MCMCChain">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#gp_active_mcmc.inference.MCMCChain-attributes" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Attributes
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Attributes">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#gp_active_mcmc.inference.MCMCChain.n_steps" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        n_steps
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#gp_active_mcmc.inference.MCMCChain.n_dim" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        n_dim
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#gp_active_mcmc.inference.MCMCChain-functions" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Functions
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Functions">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#gp_active_mcmc.inference.MCMCChain.from_arrays" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        from_arrays
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#gp_active_mcmc.inference.MCMCChain.burnin" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        burnin
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#gp_active_mcmc.inference.MCMCChain.thin" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        thin
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#gp_active_mcmc.inference.MCMCChain.summary" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        summary
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#gp_active_mcmc.inference.SamplingResult" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        SamplingResult
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#gp_active_mcmc.inference.CoarseOutput" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        CoarseOutput
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="CoarseOutput">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#gp_active_mcmc.inference.CoarseOutput-functions" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Functions
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Functions">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#gp_active_mcmc.inference.CoarseOutput.__new__" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        __new__
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#gp_active_mcmc.inference.CoarseOutput.__array_finalize__" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        __array_finalize__
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#gp_active_mcmc.inference.ActiveGPLogLike" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        ActiveGPLogLike
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="ActiveGPLogLike">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#gp_active_mcmc.inference.ActiveGPLogLike-functions" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Functions
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Functions">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#gp_active_mcmc.inference.ActiveGPLogLike.loglike" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        loglike
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#gp_active_mcmc.inference.ActiveMCMCModel" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        ActiveMCMCModel
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="ActiveMCMCModel">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#gp_active_mcmc.inference.ActiveMCMCModel-functions" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Functions
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Functions">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#gp_active_mcmc.inference.ActiveMCMCModel.coarse" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        coarse
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#gp_active_mcmc.inference.ActiveMCMCModel.fine" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        fine
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#gp_active_mcmc.inference.EvaluationLog" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        EvaluationLog
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="EvaluationLog">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#gp_active_mcmc.inference.EvaluationLog-functions" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Functions
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Functions">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#gp_active_mcmc.inference.EvaluationLog.append" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        append
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#gp_active_mcmc.inference.EvaluationLog.replace_last" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        replace_last
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#gp_active_mcmc.inference.AdaptiveHook" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        AdaptiveHook
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="AdaptiveHook">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#gp_active_mcmc.inference.AdaptiveHook-functions" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Functions
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Functions">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#gp_active_mcmc.inference.AdaptiveHook.on_coarse_call" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        on_coarse_call
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#gp_active_mcmc.inference.AdaptiveHook.on_fine_call" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        on_fine_call
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#gp_active_mcmc.inference.AdaptiveMetropolisShared" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        AdaptiveMetropolisShared
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="AdaptiveMetropolisShared">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#gp_active_mcmc.inference.AdaptiveMetropolisShared-functions" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Functions
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Functions">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#gp_active_mcmc.inference.AdaptiveMetropolisShared.__deepcopy__" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        __deepcopy__
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#gp_active_mcmc.inference.ChunkedMCMCConfig" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        ChunkedMCMCConfig
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#gp_active_mcmc.inference-functions" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Functions
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Functions">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#gp_active_mcmc.inference.sample_active_chain" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        sample_active_chain
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#gp_active_mcmc.inference.sample_adaptive_active_chain" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        sample_adaptive_active_chain
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../surrogates/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Surrogates
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../diagnostics/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Diagnostics
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../utils/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Utils
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+  </ul>
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+            
+              
+              <div class="md-sidebar md-sidebar--secondary" data-md-component="sidebar" data-md-type="toc" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#gp_active_mcmc.inference" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        inference
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="inference">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#gp_active_mcmc.inference-classes" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Classes
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Classes">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#gp_active_mcmc.inference.AdaptiveSubchain" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        AdaptiveSubchain
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="AdaptiveSubchain">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#gp_active_mcmc.inference.AdaptiveSubchain-functions" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Functions
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Functions">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#gp_active_mcmc.inference.AdaptiveSubchain.on_coarse_call" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        on_coarse_call
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#gp_active_mcmc.inference.AdaptiveSubchain.on_fine_call" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        on_fine_call
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#gp_active_mcmc.inference.AdaptiveSubchainControl" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        AdaptiveSubchainControl
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#gp_active_mcmc.inference.AdaptiveSubchainState" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        AdaptiveSubchainState
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="AdaptiveSubchainState">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#gp_active_mcmc.inference.AdaptiveSubchainState-functions" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Functions
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Functions">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#gp_active_mcmc.inference.AdaptiveSubchainState.append_length" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        append_length
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#gp_active_mcmc.inference.AdaptiveSubchainState.step" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        step
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#gp_active_mcmc.inference.AdaptiveSubchainState.append_error" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        append_error
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#gp_active_mcmc.inference.AdaptiveSubchainState.update_subchain" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        update_subchain
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#gp_active_mcmc.inference.ChainExtras" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        ChainExtras
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="ChainExtras">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#gp_active_mcmc.inference.ChainExtras-functions" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Functions
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Functions">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#gp_active_mcmc.inference.ChainExtras.slice" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        slice
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#gp_active_mcmc.inference.MCMCChain" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        MCMCChain
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="MCMCChain">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#gp_active_mcmc.inference.MCMCChain-attributes" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Attributes
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Attributes">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#gp_active_mcmc.inference.MCMCChain.n_steps" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        n_steps
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#gp_active_mcmc.inference.MCMCChain.n_dim" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        n_dim
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#gp_active_mcmc.inference.MCMCChain-functions" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Functions
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Functions">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#gp_active_mcmc.inference.MCMCChain.from_arrays" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        from_arrays
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#gp_active_mcmc.inference.MCMCChain.burnin" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        burnin
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#gp_active_mcmc.inference.MCMCChain.thin" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        thin
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#gp_active_mcmc.inference.MCMCChain.summary" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        summary
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#gp_active_mcmc.inference.SamplingResult" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        SamplingResult
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#gp_active_mcmc.inference.CoarseOutput" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        CoarseOutput
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="CoarseOutput">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#gp_active_mcmc.inference.CoarseOutput-functions" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Functions
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Functions">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#gp_active_mcmc.inference.CoarseOutput.__new__" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        __new__
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#gp_active_mcmc.inference.CoarseOutput.__array_finalize__" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        __array_finalize__
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#gp_active_mcmc.inference.ActiveGPLogLike" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        ActiveGPLogLike
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="ActiveGPLogLike">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#gp_active_mcmc.inference.ActiveGPLogLike-functions" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Functions
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Functions">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#gp_active_mcmc.inference.ActiveGPLogLike.loglike" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        loglike
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#gp_active_mcmc.inference.ActiveMCMCModel" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        ActiveMCMCModel
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="ActiveMCMCModel">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#gp_active_mcmc.inference.ActiveMCMCModel-functions" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Functions
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Functions">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#gp_active_mcmc.inference.ActiveMCMCModel.coarse" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        coarse
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#gp_active_mcmc.inference.ActiveMCMCModel.fine" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        fine
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#gp_active_mcmc.inference.EvaluationLog" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        EvaluationLog
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="EvaluationLog">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#gp_active_mcmc.inference.EvaluationLog-functions" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Functions
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Functions">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#gp_active_mcmc.inference.EvaluationLog.append" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        append
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#gp_active_mcmc.inference.EvaluationLog.replace_last" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        replace_last
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#gp_active_mcmc.inference.AdaptiveHook" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        AdaptiveHook
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="AdaptiveHook">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#gp_active_mcmc.inference.AdaptiveHook-functions" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Functions
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Functions">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#gp_active_mcmc.inference.AdaptiveHook.on_coarse_call" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        on_coarse_call
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#gp_active_mcmc.inference.AdaptiveHook.on_fine_call" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        on_fine_call
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#gp_active_mcmc.inference.AdaptiveMetropolisShared" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        AdaptiveMetropolisShared
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="AdaptiveMetropolisShared">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#gp_active_mcmc.inference.AdaptiveMetropolisShared-functions" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Functions
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Functions">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#gp_active_mcmc.inference.AdaptiveMetropolisShared.__deepcopy__" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        __deepcopy__
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#gp_active_mcmc.inference.ChunkedMCMCConfig" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        ChunkedMCMCConfig
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#gp_active_mcmc.inference-functions" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Functions
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Functions">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#gp_active_mcmc.inference.sample_active_chain" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        sample_active_chain
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#gp_active_mcmc.inference.sample_adaptive_active_chain" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        sample_adaptive_active_chain
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+          
+          
+            <div class="md-content" data-md-component="content">
+              
+              <article class="md-content__inner md-typeset">
+                
+                  
+
+
+  
+  
+
+
+<h1 id="inference">Inference</h1>
+
+
+<div class="doc doc-object doc-module">
+
+
+
+<h2 id="gp_active_mcmc.inference" class="doc doc-heading">
+<code class="doc-symbol doc-symbol-heading doc-symbol-module"></code>            <span class="doc doc-object-name doc-module-name">inference</span>
+
+
+</h2>
+
+    <div class="doc doc-contents first">
+
+        <p>Inference components (models, likelihoods, proposals, sampling, results).</p>
+
+
+
+
+
+
+
+
+
+
+<div class="doc doc-children">
+
+
+
+
+
+
+
+<h3 id="gp_active_mcmc.inference-classes">Classes</h3>
+
+<div class="doc doc-object doc-class">
+
+
+
+<h4 id="gp_active_mcmc.inference.AdaptiveSubchain" class="doc doc-heading">
+<code class="doc-symbol doc-symbol-heading doc-symbol-class"></code>            <span class="doc doc-object-name doc-class-name">AdaptiveSubchain</span>
+
+
+  <span class="doc doc-labels">
+      <small class="doc doc-label doc-label-dataclass"><code>dataclass</code></small>
+  </span>
+
+</h4>
+<div class="doc-signature highlight"><pre><span></span><code><span class="nf">AdaptiveSubchain</span><span class="p">(</span><span class="n">state</span><span class="p">,</span> <span class="n">control</span><span class="p">)</span>
+</code></pre></div>
+
+    <div class="doc doc-contents ">
+
+
+
+        <p>Adaptive subchain policy for DA-MCMC guided active learning.</p>
+<p><code>AdaptiveSubchain</code> implements the hook interface
+<a class="autorefs autorefs-internal" title="            AdaptiveHook" href="#gp_active_mcmc.inference.AdaptiveHook">AdaptiveHook</a> used by
+<a class="autorefs autorefs-internal" title="            ActiveMCMCModel
+
+
+  
+      dataclass
+  " href="#gp_active_mcmc.inference.ActiveMCMCModel">ActiveMCMCModel</a>.</p>
+
+
+<details class="semantics" open>
+  <summary>Semantics</summary>
+  <ul>
+<li>On each <strong>coarse</strong> call: record the current subchain length.</li>
+<li>On each <strong>fine</strong> call:</li>
+<li>compute and store LF–HF error (currently RMSE in observation space),</li>
+<li>update the subchain length if the update schedule triggers,</li>
+<li>increment HF counters.</li>
+</ul>
+</details>
+
+<details class="intended-usage" open>
+  <summary>Intended usage</summary>
+  <p>This policy is intended to be used with:</p>
+<ul>
+<li><strong>two posteriors</strong> <code>[coarse, fine]</code> (DA-MCMC is mandatory), and</li>
+<li>a chunked sampler such as
+  <a class="autorefs autorefs-internal" title="            sample_adaptive_active_chain" href="#gp_active_mcmc.inference.sample_adaptive_active_chain">sample_adaptive_active_chain</a>,
+  because <code>tinyDA</code> requires a fixed subsampling rate within each call.</li>
+</ul>
+</details>
+
+<p><span class="doc-section-title">Parameters:</span></p>
+    <table>
+      <thead>
+        <tr>
+          <th>Name</th>
+          <th>Type</th>
+          <th>Description</th>
+          <th>Default</th>
+        </tr>
+      </thead>
+      <tbody>
+          <tr class="doc-section-item">
+            <td>
+                <code>state</code>
+            </td>
+            <td>
+                  <code><a class="autorefs autorefs-internal" title="            AdaptiveSubchainState
+
+
+  
+      dataclass
+   (gp_active_mcmc.inference.adaptive_subchain.AdaptiveSubchainState)" href="#gp_active_mcmc.inference.AdaptiveSubchainState">AdaptiveSubchainState</a></code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>Mutable adaptive state (current length, histories, counters).</p>
+              </div>
+            </td>
+            <td>
+                <em>required</em>
+            </td>
+          </tr>
+          <tr class="doc-section-item">
+            <td>
+                <code>control</code>
+            </td>
+            <td>
+                  <code><a class="autorefs autorefs-internal" title="            AdaptiveSubchainControl
+
+
+  
+      dataclass
+   (gp_active_mcmc.inference.adaptive_subchain.AdaptiveSubchainControl)" href="#gp_active_mcmc.inference.AdaptiveSubchainControl">AdaptiveSubchainControl</a></code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>Control parameters (targets, bounds, and update schedule).</p>
+              </div>
+            </td>
+            <td>
+                <em>required</em>
+            </td>
+          </tr>
+      </tbody>
+    </table>
+
+
+<details class="see-also" open>
+  <summary>See Also</summary>
+  <p><a class="autorefs autorefs-internal" title="            ActiveMCMCModel
+
+
+  
+      dataclass
+  " href="#gp_active_mcmc.inference.ActiveMCMCModel">ActiveMCMCModel</a>
+    The active model that triggers <code>on_coarse_call</code> / <code>on_fine_call</code>.
+<a class="autorefs autorefs-internal" title="            ChunkedMCMCConfig
+
+
+  
+      dataclass
+  " href="#gp_active_mcmc.inference.ChunkedMCMCConfig">ChunkedMCMCConfig</a>
+    Chunk configuration used by the adaptive sampler.</p>
+</details>
+
+
+
+
+
+
+
+
+
+
+<div class="doc doc-children">
+
+
+
+
+
+
+
+
+<h5 id="gp_active_mcmc.inference.AdaptiveSubchain-functions">Functions</h5>
+
+<div class="doc doc-object doc-function">
+
+
+<h6 id="gp_active_mcmc.inference.AdaptiveSubchain.on_coarse_call" class="doc doc-heading">
+<code class="doc-symbol doc-symbol-heading doc-symbol-method"></code>            <span class="doc doc-object-name doc-function-name">on_coarse_call</span>
+
+
+</h6>
+<div class="doc-signature highlight"><pre><span></span><code><span class="nf">on_coarse_call</span><span class="p">()</span>
+</code></pre></div>
+
+    <div class="doc doc-contents ">
+
+        <p>Hook called by the active model at the start of a coarse evaluation.</p>
+
+
+    </div>
+
+</div>
+
+<div class="doc doc-object doc-function">
+
+
+<h6 id="gp_active_mcmc.inference.AdaptiveSubchain.on_fine_call" class="doc doc-heading">
+<code class="doc-symbol doc-symbol-heading doc-symbol-method"></code>            <span class="doc doc-object-name doc-function-name">on_fine_call</span>
+
+
+</h6>
+<div class="doc-signature highlight"><pre><span></span><code><span class="nf">on_fine_call</span><span class="p">(</span><span class="o">*</span><span class="p">,</span> <span class="n">y_hf</span><span class="p">,</span> <span class="n">y_lf</span><span class="p">)</span>
+</code></pre></div>
+
+    <div class="doc doc-contents ">
+
+        <p>Hook called by the active model during fine evaluation.</p>
+
+
+<p><span class="doc-section-title">Parameters:</span></p>
+    <table>
+      <thead>
+        <tr>
+          <th>Name</th>
+          <th>Type</th>
+          <th>Description</th>
+          <th>Default</th>
+        </tr>
+      </thead>
+      <tbody>
+          <tr class="doc-section-item">
+            <td>
+                <code>y_hf</code>
+            </td>
+            <td>
+                  <code><span title="gp_active_mcmc.inference.adaptive_subchain.FloatArray">FloatArray</span></code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>HF output at the current parameter value.</p>
+              </div>
+            </td>
+            <td>
+                <em>required</em>
+            </td>
+          </tr>
+          <tr class="doc-section-item">
+            <td>
+                <code>y_lf</code>
+            </td>
+            <td>
+                  <code><span title="gp_active_mcmc.inference.adaptive_subchain.FloatArray">FloatArray</span></code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>LF predictive mean at the current parameter value (before surrogate update).</p>
+              </div>
+            </td>
+            <td>
+                <em>required</em>
+            </td>
+          </tr>
+      </tbody>
+    </table>
+
+
+    </div>
+
+</div>
+
+
+
+  </div>
+
+    </div>
+
+</div>
+
+<div class="doc doc-object doc-class">
+
+
+
+<h4 id="gp_active_mcmc.inference.AdaptiveSubchainControl" class="doc doc-heading">
+<code class="doc-symbol doc-symbol-heading doc-symbol-class"></code>            <span class="doc doc-object-name doc-class-name">AdaptiveSubchainControl</span>
+
+
+  <span class="doc doc-labels">
+      <small class="doc doc-label doc-label-dataclass"><code>dataclass</code></small>
+  </span>
+
+</h4>
+<div class="doc-signature highlight"><pre><span></span><code><span class="nf">AdaptiveSubchainControl</span><span class="p">(</span><span class="n">update_every</span><span class="o">=</span><span class="mi">10</span><span class="p">,</span> <span class="n">target_error</span><span class="o">=</span><span class="mf">0.01</span><span class="p">,</span> <span class="n">min_subchain</span><span class="o">=</span><span class="mi">1</span><span class="p">,</span> <span class="n">max_subchain</span><span class="o">=</span><span class="mi">10000</span><span class="p">,</span> <span class="n">grow_factor</span><span class="o">=</span><span class="mf">2.0</span><span class="p">,</span> <span class="n">shrink_factor</span><span class="o">=</span><span class="mf">0.5</span><span class="p">)</span>
+</code></pre></div>
+
+    <div class="doc doc-contents ">
+
+
+
+        <p>Hyperparameters for adaptive subchain-length control.</p>
+<p>This control block specifies <em>how</em> the adaptive policy reacts to observed LF–HF
+discrepancy during sampling.</p>
+<p>In DA-MCMC guided active learning, the sampler periodically performs a <strong>fine</strong>
+(HF) correction. The number of coarse steps taken between fine corrections is the
+<strong>subchain length</strong> (often called the subsampling rate).</p>
+<p>The update rule is:</p>
+<ul>
+<li>if the most recent LF–HF error is <strong>above</strong> <code>target_error</code>, decrease the subchain
+  length (more frequent HF corrections);</li>
+<li>if the error is <strong>below</strong> <code>target_error</code>, increase the subchain length
+  (less frequent HF corrections).</li>
+</ul>
+<p>Updates are attempted every <code>update_every</code> HF evaluations.</p>
+
+
+<p><span class="doc-section-title">Parameters:</span></p>
+    <table>
+      <thead>
+        <tr>
+          <th>Name</th>
+          <th>Type</th>
+          <th>Description</th>
+          <th>Default</th>
+        </tr>
+      </thead>
+      <tbody>
+          <tr class="doc-section-item">
+            <td>
+                <code>update_every</code>
+            </td>
+            <td>
+                  <code><span title="int">int</span></code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>Number of HF evaluations between policy updates. Must be positive.</p>
+              </div>
+            </td>
+            <td>
+                  <code>10</code>
+            </td>
+          </tr>
+          <tr class="doc-section-item">
+            <td>
+                <code>target_error</code>
+            </td>
+            <td>
+                  <code><span title="float">float</span></code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>Target level for the LF–HF error statistic (non-negative).</p>
+              </div>
+            </td>
+            <td>
+                  <code>0.01</code>
+            </td>
+          </tr>
+          <tr class="doc-section-item">
+            <td>
+                <code>min_subchain</code>
+            </td>
+            <td>
+                  <code><span title="int">int</span></code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>Lower bound on the subchain length (minimum spacing between HF corrections is 1).</p>
+              </div>
+            </td>
+            <td>
+                  <code>1</code>
+            </td>
+          </tr>
+          <tr class="doc-section-item">
+            <td>
+                <code>max_subchain</code>
+            </td>
+            <td>
+                  <code><span title="int">int</span></code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>Upper bound on the subchain length.</p>
+              </div>
+            </td>
+            <td>
+                  <code>10000</code>
+            </td>
+          </tr>
+          <tr class="doc-section-item">
+            <td>
+                <code>grow_factor</code>
+            </td>
+            <td>
+                  <code><span title="float">float</span></code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>Multiplicative factor used when error is below target. Must be &gt; 1.</p>
+              </div>
+            </td>
+            <td>
+                  <code>2.0</code>
+            </td>
+          </tr>
+          <tr class="doc-section-item">
+            <td>
+                <code>shrink_factor</code>
+            </td>
+            <td>
+                  <code><span title="float">float</span></code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>Multiplicative factor used when error is above target. Must be in (0, 1).</p>
+              </div>
+            </td>
+            <td>
+                  <code>0.5</code>
+            </td>
+          </tr>
+      </tbody>
+    </table>
+
+
+<details class="note" open>
+  <summary>Notes</summary>
+  <p>The default values are tuned for toy problems. In real applications, <code>target_error</code>
+should reflect acceptable surrogate error in the observation space used by the likelihood.</p>
+</details>
+
+<details class="see-also" open>
+  <summary>See Also</summary>
+  <p><a class="autorefs autorefs-internal" title="            AdaptiveSubchain
+
+
+  
+      dataclass
+  " href="#gp_active_mcmc.inference.AdaptiveSubchain">AdaptiveSubchain</a>
+    Adaptive policy that uses this control block.
+<a class="autorefs autorefs-internal" title="            ActiveMCMCModel
+
+
+  
+      dataclass
+  " href="#gp_active_mcmc.inference.ActiveMCMCModel">ActiveMCMCModel</a>
+    The active model that calls the policy hooks during coarse/fine evaluations.</p>
+</details>
+
+
+
+
+
+
+
+
+
+
+<div class="doc doc-children">
+
+
+
+
+
+
+
+
+
+
+
+
+  </div>
+
+    </div>
+
+</div>
+
+<div class="doc doc-object doc-class">
+
+
+
+<h4 id="gp_active_mcmc.inference.AdaptiveSubchainState" class="doc doc-heading">
+<code class="doc-symbol doc-symbol-heading doc-symbol-class"></code>            <span class="doc doc-object-name doc-class-name">AdaptiveSubchainState</span>
+
+
+  <span class="doc doc-labels">
+      <small class="doc doc-label doc-label-dataclass"><code>dataclass</code></small>
+  </span>
+
+</h4>
+<div class="doc-signature highlight"><pre><span></span><code><span class="nf">AdaptiveSubchainState</span><span class="p">(</span><span class="n">subchain_length</span><span class="o">=</span><span class="mi">10</span><span class="p">,</span> <span class="n">subchain_history</span><span class="o">=</span><span class="nb">list</span><span class="p">(),</span> <span class="n">hf_errors</span><span class="o">=</span><span class="nb">list</span><span class="p">(),</span> <span class="n">total_hf_steps</span><span class="o">=</span><span class="mi">0</span><span class="p">,</span> <span class="n">_hf_since_update</span><span class="o">=</span><span class="mi">0</span><span class="p">)</span>
+</code></pre></div>
+
+    <div class="doc doc-contents ">
+
+
+
+        <p>Mutable state for adaptive subchain control.</p>
+<p>This object stores the <em>current</em> subchain length and the histories needed for
+diagnostics and adaptation.</p>
+
+
+<p><span class="doc-section-title">Parameters:</span></p>
+    <table>
+      <thead>
+        <tr>
+          <th>Name</th>
+          <th>Type</th>
+          <th>Description</th>
+          <th>Default</th>
+        </tr>
+      </thead>
+      <tbody>
+          <tr class="doc-section-item">
+            <td>
+                <code>subchain_length</code>
+            </td>
+            <td>
+                  <code><span title="int">int</span></code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>Current subchain length (number of coarse steps between HF corrections).
+Must be positive.</p>
+              </div>
+            </td>
+            <td>
+                  <code>10</code>
+            </td>
+          </tr>
+      </tbody>
+    </table>
+
+
+<p><span class="doc-section-title">Attributes:</span></p>
+    <table>
+      <thead>
+        <tr>
+          <th>Name</th>
+          <th>Type</th>
+          <th>Description</th>
+        </tr>
+      </thead>
+      <tbody>
+          <tr class="doc-section-item">
+            <td><code><span title="gp_active_mcmc.inference.AdaptiveSubchainState.subchain_history">subchain_history</span></code></td>
+            <td>
+                  <code><span title="list">list</span>[<span title="int">int</span>]</code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>Records the subchain length at each coarse evaluation (aligned with coarse calls).</p>
+              </div>
+            </td>
+          </tr>
+          <tr class="doc-section-item">
+            <td><code><span title="gp_active_mcmc.inference.AdaptiveSubchainState.hf_errors">hf_errors</span></code></td>
+            <td>
+                  <code><span title="list">list</span>[<span title="float">float</span>]</code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>LF–HF error values computed at each fine evaluation.</p>
+              </div>
+            </td>
+          </tr>
+          <tr class="doc-section-item">
+            <td><code><span title="gp_active_mcmc.inference.AdaptiveSubchainState.total_hf_steps">total_hf_steps</span></code></td>
+            <td>
+                  <code><span title="int">int</span></code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>Total number of HF evaluations performed.</p>
+              </div>
+            </td>
+          </tr>
+          <tr class="doc-section-item">
+            <td><code><span title="gp_active_mcmc.inference.AdaptiveSubchainState._hf_since_update">_hf_since_update</span></code></td>
+            <td>
+                  <code><span title="int">int</span></code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>Internal counter tracking HF evaluations since the last update.</p>
+              </div>
+            </td>
+          </tr>
+      </tbody>
+    </table>
+
+
+<details class="note" open>
+  <summary>Notes</summary>
+  <p>The error statistic used here is <strong>RMSE</strong> between the LF predictive mean and the HF
+output in observation space:</p>
+<div class="arithmatex">\[
+    \mathrm{RMSE}(\mu_{\mathrm{LF}}, y_{\mathrm{HF}}) =
+    \sqrt{\frac{1}{n}\sum_{i=1}^{n}(\mu_{\mathrm{LF}, i} - y_{\mathrm{HF}, i})^2}.
+\]</div>
+</details>
+
+<details class="see-also" open>
+  <summary>See Also</summary>
+  <p><a class="autorefs autorefs-internal" title="            AdaptiveSubchainControl
+
+
+  
+      dataclass
+  " href="#gp_active_mcmc.inference.AdaptiveSubchainControl">AdaptiveSubchainControl</a>
+    Control parameters used to update the subchain length.</p>
+</details>
+
+
+
+
+
+
+
+
+
+
+<div class="doc doc-children">
+
+
+
+
+
+
+
+
+<h5 id="gp_active_mcmc.inference.AdaptiveSubchainState-functions">Functions</h5>
+
+<div class="doc doc-object doc-function">
+
+
+<h6 id="gp_active_mcmc.inference.AdaptiveSubchainState.append_length" class="doc doc-heading">
+<code class="doc-symbol doc-symbol-heading doc-symbol-method"></code>            <span class="doc doc-object-name doc-function-name">append_length</span>
+
+
+</h6>
+<div class="doc-signature highlight"><pre><span></span><code><span class="nf">append_length</span><span class="p">()</span>
+</code></pre></div>
+
+    <div class="doc doc-contents ">
+
+        <p>Record the current subchain length.</p>
+<p>This should be called exactly once per <em>coarse</em> evaluation so that
+<code>subchain_history</code> remains aligned with coarse calls.</p>
+
+
+    </div>
+
+</div>
+
+<div class="doc doc-object doc-function">
+
+
+<h6 id="gp_active_mcmc.inference.AdaptiveSubchainState.step" class="doc doc-heading">
+<code class="doc-symbol doc-symbol-heading doc-symbol-method"></code>            <span class="doc doc-object-name doc-function-name">step</span>
+
+
+</h6>
+<div class="doc-signature highlight"><pre><span></span><code><span class="nf">step</span><span class="p">()</span>
+</code></pre></div>
+
+    <div class="doc doc-contents ">
+
+        <p>Advance HF counters.</p>
+<p>This should be called exactly once per <em>fine</em> evaluation.</p>
+
+
+    </div>
+
+</div>
+
+<div class="doc doc-object doc-function">
+
+
+<h6 id="gp_active_mcmc.inference.AdaptiveSubchainState.append_error" class="doc doc-heading">
+<code class="doc-symbol doc-symbol-heading doc-symbol-method"></code>            <span class="doc doc-object-name doc-function-name">append_error</span>
+
+
+</h6>
+<div class="doc-signature highlight"><pre><span></span><code><span class="nf">append_error</span><span class="p">(</span><span class="n">lf_mean</span><span class="p">,</span> <span class="n">y_hf</span><span class="p">)</span>
+</code></pre></div>
+
+    <div class="doc doc-contents ">
+
+        <p>Compute and record an LF–HF error statistic (RMSE).</p>
+
+
+<p><span class="doc-section-title">Parameters:</span></p>
+    <table>
+      <thead>
+        <tr>
+          <th>Name</th>
+          <th>Type</th>
+          <th>Description</th>
+          <th>Default</th>
+        </tr>
+      </thead>
+      <tbody>
+          <tr class="doc-section-item">
+            <td>
+                <code>lf_mean</code>
+            </td>
+            <td>
+                  <code><span title="gp_active_mcmc.inference.adaptive_subchain.FloatArray">FloatArray</span></code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>LF predictive mean at the current parameter value (before surrogate update).</p>
+              </div>
+            </td>
+            <td>
+                <em>required</em>
+            </td>
+          </tr>
+          <tr class="doc-section-item">
+            <td>
+                <code>y_hf</code>
+            </td>
+            <td>
+                  <code><span title="gp_active_mcmc.inference.adaptive_subchain.FloatArray">FloatArray</span></code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>HF model output at the current parameter value.</p>
+              </div>
+            </td>
+            <td>
+                <em>required</em>
+            </td>
+          </tr>
+      </tbody>
+    </table>
+
+
+<p><span class="doc-section-title">Raises:</span></p>
+    <table>
+      <thead>
+        <tr>
+          <th>Type</th>
+          <th>Description</th>
+        </tr>
+      </thead>
+      <tbody>
+          <tr class="doc-section-item">
+            <td>
+                  <code><span title="ValueError">ValueError</span></code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>If <code>lf_mean</code> and <code>y_hf</code> have different shapes.</p>
+              </div>
+            </td>
+          </tr>
+      </tbody>
+    </table>
+
+
+    </div>
+
+</div>
+
+<div class="doc doc-object doc-function">
+
+
+<h6 id="gp_active_mcmc.inference.AdaptiveSubchainState.update_subchain" class="doc doc-heading">
+<code class="doc-symbol doc-symbol-heading doc-symbol-method"></code>            <span class="doc doc-object-name doc-function-name">update_subchain</span>
+
+
+</h6>
+<div class="doc-signature highlight"><pre><span></span><code><span class="nf">update_subchain</span><span class="p">(</span><span class="n">control</span><span class="p">)</span>
+</code></pre></div>
+
+    <div class="doc doc-contents ">
+
+        <p>Update the subchain length according to <code>control</code>.</p>
+<p>The update is performed only when:</p>
+<ul>
+<li>at least <code>control.update_every</code> HF evaluations have occurred since the last update, and</li>
+<li>at least one error value is available.</li>
+</ul>
+
+
+<p><span class="doc-section-title">Parameters:</span></p>
+    <table>
+      <thead>
+        <tr>
+          <th>Name</th>
+          <th>Type</th>
+          <th>Description</th>
+          <th>Default</th>
+        </tr>
+      </thead>
+      <tbody>
+          <tr class="doc-section-item">
+            <td>
+                <code>control</code>
+            </td>
+            <td>
+                  <code><a class="autorefs autorefs-internal" title="            AdaptiveSubchainControl
+
+
+  
+      dataclass
+   (gp_active_mcmc.inference.adaptive_subchain.AdaptiveSubchainControl)" href="#gp_active_mcmc.inference.AdaptiveSubchainControl">AdaptiveSubchainControl</a></code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>Policy hyperparameters controlling update frequency, bounds, and scaling.</p>
+              </div>
+            </td>
+            <td>
+                <em>required</em>
+            </td>
+          </tr>
+      </tbody>
+    </table>
+
+
+    </div>
+
+</div>
+
+
+
+  </div>
+
+    </div>
+
+</div>
+
+<div class="doc doc-object doc-class">
+
+
+
+<h4 id="gp_active_mcmc.inference.ChainExtras" class="doc doc-heading">
+<code class="doc-symbol doc-symbol-heading doc-symbol-class"></code>            <span class="doc doc-object-name doc-class-name">ChainExtras</span>
+
+
+  <span class="doc doc-labels">
+      <small class="doc doc-label doc-label-dataclass"><code>dataclass</code></small>
+  </span>
+
+</h4>
+<div class="doc-signature highlight"><pre><span></span><code><span class="nf">ChainExtras</span><span class="p">(</span><span class="n">used_hf</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">accepted</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">subchain_length</span><span class="o">=</span><span class="kc">None</span><span class="p">)</span>
+</code></pre></div>
+
+    <div class="doc doc-contents ">
+
+
+
+        <p>Per-step metadata aligned with an <a class="autorefs autorefs-internal" title="            MCMCChain
+
+
+  
+      dataclass
+  " href="#gp_active_mcmc.inference.MCMCChain"><code>MCMCChain</code></a>.</p>
+<p><code>ChainExtras</code> stores optional arrays aligned one-to-one with the sample matrix in
+<a class="autorefs autorefs-internal" title="            MCMCChain
+
+
+  
+      dataclass
+  " href="#gp_active_mcmc.inference.MCMCChain"><code>MCMCChain</code></a>. Keeping these fields separate
+makes the core chain representation predictable while still supporting diagnostics.</p>
+
+
+<p><span class="doc-section-title">Attributes:</span></p>
+    <table>
+      <thead>
+        <tr>
+          <th>Name</th>
+          <th>Type</th>
+          <th>Description</th>
+        </tr>
+      </thead>
+      <tbody>
+          <tr class="doc-section-item">
+            <td><code><span title="gp_active_mcmc.inference.ChainExtras.used_hf">used_hf</span></code></td>
+            <td>
+                  <code><span title="gp_active_mcmc.inference.chain.BoolArray">BoolArray</span> | None</code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>Boolean array of length <code>n_steps</code> indicating whether the high-fidelity model
+was used at each step (active workflows). In typical runs, these flags come from
+<a class="autorefs autorefs-internal" title="            EvaluationLog
+
+
+  
+      dataclass
+  " href="#gp_active_mcmc.inference.EvaluationLog"><code>ActiveMCMCModel.log.used_hf</code></a>.</p>
+              </div>
+            </td>
+          </tr>
+          <tr class="doc-section-item">
+            <td><code><span title="gp_active_mcmc.inference.ChainExtras.accepted">accepted</span></code></td>
+            <td>
+                  <code><span title="gp_active_mcmc.inference.chain.BoolArray">BoolArray</span> | None</code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>Boolean array of length <code>n_steps</code> indicating whether each proposal was accepted,
+if the sampler provides explicit acceptance flags. If not available, acceptance-like
+information can be approximated using a move fraction computed from samples.</p>
+              </div>
+            </td>
+          </tr>
+          <tr class="doc-section-item">
+            <td><code><span title="gp_active_mcmc.inference.ChainExtras.subchain_length">subchain_length</span></code></td>
+            <td>
+                  <code><span title="gp_active_mcmc.inference.chain.IntArray">IntArray</span> | None</code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>Integer array recording the subchain length (or subsampling rate) history. This is
+typically present only in adaptive runs using
+<a class="autorefs autorefs-internal" title="            AdaptiveSubchain
+
+
+  
+      dataclass
+  " href="#gp_active_mcmc.inference.AdaptiveSubchain"><code>AdaptiveSubchain</code></a>.</p>
+              </div>
+            </td>
+          </tr>
+      </tbody>
+    </table>
+
+
+
+
+
+
+
+
+
+
+
+<div class="doc doc-children">
+
+
+
+
+
+
+
+
+<h5 id="gp_active_mcmc.inference.ChainExtras-functions">Functions</h5>
+
+<div class="doc doc-object doc-function">
+
+
+<h6 id="gp_active_mcmc.inference.ChainExtras.slice" class="doc doc-heading">
+<code class="doc-symbol doc-symbol-heading doc-symbol-method"></code>            <span class="doc doc-object-name doc-function-name">slice</span>
+
+
+</h6>
+<div class="doc-signature highlight"><pre><span></span><code><span class="nf">slice</span><span class="p">(</span><span class="n">sl</span><span class="p">)</span>
+</code></pre></div>
+
+    <div class="doc doc-contents ">
+
+        <p>Return a sliced view of extras.</p>
+<p>This is used by <a class="autorefs autorefs-internal" title="            burnin" href="#gp_active_mcmc.inference.MCMCChain.burnin"><code>MCMCChain.burnin</code></a> and
+<a class="autorefs autorefs-internal" title="            thin" href="#gp_active_mcmc.inference.MCMCChain.thin"><code>MCMCChain.thin</code></a> to keep extras aligned
+with sliced samples.</p>
+
+
+<p><span class="doc-section-title">Parameters:</span></p>
+    <table>
+      <thead>
+        <tr>
+          <th>Name</th>
+          <th>Type</th>
+          <th>Description</th>
+          <th>Default</th>
+        </tr>
+      </thead>
+      <tbody>
+          <tr class="doc-section-item">
+            <td>
+                <code>sl</code>
+            </td>
+            <td>
+                  <code><a class="autorefs autorefs-internal" title="            slice (gp_active_mcmc.inference.chain.ChainExtras.slice)" href="#gp_active_mcmc.inference.ChainExtras.slice">slice</a></code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>Slice to apply.</p>
+              </div>
+            </td>
+            <td>
+                <em>required</em>
+            </td>
+          </tr>
+      </tbody>
+    </table>
+
+
+    <p><span class="doc-section-title">Returns:</span></p>
+    <table>
+      <thead>
+        <tr>
+          <th>Type</th>
+          <th>Description</th>
+        </tr>
+      </thead>
+      <tbody>
+          <tr class="doc-section-item">
+            <td>
+                  <code><span title="extras">extras</span></code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>New <code>ChainExtras</code> with all available fields sliced consistently.</p>
+              </div>
+            </td>
+          </tr>
+      </tbody>
+    </table>
+
+
+    </div>
+
+</div>
+
+
+
+  </div>
+
+    </div>
+
+</div>
+
+<div class="doc doc-object doc-class">
+
+
+
+<h4 id="gp_active_mcmc.inference.MCMCChain" class="doc doc-heading">
+<code class="doc-symbol doc-symbol-heading doc-symbol-class"></code>            <span class="doc doc-object-name doc-class-name">MCMCChain</span>
+
+
+  <span class="doc doc-labels">
+      <small class="doc doc-label doc-label-dataclass"><code>dataclass</code></small>
+  </span>
+
+</h4>
+<div class="doc-signature highlight"><pre><span></span><code><span class="nf">MCMCChain</span><span class="p">(</span><span class="n">samples</span><span class="p">,</span> <span class="n">extras</span><span class="o">=</span><span class="n">ChainExtras</span><span class="p">())</span>
+</code></pre></div>
+
+    <div class="doc doc-contents ">
+
+
+
+        <p>Immutable container for MCMC samples and aligned diagnostics.</p>
+<p>The chain is represented as:</p>
+<ul>
+<li><code>samples</code>: a 2D array of shape <code>(n_steps, n_dim)</code></li>
+<li><code>extras</code>: optional per-step diagnostics aligned with samples</li>
+</ul>
+<p>The class provides lightweight post-processing utilities (burn-in removal,
+thinning, and summary statistics) without mutating the original object.</p>
+
+
+<details class="note" open>
+  <summary>Notes</summary>
+  <p>This container is intentionally minimal: it performs no plotting and no I/O.
+Plotting utilities live in <a class="autorefs autorefs-internal" title="            diagnostics" href="../diagnostics/#gp_active_mcmc.diagnostics"><code>gp_active_mcmc.diagnostics</code></a>.</p>
+</details>
+
+<details class="see-also" open>
+  <summary>See Also</summary>
+  <p><a class="autorefs autorefs-internal" title="            SamplingResult
+
+
+  
+      dataclass
+  " href="#gp_active_mcmc.inference.SamplingResult"><code>SamplingResult</code></a>
+    Sampler return type that wraps an <code>MCMCChain</code> plus metadata.</p>
+</details>
+
+
+
+
+
+
+
+
+
+
+<div class="doc doc-children">
+
+
+
+
+
+<h5 id="gp_active_mcmc.inference.MCMCChain-attributes">Attributes</h5>
+
+<div class="doc doc-object doc-attribute">
+
+
+
+<h6 id="gp_active_mcmc.inference.MCMCChain.n_steps" class="doc doc-heading">
+<code class="doc-symbol doc-symbol-heading doc-symbol-attribute"></code>            <span class="doc doc-object-name doc-attribute-name">n_steps</span>
+
+
+  <span class="doc doc-labels">
+      <small class="doc doc-label doc-label-property"><code>property</code></small>
+  </span>
+
+</h6>
+<div class="doc-signature highlight"><pre><span></span><code><span class="n">n_steps</span>
+</code></pre></div>
+
+    <div class="doc doc-contents ">
+
+        <p>Number of MCMC steps (rows of <code>samples</code>).</p>
+
+    </div>
+
+</div>
+
+<div class="doc doc-object doc-attribute">
+
+
+
+<h6 id="gp_active_mcmc.inference.MCMCChain.n_dim" class="doc doc-heading">
+<code class="doc-symbol doc-symbol-heading doc-symbol-attribute"></code>            <span class="doc doc-object-name doc-attribute-name">n_dim</span>
+
+
+  <span class="doc doc-labels">
+      <small class="doc doc-label doc-label-property"><code>property</code></small>
+  </span>
+
+</h6>
+<div class="doc-signature highlight"><pre><span></span><code><span class="n">n_dim</span>
+</code></pre></div>
+
+    <div class="doc doc-contents ">
+
+        <p>Parameter dimension (columns of <code>samples</code>).</p>
+
+    </div>
+
+</div>
+
+
+<h5 id="gp_active_mcmc.inference.MCMCChain-functions">Functions</h5>
+
+<div class="doc doc-object doc-function">
+
+
+<h6 id="gp_active_mcmc.inference.MCMCChain.from_arrays" class="doc doc-heading">
+<code class="doc-symbol doc-symbol-heading doc-symbol-method"></code>            <span class="doc doc-object-name doc-function-name">from_arrays</span>
+
+
+  <span class="doc doc-labels">
+      <small class="doc doc-label doc-label-classmethod"><code>classmethod</code></small>
+  </span>
+
+</h6>
+<div class="doc-signature highlight"><pre><span></span><code><span class="nf">from_arrays</span><span class="p">(</span><span class="o">*</span><span class="p">,</span> <span class="n">samples</span><span class="p">,</span> <span class="n">used_hf</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">accepted</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">subchain_length</span><span class="o">=</span><span class="kc">None</span><span class="p">)</span>
+</code></pre></div>
+
+    <div class="doc doc-contents ">
+
+        <p>Construct an <code>MCMCChain</code> from raw arrays.</p>
+<p>This constructor validates basic shapes and ensures that optional extras (if provided)
+have the correct length and dtype.</p>
+
+
+<p><span class="doc-section-title">Parameters:</span></p>
+    <table>
+      <thead>
+        <tr>
+          <th>Name</th>
+          <th>Type</th>
+          <th>Description</th>
+          <th>Default</th>
+        </tr>
+      </thead>
+      <tbody>
+          <tr class="doc-section-item">
+            <td>
+                <code>samples</code>
+            </td>
+            <td>
+                  <code><span title="numpy.typing.ArrayLike">ArrayLike</span></code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>Sample matrix of shape <code>(n_steps, n_dim)</code>.</p>
+              </div>
+            </td>
+            <td>
+                <em>required</em>
+            </td>
+          </tr>
+          <tr class="doc-section-item">
+            <td>
+                <code>used_hf</code>
+            </td>
+            <td>
+                  <code><span title="numpy.typing.ArrayLike">ArrayLike</span> | None</code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>Optional boolean vector of length <code>n_steps</code>.</p>
+              </div>
+            </td>
+            <td>
+                  <code>None</code>
+            </td>
+          </tr>
+          <tr class="doc-section-item">
+            <td>
+                <code>accepted</code>
+            </td>
+            <td>
+                  <code><span title="numpy.typing.ArrayLike">ArrayLike</span> | None</code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>Optional boolean vector of length <code>n_steps</code>.</p>
+              </div>
+            </td>
+            <td>
+                  <code>None</code>
+            </td>
+          </tr>
+          <tr class="doc-section-item">
+            <td>
+                <code>subchain_length</code>
+            </td>
+            <td>
+                  <code><span title="numpy.typing.ArrayLike">ArrayLike</span> | None</code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>Optional integer vector of length <code>n_steps</code>. If you pass a shorter history
+(e.g., only update events), store it elsewhere and do not claim per-step alignment.</p>
+              </div>
+            </td>
+            <td>
+                  <code>None</code>
+            </td>
+          </tr>
+      </tbody>
+    </table>
+
+
+    <p><span class="doc-section-title">Returns:</span></p>
+    <table>
+      <thead>
+        <tr>
+          <th>Type</th>
+          <th>Description</th>
+        </tr>
+      </thead>
+      <tbody>
+          <tr class="doc-section-item">
+            <td>
+                  <code><span title="gp_active_mcmc.inference.chain">chain</span></code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>A validated <code>MCMCChain</code>.</p>
+              </div>
+            </td>
+          </tr>
+      </tbody>
+    </table>
+
+
+<p><span class="doc-section-title">Raises:</span></p>
+    <table>
+      <thead>
+        <tr>
+          <th>Type</th>
+          <th>Description</th>
+        </tr>
+      </thead>
+      <tbody>
+          <tr class="doc-section-item">
+            <td>
+                  <code><span title="ValueError">ValueError</span></code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>If <code>samples</code> is not 2D or if aligned arrays have inconsistent lengths.</p>
+              </div>
+            </td>
+          </tr>
+      </tbody>
+    </table>
+
+
+<details class="see-also" open>
+  <summary>See Also</summary>
+  <p><a class="autorefs autorefs-internal" title="            ChainExtras
+
+
+  
+      dataclass
+  " href="#gp_active_mcmc.inference.ChainExtras"><code>ChainExtras</code></a>
+    Container type used for optional aligned arrays.</p>
+</details>
+
+    </div>
+
+</div>
+
+<div class="doc doc-object doc-function">
+
+
+<h6 id="gp_active_mcmc.inference.MCMCChain.burnin" class="doc doc-heading">
+<code class="doc-symbol doc-symbol-heading doc-symbol-method"></code>            <span class="doc doc-object-name doc-function-name">burnin</span>
+
+
+</h6>
+<div class="doc-signature highlight"><pre><span></span><code><span class="nf">burnin</span><span class="p">(</span><span class="n">burnin</span><span class="o">=</span><span class="mi">0</span><span class="p">)</span>
+</code></pre></div>
+
+    <div class="doc doc-contents ">
+
+        <p>Drop the first <code>burnin</code> samples and return a new chain.</p>
+
+
+<p><span class="doc-section-title">Parameters:</span></p>
+    <table>
+      <thead>
+        <tr>
+          <th>Name</th>
+          <th>Type</th>
+          <th>Description</th>
+          <th>Default</th>
+        </tr>
+      </thead>
+      <tbody>
+          <tr class="doc-section-item">
+            <td>
+                <code>burnin</code>
+            </td>
+            <td>
+                  <code><span title="int">int</span></code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>Number of initial samples to discard.</p>
+              </div>
+            </td>
+            <td>
+                  <code>0</code>
+            </td>
+          </tr>
+      </tbody>
+    </table>
+
+
+    <p><span class="doc-section-title">Returns:</span></p>
+    <table>
+      <thead>
+        <tr>
+          <th>Type</th>
+          <th>Description</th>
+        </tr>
+      </thead>
+      <tbody>
+          <tr class="doc-section-item">
+            <td>
+                  <code><span title="gp_active_mcmc.inference.chain">chain</span></code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>New <code>MCMCChain</code> with burn-in removed.</p>
+              </div>
+            </td>
+          </tr>
+      </tbody>
+    </table>
+
+
+<details class="see-also" open>
+  <summary>See Also</summary>
+  <p><a class="autorefs autorefs-internal" title="            thin" href="#gp_active_mcmc.inference.MCMCChain.thin"><code>MCMCChain.thin</code></a>
+    Thinning operation that also keeps extras aligned.</p>
+</details>
+
+    </div>
+
+</div>
+
+<div class="doc doc-object doc-function">
+
+
+<h6 id="gp_active_mcmc.inference.MCMCChain.thin" class="doc doc-heading">
+<code class="doc-symbol doc-symbol-heading doc-symbol-method"></code>            <span class="doc doc-object-name doc-function-name">thin</span>
+
+
+</h6>
+<div class="doc-signature highlight"><pre><span></span><code><span class="nf">thin</span><span class="p">(</span><span class="n">thin</span><span class="o">=</span><span class="mi">1</span><span class="p">)</span>
+</code></pre></div>
+
+    <div class="doc doc-contents ">
+
+        <p>Thin the chain by keeping every <code>thin</code>-th sample.</p>
+
+
+<p><span class="doc-section-title">Parameters:</span></p>
+    <table>
+      <thead>
+        <tr>
+          <th>Name</th>
+          <th>Type</th>
+          <th>Description</th>
+          <th>Default</th>
+        </tr>
+      </thead>
+      <tbody>
+          <tr class="doc-section-item">
+            <td>
+                <code>thin</code>
+            </td>
+            <td>
+                  <code><span title="int">int</span></code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>Thinning factor. Must be a positive integer.</p>
+              </div>
+            </td>
+            <td>
+                  <code>1</code>
+            </td>
+          </tr>
+      </tbody>
+    </table>
+
+
+    <p><span class="doc-section-title">Returns:</span></p>
+    <table>
+      <thead>
+        <tr>
+          <th>Type</th>
+          <th>Description</th>
+        </tr>
+      </thead>
+      <tbody>
+          <tr class="doc-section-item">
+            <td>
+                  <code><span title="gp_active_mcmc.inference.chain">chain</span></code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>New <code>MCMCChain</code> with thinned samples and sliced extras.</p>
+              </div>
+            </td>
+          </tr>
+      </tbody>
+    </table>
+
+
+    </div>
+
+</div>
+
+<div class="doc doc-object doc-function">
+
+
+<h6 id="gp_active_mcmc.inference.MCMCChain.summary" class="doc doc-heading">
+<code class="doc-symbol doc-symbol-heading doc-symbol-method"></code>            <span class="doc doc-object-name doc-function-name">summary</span>
+
+
+</h6>
+<div class="doc-signature highlight"><pre><span></span><code><span class="nf">summary</span><span class="p">(</span><span class="o">*</span><span class="p">,</span> <span class="n">theta_true</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">burnin</span><span class="o">=</span><span class="mi">0</span><span class="p">)</span>
+</code></pre></div>
+
+    <div class="doc doc-contents ">
+
+        <p>Compute lightweight diagnostic summary statistics.</p>
+
+
+<details class="included-metrics" open>
+  <summary>Included metrics</summary>
+  <ul>
+<li><code>n_steps</code>, <code>n_dim</code></li>
+<li>acceptance information:</li>
+<li>if <code>extras.accepted</code> is available: exact acceptance rate via
+    <a class="autorefs autorefs-internal" title="            acceptance_rate_from_accepted" href="../utils/#gp_active_mcmc.utils.acceptance_rate_from_accepted"><code>acceptance_rate_from_accepted</code></a></li>
+<li>otherwise: move fraction via
+    <a class="autorefs autorefs-internal" title="            move_fraction_from_samples" href="../utils/#gp_active_mcmc.utils.move_fraction_from_samples"><code>move_fraction_from_samples</code></a></li>
+<li>HF usage:</li>
+<li><code>hf_call_fraction</code>, <code>n_hf_calls</code> if <code>extras.used_hf</code> is available, using
+    <a class="autorefs autorefs-internal" title="            hf_call_fraction" href="../utils/#gp_active_mcmc.utils.hf_call_fraction"><code>hf_call_fraction</code></a></li>
+<li>adaptive subchain:</li>
+<li><code>mean_subchain_length</code> if <code>extras.subchain_length</code> is available, using
+    <a class="autorefs autorefs-internal" title="            mean_subchain_length" href="../utils/#gp_active_mcmc.utils.mean_subchain_length"><code>mean_subchain_length</code></a></li>
+<li>optional accuracy:</li>
+<li><code>posterior_rmse</code> if <code>theta_true</code> is provided, using
+    <a class="autorefs autorefs-internal" title="            posterior_rmse" href="../utils/#gp_active_mcmc.utils.posterior_rmse"><code>posterior_rmse</code></a></li>
+</ul>
+</details>
+
+<p><span class="doc-section-title">Parameters:</span></p>
+    <table>
+      <thead>
+        <tr>
+          <th>Name</th>
+          <th>Type</th>
+          <th>Description</th>
+          <th>Default</th>
+        </tr>
+      </thead>
+      <tbody>
+          <tr class="doc-section-item">
+            <td>
+                <code>theta_true</code>
+            </td>
+            <td>
+                  <code><span title="numpy.typing.ArrayLike">ArrayLike</span> | None</code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>Optional reference parameter vector. If provided, the RMSE between the posterior
+estimate and <code>theta_true</code> is reported.</p>
+              </div>
+            </td>
+            <td>
+                  <code>None</code>
+            </td>
+          </tr>
+          <tr class="doc-section-item">
+            <td>
+                <code>burnin</code>
+            </td>
+            <td>
+                  <code><span title="int">int</span></code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>Burn-in used only for the posterior RMSE computation.</p>
+              </div>
+            </td>
+            <td>
+                  <code>0</code>
+            </td>
+          </tr>
+      </tbody>
+    </table>
+
+
+    <p><span class="doc-section-title">Returns:</span></p>
+    <table>
+      <thead>
+        <tr>
+          <th>Type</th>
+          <th>Description</th>
+        </tr>
+      </thead>
+      <tbody>
+          <tr class="doc-section-item">
+            <td>
+                  <code><a class="autorefs autorefs-internal" title="            summary (gp_active_mcmc.inference.chain.MCMCChain.summary)" href="#gp_active_mcmc.inference.MCMCChain.summary">summary</a></code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>Dictionary of summary metrics.</p>
+              </div>
+            </td>
+          </tr>
+      </tbody>
+    </table>
+
+
+    </div>
+
+</div>
+
+
+
+  </div>
+
+    </div>
+
+</div>
+
+<div class="doc doc-object doc-class">
+
+
+
+<h4 id="gp_active_mcmc.inference.SamplingResult" class="doc doc-heading">
+<code class="doc-symbol doc-symbol-heading doc-symbol-class"></code>            <span class="doc doc-object-name doc-class-name">SamplingResult</span>
+
+
+  <span class="doc doc-labels">
+      <small class="doc doc-label doc-label-dataclass"><code>dataclass</code></small>
+  </span>
+
+</h4>
+<div class="doc-signature highlight"><pre><span></span><code><span class="nf">SamplingResult</span><span class="p">(</span><span class="n">chain</span><span class="p">,</span> <span class="n">metadata</span><span class="o">=</span><span class="nb">dict</span><span class="p">())</span>
+</code></pre></div>
+
+    <div class="doc doc-contents ">
+
+
+
+        <p>Return type for sampling entrypoints.</p>
+<p>The sampling entrypoints in
+<a class="autorefs autorefs-internal" title="            sample_active_chain" href="#gp_active_mcmc.inference.sample_active_chain"><code>gp_active_mcmc.inference.sample_active_chain</code></a>
+and <a class="autorefs autorefs-internal" title="            sample_adaptive_active_chain" href="#gp_active_mcmc.inference.sample_adaptive_active_chain"><code>gp_active_mcmc.inference.sample_adaptive_active_chain</code></a>
+return a <code>SamplingResult</code> to keep the public API stable:</p>
+<ul>
+<li><code>chain</code>: the samples and aligned diagnostics as an
+  <a class="autorefs autorefs-internal" title="            MCMCChain
+
+
+  
+      dataclass
+  " href="#gp_active_mcmc.inference.MCMCChain"><code>MCMCChain</code></a></li>
+<li><code>metadata</code>: lightweight bookkeeping information (iterations, chunk size, etc.)</li>
+</ul>
+
+
+<p><span class="doc-section-title">Attributes:</span></p>
+    <table>
+      <thead>
+        <tr>
+          <th>Name</th>
+          <th>Type</th>
+          <th>Description</th>
+        </tr>
+      </thead>
+      <tbody>
+          <tr class="doc-section-item">
+            <td><code><span title="gp_active_mcmc.inference.SamplingResult.chain">chain</span></code></td>
+            <td>
+                  <code><a class="autorefs autorefs-internal" title="            MCMCChain
+
+
+  
+      dataclass
+   (gp_active_mcmc.inference.chain.MCMCChain)" href="#gp_active_mcmc.inference.MCMCChain">MCMCChain</a></code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>The resulting MCMC chain.</p>
+              </div>
+            </td>
+          </tr>
+          <tr class="doc-section-item">
+            <td><code><span title="gp_active_mcmc.inference.SamplingResult.metadata">metadata</span></code></td>
+            <td>
+                  <code><span title="dict">dict</span>[<span title="str">str</span>, <span title="typing.Any">Any</span>]</code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>Run metadata (configuration and bookkeeping). Intended to be lightweight and
+JSON-serialisable.</p>
+              </div>
+            </td>
+          </tr>
+      </tbody>
+    </table>
+
+
+<details class="see-also" open>
+  <summary>See Also</summary>
+  <p><a class="autorefs autorefs-internal" title="            sample_active_chain" href="#gp_active_mcmc.inference.sample_active_chain"><code>sample_active_chain</code></a>
+    Fixed-subsampling sampler.
+<a class="autorefs autorefs-internal" title="            sample_adaptive_active_chain" href="#gp_active_mcmc.inference.sample_adaptive_active_chain"><code>sample_adaptive_active_chain</code></a>
+    Chunked sampler for adaptive subchain runs.</p>
+</details>
+
+
+
+
+
+
+
+
+
+
+<div class="doc doc-children">
+
+
+
+
+
+
+
+
+
+
+
+
+  </div>
+
+    </div>
+
+</div>
+
+<div class="doc doc-object doc-class">
+
+
+
+<h4 id="gp_active_mcmc.inference.CoarseOutput" class="doc doc-heading">
+<code class="doc-symbol doc-symbol-heading doc-symbol-class"></code>            <span class="doc doc-object-name doc-class-name">CoarseOutput</span>
+
+
+</h4>
+
+
+    <div class="doc doc-contents ">
+            <p class="doc doc-class-bases">
+              Bases: <code><span title="numpy.ndarray">ndarray</span></code></p>
+
+
+
+        <p>Prediction container for LF (surrogate) evaluations.</p>
+<p><code>CoarseOutput</code> behaves like a NumPy array containing the predictive mean, while
+attaching a <code>.variance</code> attribute that stores <strong>marginal (pointwise) predictive
+variance</strong> aligned with that mean.</p>
+<p>The class exists to keep the LF path compatible with array-oriented APIs (notably
+<code>tinyDA</code> forward models and likelihoods), without discarding uncertainty information
+produced by the surrogate.</p>
+
+
+<details class="typical-use-in-this-library" open>
+  <summary>Typical use in this library</summary>
+  <ul>
+<li><a class="autorefs autorefs-internal" title="            coarse" href="#gp_active_mcmc.inference.ActiveMCMCModel.coarse"><code>ActiveMCMCModel.coarse</code></a>
+  returns a <code>CoarseOutput(mean, variance)</code> when the LF surrogate is used.</li>
+<li><a class="autorefs autorefs-internal" title="            ActiveGPLogLike" href="#gp_active_mcmc.inference.ActiveGPLogLike"><code>ActiveGPLogLike</code></a> detects the
+  <code>.variance</code> attribute and inflates the observation covariance with a diagonal term
+  <code>diag(variance)</code>.</li>
+</ul>
+</details>
+
+<details class="interpretation" open>
+  <summary>Interpretation</summary>
+  <p>The stored variance is interpreted as marginal variance in observation space:</p>
+<ul>
+<li><code>mean[i]</code> is the predicted mean for observation component <code>i</code></li>
+<li><code>variance[i]</code> is the predictive variance for the same component</li>
+</ul>
+</details>
+
+<details class="note" open>
+  <summary>Notes</summary>
+  <ul>
+<li>This is a lightweight container: it stores <em>marginal</em> variances only. Output
+  correlations are not represented.</li>
+<li><code>variance</code> must be non-negative and have the same shape as the mean.</li>
+</ul>
+</details>
+
+<p><span class="doc-section-title">Attributes:</span></p>
+    <table>
+      <thead>
+        <tr>
+          <th>Name</th>
+          <th>Type</th>
+          <th>Description</th>
+        </tr>
+      </thead>
+      <tbody>
+          <tr class="doc-section-item">
+            <td><code><span title="gp_active_mcmc.inference.CoarseOutput.variance">variance</span></code></td>
+            <td>
+                  <code><span title="numpy.typing.NDArray">NDArray</span>[<span title="numpy.floating">floating</span>]</code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>Marginal (pointwise) variance aligned with the mean.</p>
+              </div>
+            </td>
+          </tr>
+      </tbody>
+    </table>
+
+
+<p><span class="doc-section-title">Examples:</span></p>
+    <div class="highlight"><pre><span></span><code><span class="gp">&gt;&gt;&gt; </span><span class="n">y</span> <span class="o">=</span> <span class="n">CoarseOutput</span><span class="p">(</span><span class="n">mean</span><span class="o">=</span><span class="n">np</span><span class="o">.</span><span class="n">array</span><span class="p">([</span><span class="mf">1.0</span><span class="p">,</span> <span class="mf">2.0</span><span class="p">]),</span> <span class="n">variance</span><span class="o">=</span><span class="n">np</span><span class="o">.</span><span class="n">array</span><span class="p">([</span><span class="mf">0.1</span><span class="p">,</span> <span class="mf">0.2</span><span class="p">]))</span>
+<span class="gp">&gt;&gt;&gt; </span><span class="n">np</span><span class="o">.</span><span class="n">asarray</span><span class="p">(</span><span class="n">y</span><span class="p">)</span>
+<span class="go">array([1., 2.])</span>
+<span class="gp">&gt;&gt;&gt; </span><span class="n">y</span><span class="o">.</span><span class="n">variance</span>
+<span class="go">array([0.1, 0.2])</span>
+</code></pre></div>
+
+
+<details class="see-also" open>
+  <summary>See Also</summary>
+  <p><a class="autorefs autorefs-internal" title="            ActiveMCMCModel
+
+
+  
+      dataclass
+  " href="#gp_active_mcmc.inference.ActiveMCMCModel"><code>ActiveMCMCModel</code></a>
+    Coupled LF/HF model that returns <code>CoarseOutput</code> on the coarse path.
+<a class="autorefs autorefs-internal" title="            ActiveGPLogLike" href="#gp_active_mcmc.inference.ActiveGPLogLike"><code>ActiveGPLogLike</code></a>
+    Likelihood that uses <code>CoarseOutput.variance</code> to inflate the observation covariance.</p>
+</details>
+
+
+
+
+
+
+
+
+
+
+<div class="doc doc-children">
+
+
+
+
+
+
+
+
+<h5 id="gp_active_mcmc.inference.CoarseOutput-functions">Functions</h5>
+
+<div class="doc doc-object doc-function">
+
+
+<h6 id="gp_active_mcmc.inference.CoarseOutput.__new__" class="doc doc-heading">
+<code class="doc-symbol doc-symbol-heading doc-symbol-method"></code>            <span class="doc doc-object-name doc-function-name">__new__</span>
+
+
+</h6>
+<div class="doc-signature highlight"><pre><span></span><code><span class="nf">__new__</span><span class="p">(</span><span class="n">mean</span><span class="p">,</span> <span class="n">variance</span><span class="p">)</span>
+</code></pre></div>
+
+    <div class="doc doc-contents ">
+
+        <p>Create a <code>CoarseOutput</code> from mean and marginal variance.</p>
+
+
+<p><span class="doc-section-title">Parameters:</span></p>
+    <table>
+      <thead>
+        <tr>
+          <th>Name</th>
+          <th>Type</th>
+          <th>Description</th>
+          <th>Default</th>
+        </tr>
+      </thead>
+      <tbody>
+          <tr class="doc-section-item">
+            <td>
+                <code>mean</code>
+            </td>
+            <td>
+                  <code><span title="numpy.ndarray">ndarray</span></code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>Predictive mean array.</p>
+              </div>
+            </td>
+            <td>
+                <em>required</em>
+            </td>
+          </tr>
+          <tr class="doc-section-item">
+            <td>
+                <code>variance</code>
+            </td>
+            <td>
+                  <code><span title="numpy.ndarray">ndarray</span></code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>Predictive marginal variance array (same shape as <code>mean</code>).</p>
+              </div>
+            </td>
+            <td>
+                <em>required</em>
+            </td>
+          </tr>
+      </tbody>
+    </table>
+
+
+    <p><span class="doc-section-title">Returns:</span></p>
+    <table>
+      <thead>
+        <tr>
+          <th>Type</th>
+          <th>Description</th>
+        </tr>
+      </thead>
+      <tbody>
+          <tr class="doc-section-item">
+            <td>
+                  <code><span title="out">out</span></code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>Array-like object whose values are the predictive mean and with an attached
+<code>.variance</code> attribute.</p>
+              </div>
+            </td>
+          </tr>
+      </tbody>
+    </table>
+
+
+<p><span class="doc-section-title">Raises:</span></p>
+    <table>
+      <thead>
+        <tr>
+          <th>Type</th>
+          <th>Description</th>
+        </tr>
+      </thead>
+      <tbody>
+          <tr class="doc-section-item">
+            <td>
+                  <code><span title="ValueError">ValueError</span></code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>If <code>mean</code> and <code>variance</code> have different shapes, or if <code>variance</code> contains
+negative entries.</p>
+              </div>
+            </td>
+          </tr>
+      </tbody>
+    </table>
+
+
+    </div>
+
+</div>
+
+<div class="doc doc-object doc-function">
+
+
+<h6 id="gp_active_mcmc.inference.CoarseOutput.__array_finalize__" class="doc doc-heading">
+<code class="doc-symbol doc-symbol-heading doc-symbol-method"></code>            <span class="doc doc-object-name doc-function-name">__array_finalize__</span>
+
+
+</h6>
+<div class="doc-signature highlight"><pre><span></span><code><span class="nf">__array_finalize__</span><span class="p">(</span><span class="n">obj</span><span class="p">)</span>
+</code></pre></div>
+
+    <div class="doc doc-contents ">
+
+        <p>Propagate <code>.variance</code> when NumPy creates a new view.</p>
+<p>NumPy calls <code>__array_finalize__</code> for view-casting and slicing operations.
+This method preserves the <code>variance</code> attribute when the new array is created
+from an existing <code>CoarseOutput</code>.</p>
+
+
+    </div>
+
+</div>
+
+
+
+  </div>
+
+    </div>
+
+</div>
+
+<div class="doc doc-object doc-class">
+
+
+
+<h4 id="gp_active_mcmc.inference.ActiveGPLogLike" class="doc doc-heading">
+<code class="doc-symbol doc-symbol-heading doc-symbol-class"></code>            <span class="doc doc-object-name doc-class-name">ActiveGPLogLike</span>
+
+
+</h4>
+
+
+    <div class="doc doc-contents ">
+            <p class="doc doc-class-bases">
+              Bases: <code><span title="tinyDA.AdaptiveGaussianLogLike">AdaptiveGaussianLogLike</span></code></p>
+
+
+
+        <p>Gaussian log-likelihood with surrogate-variance inflation.</p>
+<p><code>ActiveGPLogLike</code> is designed for inference workflows where the forward model may
+return either:</p>
+<ol>
+<li><strong>High-fidelity (HF)</strong> output: a 1D mean prediction <code>y</code>, or</li>
+<li><strong>Low-fidelity (LF) surrogate</strong> output: an array-like mean prediction that also
+   exposes a pointwise predictive variance vector via a <code>.variance</code> attribute
+   (for example <a class="autorefs autorefs-internal" title="            CoarseOutput" href="#gp_active_mcmc.inference.CoarseOutput"><code>CoarseOutput</code></a>).</li>
+</ol>
+<p>If a predictive variance vector is present, the likelihood inflates the observation
+covariance using a diagonal term:</p>
+
+
+
+
+
+
+
+
+
+
+
+<div class="doc doc-children">
+
+
+
+
+
+
+
+
+<h5 id="gp_active_mcmc.inference.ActiveGPLogLike-functions">Functions</h5>
+
+<div class="doc doc-object doc-function">
+
+
+<h6 id="gp_active_mcmc.inference.ActiveGPLogLike.loglike" class="doc doc-heading">
+<code class="doc-symbol doc-symbol-heading doc-symbol-method"></code>            <span class="doc doc-object-name doc-function-name">loglike</span>
+
+
+</h6>
+<div class="doc-signature highlight"><pre><span></span><code><span class="nf">loglike</span><span class="p">(</span><span class="n">y_pred</span><span class="p">)</span>
+</code></pre></div>
+
+    <div class="doc doc-contents ">
+
+        <p>Evaluate the Gaussian log-likelihood for a prediction.</p>
+
+
+<p><span class="doc-section-title">Parameters:</span></p>
+    <table>
+      <thead>
+        <tr>
+          <th>Name</th>
+          <th>Type</th>
+          <th>Description</th>
+          <th>Default</th>
+        </tr>
+      </thead>
+      <tbody>
+          <tr class="doc-section-item">
+            <td>
+                <code>y_pred</code>
+            </td>
+            <td>
+                  <code><span title="typing.Any">Any</span></code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>Model prediction. Either:</p>
+<ul>
+<li>a 1D array-like mean prediction, or</li>
+<li>an object providing a mean prediction and an attribute <code>variance</code> (1D).</li>
+</ul>
+              </div>
+            </td>
+            <td>
+                <em>required</em>
+            </td>
+          </tr>
+      </tbody>
+    </table>
+
+
+    <p><span class="doc-section-title">Returns:</span></p>
+    <table>
+      <thead>
+        <tr>
+          <th>Type</th>
+          <th>Description</th>
+        </tr>
+      </thead>
+      <tbody>
+          <tr class="doc-section-item">
+            <td>
+                  <code><a class="autorefs autorefs-internal" title="            loglike (gp_active_mcmc.inference.likelihood.ActiveGPLogLike.loglike)" href="#gp_active_mcmc.inference.ActiveGPLogLike.loglike">loglike</a></code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>Log-likelihood value.</p>
+              </div>
+            </td>
+          </tr>
+      </tbody>
+    </table>
+
+
+<p><span class="doc-section-title">Raises:</span></p>
+    <table>
+      <thead>
+        <tr>
+          <th>Type</th>
+          <th>Description</th>
+        </tr>
+      </thead>
+      <tbody>
+          <tr class="doc-section-item">
+            <td>
+                  <code><span title="ValueError">ValueError</span></code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>If shapes are inconsistent with the observed data, or if a provided variance
+vector is negative or mismatched.</p>
+              </div>
+            </td>
+          </tr>
+      </tbody>
+    </table>
+
+
+    </div>
+
+</div>
+
+
+
+  </div>
+
+    </div>
+
+</div>
+
+<div class="doc doc-object doc-class">
+
+
+
+<h4 id="gp_active_mcmc.inference.ActiveMCMCModel" class="doc doc-heading">
+<code class="doc-symbol doc-symbol-heading doc-symbol-class"></code>            <span class="doc doc-object-name doc-class-name">ActiveMCMCModel</span>
+
+
+  <span class="doc doc-labels">
+      <small class="doc doc-label doc-label-dataclass"><code>dataclass</code></small>
+  </span>
+
+</h4>
+<div class="doc-signature highlight"><pre><span></span><code><span class="nf">ActiveMCMCModel</span><span class="p">(</span><span class="n">lf_model</span><span class="p">,</span> <span class="n">hf_model</span><span class="p">,</span> <span class="n">gamma_threshold</span><span class="p">,</span> <span class="n">log</span><span class="o">=</span><span class="n">EvaluationLog</span><span class="p">(),</span> <span class="n">adaptive</span><span class="o">=</span><span class="kc">None</span><span class="p">)</span>
+</code></pre></div>
+
+    <div class="doc doc-contents ">
+
+
+
+        <p>Couple a low-fidelity surrogate (LF) with a high-fidelity model (HF).</p>
+<p><a class="autorefs autorefs-internal" title="            ActiveMCMCModel
+
+
+  
+      dataclass
+  " href="#gp_active_mcmc.inference.ActiveMCMCModel"><code>ActiveMCMCModel</code></a> is the core component
+of the library. It implements the LF/HF coupling required by active-learning MCMC workflows
+and exposes two callables intended to be used in MCMC posteriors:</p>
+<ul>
+<li><a class="autorefs autorefs-internal" title="            coarse" href="#gp_active_mcmc.inference.ActiveMCMCModel.coarse"><code>ActiveMCMCModel.coarse</code></a> —
+  LF-first evaluation with an uncertainty trigger that may fall back to HF.</li>
+<li><a class="autorefs autorefs-internal" title="            fine" href="#gp_active_mcmc.inference.ActiveMCMCModel.fine"><code>ActiveMCMCModel.fine</code></a> —
+  HF evaluation (always) and surrogate update.</li>
+</ul>
+<p>In practice, users typically:</p>
+<ol>
+<li>Build an LF surrogate (e.g., POD–GP).</li>
+<li>Wrap LF + HF in an <code>ActiveMCMCModel</code>.</li>
+<li>Choose an inference mode by deciding which posterior(s) to pass to a sampler.</li>
+<li>Run a sampler and analyse both samples and HF-usage diagnostics.</li>
+</ol>
+
+
+<details class="choosing-the-inference-mode" open>
+  <summary>Choosing the inference mode</summary>
+  <p>The <em>posterior argument</em> determines how the sampler interacts with the active model.</p>
+<p><strong>Single posterior (MCMC-guided active learning)</strong>
+    Pass a single posterior using <code>model.coarse</code> as the forward model. HF calls happen
+    internally whenever the uncertainty trigger activates.</p>
+<pre><code>- `posterior = Posterior(prior, loglike, model.coarse)`
+- sampler:
+  [`sample_active_chain`][gp_active_mcmc.inference.sampling.sample_active_chain]
+</code></pre>
+<p><strong>Two posteriors (DA-MCMC guided active learning)</strong>
+    Pass two posteriors: coarse (LF-first) and fine (HF). This corresponds to
+    delayed-acceptance MCMC (DA-MCMC).</p>
+<pre><code>- `posterior = [Posterior(..., model.coarse), Posterior(..., model.fine)]`
+- sampler:
+  [`sample_active_chain`][gp_active_mcmc.inference.sampling.sample_active_chain]
+</code></pre>
+<p><strong>Adaptive DA-MCMC (recommended)</strong>
+    Use DA-MCMC (two posteriors) and pass an adaptive subchain policy via <code>adaptive=...</code>.
+    The adaptive policy monitors LF–HF discrepancy and adjusts how often fine (HF)
+    corrections are applied.</p>
+<pre><code>- DA-MCMC is mandatory: you must use two posteriors.
+- adaptive policy:
+  [`AdaptiveSubchain`][gp_active_mcmc.inference.adaptive_subchain.AdaptiveSubchain]
+- sampler:
+  [`sample_adaptive_active_chain`][gp_active_mcmc.inference.sampling.sample_adaptive_active_chain]
+</code></pre>
+</details>
+
+<p><span class="doc-section-title">Parameters:</span></p>
+    <table>
+      <thead>
+        <tr>
+          <th>Name</th>
+          <th>Type</th>
+          <th>Description</th>
+          <th>Default</th>
+        </tr>
+      </thead>
+      <tbody>
+          <tr class="doc-section-item">
+            <td>
+                <code>lf_model</code>
+            </td>
+            <td>
+                  <code><span title="gp_active_mcmc.protocols.ActiveSurrogate">ActiveSurrogate</span></code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>Low-fidelity surrogate implementing:</p>
+<ul>
+<li><code>predict(theta) -&gt; (mean, var)</code> where both arrays have shape <code>(n_obs,)</code></li>
+<li><code>update(theta, y_hf)</code> to incorporate new HF evaluations</li>
+</ul>
+              </div>
+            </td>
+            <td>
+                <em>required</em>
+            </td>
+          </tr>
+          <tr class="doc-section-item">
+            <td>
+                <code>hf_model</code>
+            </td>
+            <td>
+                  <code><span title="gp_active_mcmc.protocols.HighFidelityModel">HighFidelityModel</span></code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>High-fidelity forward model callable as <code>hf_model(theta) -&gt; y</code> where <code>y</code> has shape <code>(n_obs,)</code>.</p>
+              </div>
+            </td>
+            <td>
+                <em>required</em>
+            </td>
+          </tr>
+          <tr class="doc-section-item">
+            <td>
+                <code>gamma_threshold</code>
+            </td>
+            <td>
+                  <code><span title="float">float</span></code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>Uncertainty threshold used by <a class="autorefs autorefs-internal" title="            coarse" href="#gp_active_mcmc.inference.ActiveMCMCModel.coarse"><code>coarse</code></a>.
+A coarse call triggers HF if <code>mean(y_var) &gt; gamma_threshold**2</code>.</p>
+              </div>
+            </td>
+            <td>
+                <em>required</em>
+            </td>
+          </tr>
+          <tr class="doc-section-item">
+            <td>
+                <code>log</code>
+            </td>
+            <td>
+                  <code><a class="autorefs autorefs-internal" title="            EvaluationLog
+
+
+  
+      dataclass
+   (gp_active_mcmc.inference.model.EvaluationLog)" href="#gp_active_mcmc.inference.EvaluationLog">EvaluationLog</a></code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>Evaluation log used to record HF usage aligned with coarse evaluations.
+See <a class="autorefs autorefs-internal" title="            EvaluationLog
+
+
+  
+      dataclass
+  " href="#gp_active_mcmc.inference.EvaluationLog"><code>EvaluationLog</code></a>.</p>
+              </div>
+            </td>
+            <td>
+                  <code><a class="autorefs autorefs-internal" title="            EvaluationLog
+
+
+  
+      dataclass
+   (gp_active_mcmc.inference.model.EvaluationLog)" href="#gp_active_mcmc.inference.EvaluationLog">EvaluationLog</a>()</code>
+            </td>
+          </tr>
+          <tr class="doc-section-item">
+            <td>
+                <code>adaptive</code>
+            </td>
+            <td>
+                  <code><a class="autorefs autorefs-internal" title="            AdaptiveHook (gp_active_mcmc.inference.model.AdaptiveHook)" href="#gp_active_mcmc.inference.AdaptiveHook">AdaptiveHook</a> | None</code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>Optional adaptive hook (e.g., adaptive subchain logic). When provided, the hook is notified
+during coarse and fine evaluations. See <a class="autorefs autorefs-internal" title="            AdaptiveHook" href="#gp_active_mcmc.inference.AdaptiveHook"><code>AdaptiveHook</code></a>.</p>
+              </div>
+            </td>
+            <td>
+                  <code>None</code>
+            </td>
+          </tr>
+      </tbody>
+    </table>
+
+
+<details class="returns-and-types" open>
+  <summary>Returns and types</summary>
+  <ul>
+<li><a class="autorefs autorefs-internal" title="            coarse" href="#gp_active_mcmc.inference.ActiveMCMCModel.coarse"><code>coarse</code></a> returns either:</li>
+<li>a <a class="autorefs autorefs-internal" title="            CoarseOutput" href="#gp_active_mcmc.inference.CoarseOutput"><code>CoarseOutput</code></a> if LF is used, or</li>
+<li>a 1D numpy array (HF output) if HF is triggered.</li>
+<li><a class="autorefs autorefs-internal" title="            fine" href="#gp_active_mcmc.inference.ActiveMCMCModel.fine"><code>fine</code></a> always returns a 1D numpy array (HF output).</li>
+</ul>
+</details>
+
+<details class="note" open>
+  <summary>Notes</summary>
+  <p>The uncertainty trigger in <code>coarse</code> is intentionally simple and cheap: it uses the mean predictive
+variance over outputs as a scalar criterion.</p>
+</details>
+
+<details class="see-also" open>
+  <summary>See Also</summary>
+  <p><a class="autorefs autorefs-internal" title="            ActiveGPLogLike" href="#gp_active_mcmc.inference.ActiveGPLogLike"><code>ActiveGPLogLike</code></a>
+    Likelihood that inflates observation covariance when <code>CoarseOutput.variance</code> is present.
+<a class="autorefs autorefs-internal" title="            ChunkedMCMCConfig
+
+
+  
+      dataclass
+  " href="#gp_active_mcmc.inference.ChunkedMCMCConfig"><code>ChunkedMCMCConfig</code></a>
+    Chunking configuration required for adaptive subchain sampling.</p>
+</details>
+
+
+
+
+
+
+
+
+
+
+<div class="doc doc-children">
+
+
+
+
+
+
+
+
+<h5 id="gp_active_mcmc.inference.ActiveMCMCModel-functions">Functions</h5>
+
+<div class="doc doc-object doc-function">
+
+
+<h6 id="gp_active_mcmc.inference.ActiveMCMCModel.coarse" class="doc doc-heading">
+<code class="doc-symbol doc-symbol-heading doc-symbol-method"></code>            <span class="doc doc-object-name doc-function-name">coarse</span>
+
+
+</h6>
+<div class="doc-signature highlight"><pre><span></span><code><span class="nf">coarse</span><span class="p">(</span><span class="n">theta</span><span class="p">)</span>
+</code></pre></div>
+
+    <div class="doc doc-contents ">
+
+        <p>Evaluate the coupled model in LF-first (coarse) mode.</p>
+
+
+<details class="workflow" open>
+  <summary>Workflow</summary>
+  <ol>
+<li>Compute LF predictive mean and variance at <code>theta</code>.</li>
+<li>If LF uncertainty is large (<code>mean(var) &gt; gamma_threshold**2</code>), evaluate HF.</li>
+<li>If HF was used, update the LF surrogate with <code>(theta, y_hf)</code>.</li>
+<li>Record HF usage in <code>log.used_hf</code>.</li>
+</ol>
+</details>
+
+<p><span class="doc-section-title">Parameters:</span></p>
+    <table>
+      <thead>
+        <tr>
+          <th>Name</th>
+          <th>Type</th>
+          <th>Description</th>
+          <th>Default</th>
+        </tr>
+      </thead>
+      <tbody>
+          <tr class="doc-section-item">
+            <td>
+                <code>theta</code>
+            </td>
+            <td>
+                  <code><span title="numpy.typing.ArrayLike">ArrayLike</span></code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>Parameter vector of shape <code>(n_dim,)</code>.</p>
+              </div>
+            </td>
+            <td>
+                <em>required</em>
+            </td>
+          </tr>
+      </tbody>
+    </table>
+
+
+    <p><span class="doc-section-title">Returns:</span></p>
+    <table>
+      <thead>
+        <tr>
+          <th>Type</th>
+          <th>Description</th>
+        </tr>
+      </thead>
+      <tbody>
+          <tr class="doc-section-item">
+            <td>
+                  <code><span title="out">out</span></code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>If LF is used, returns a <a class="autorefs autorefs-internal" title="            CoarseOutput" href="#gp_active_mcmc.inference.CoarseOutput"><code>CoarseOutput</code></a>
+containing <code>(mean, variance)</code> where both are 1D arrays of shape <code>(n_obs,)</code>.</p>
+<p>If HF is triggered, returns the HF output as a 1D numpy array of shape <code>(n_obs,)</code>.</p>
+              </div>
+            </td>
+          </tr>
+      </tbody>
+    </table>
+
+
+<p><span class="doc-section-title">Raises:</span></p>
+    <table>
+      <thead>
+        <tr>
+          <th>Type</th>
+          <th>Description</th>
+        </tr>
+      </thead>
+      <tbody>
+          <tr class="doc-section-item">
+            <td>
+                  <code><span title="ValueError">ValueError</span></code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>If the surrogate returns mean/variance arrays with inconsistent shapes.</p>
+              </div>
+            </td>
+          </tr>
+      </tbody>
+    </table>
+
+
+<details class="see-also" open>
+  <summary>See Also</summary>
+  <p><a class="autorefs autorefs-internal" title="            ActiveGPLogLike" href="#gp_active_mcmc.inference.ActiveGPLogLike"><code>ActiveGPLogLike</code></a>
+    Uses <code>CoarseOutput.variance</code> to inflate the observation covariance.</p>
+</details>
+
+    </div>
+
+</div>
+
+<div class="doc doc-object doc-function">
+
+
+<h6 id="gp_active_mcmc.inference.ActiveMCMCModel.fine" class="doc doc-heading">
+<code class="doc-symbol doc-symbol-heading doc-symbol-method"></code>            <span class="doc doc-object-name doc-function-name">fine</span>
+
+
+</h6>
+<div class="doc-signature highlight"><pre><span></span><code><span class="nf">fine</span><span class="p">(</span><span class="n">theta</span><span class="p">,</span> <span class="o">*</span><span class="p">,</span> <span class="n">replace_last</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+</code></pre></div>
+
+    <div class="doc doc-contents ">
+
+        <p>Evaluate the coupled model in HF (fine) mode and update the surrogate.</p>
+<p>This method always evaluates the HF model and then updates the LF surrogate.
+It is typically used as the <em>fine</em> level in DA-MCMC, either periodically or
+according to an adaptive subchain policy.</p>
+
+
+<p><span class="doc-section-title">Parameters:</span></p>
+    <table>
+      <thead>
+        <tr>
+          <th>Name</th>
+          <th>Type</th>
+          <th>Description</th>
+          <th>Default</th>
+        </tr>
+      </thead>
+      <tbody>
+          <tr class="doc-section-item">
+            <td>
+                <code>theta</code>
+            </td>
+            <td>
+                  <code><span title="numpy.typing.ArrayLike">ArrayLike</span></code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>Parameter vector of shape <code>(n_dim,)</code>.</p>
+              </div>
+            </td>
+            <td>
+                <em>required</em>
+            </td>
+          </tr>
+          <tr class="doc-section-item">
+            <td>
+                <code>replace_last</code>
+            </td>
+            <td>
+                  <code><span title="bool">bool</span></code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>If True, replace the most recent entry in <code>log.used_hf</code> with True.
+This is convenient when <code>fine()</code> is called as a correction following a
+prior <code>coarse()</code> evaluation at the same MCMC step.
+If False, append a new entry to the log.</p>
+              </div>
+            </td>
+            <td>
+                  <code>True</code>
+            </td>
+          </tr>
+      </tbody>
+    </table>
+
+
+    <p><span class="doc-section-title">Returns:</span></p>
+    <table>
+      <thead>
+        <tr>
+          <th>Type</th>
+          <th>Description</th>
+        </tr>
+      </thead>
+      <tbody>
+          <tr class="doc-section-item">
+            <td>
+                  <code><span title="y_hf">y_hf</span></code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>HF model output as a 1D numpy array of shape <code>(n_obs,)</code>.</p>
+              </div>
+            </td>
+          </tr>
+      </tbody>
+    </table>
+
+
+<details class="see-also" open>
+  <summary>See Also</summary>
+  <p><a class="autorefs autorefs-internal" title="            AdaptiveSubchain
+
+
+  
+      dataclass
+  " href="#gp_active_mcmc.inference.AdaptiveSubchain"><code>AdaptiveSubchain</code></a>
+    Adaptive policy notified during fine evaluations (LF–HF discrepancy monitoring).</p>
+</details>
+
+    </div>
+
+</div>
+
+
+
+  </div>
+
+    </div>
+
+</div>
+
+<div class="doc doc-object doc-class">
+
+
+
+<h4 id="gp_active_mcmc.inference.EvaluationLog" class="doc doc-heading">
+<code class="doc-symbol doc-symbol-heading doc-symbol-class"></code>            <span class="doc doc-object-name doc-class-name">EvaluationLog</span>
+
+
+  <span class="doc doc-labels">
+      <small class="doc doc-label doc-label-dataclass"><code>dataclass</code></small>
+  </span>
+
+</h4>
+<div class="doc-signature highlight"><pre><span></span><code><span class="nf">EvaluationLog</span><span class="p">(</span><span class="n">used_hf</span><span class="o">=</span><span class="nb">list</span><span class="p">())</span>
+</code></pre></div>
+
+    <div class="doc doc-contents ">
+
+
+
+        <p>Minimal evaluation log for <a class="autorefs autorefs-internal" title="            ActiveMCMCModel
+
+
+  
+      dataclass
+  " href="#gp_active_mcmc.inference.ActiveMCMCModel"><code>ActiveMCMCModel</code></a>.</p>
+<p>The active model records whether each <em>coarse</em> evaluation used the HF model.
+This metadata is useful for diagnostics (HF fraction, where corrections occur)
+and for sampler bookkeeping.</p>
+
+
+<details class="note" open>
+  <summary>Notes</summary>
+  <p>The log is aligned with calls to
+<a class="autorefs autorefs-internal" title="            coarse" href="#gp_active_mcmc.inference.ActiveMCMCModel.coarse"><code>ActiveMCMCModel.coarse</code></a>.
+If a sampler performs a fine correction after a coarse step at the same MCMC iteration,
+the fine step can overwrite the last entry via <a class="autorefs autorefs-internal" title="            replace_last" href="#gp_active_mcmc.inference.EvaluationLog.replace_last"><code>replace_last</code></a>.</p>
+</details>
+
+<p><span class="doc-section-title">Attributes:</span></p>
+    <table>
+      <thead>
+        <tr>
+          <th>Name</th>
+          <th>Type</th>
+          <th>Description</th>
+        </tr>
+      </thead>
+      <tbody>
+          <tr class="doc-section-item">
+            <td><code><span title="gp_active_mcmc.inference.EvaluationLog.used_hf">used_hf</span></code></td>
+            <td>
+                  <code><span title="list">list</span>[<span title="bool">bool</span>]</code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>Boolean flag per coarse evaluation:</p>
+<ul>
+<li>False: LF surrogate was used (no HF correction)</li>
+<li>True: HF model was used (either triggered in <code>coarse</code> or via <code>fine</code>)</li>
+</ul>
+              </div>
+            </td>
+          </tr>
+      </tbody>
+    </table>
+
+
+
+
+
+
+
+
+
+
+
+<div class="doc doc-children">
+
+
+
+
+
+
+
+
+<h5 id="gp_active_mcmc.inference.EvaluationLog-functions">Functions</h5>
+
+<div class="doc doc-object doc-function">
+
+
+<h6 id="gp_active_mcmc.inference.EvaluationLog.append" class="doc doc-heading">
+<code class="doc-symbol doc-symbol-heading doc-symbol-method"></code>            <span class="doc doc-object-name doc-function-name">append</span>
+
+
+</h6>
+<div class="doc-signature highlight"><pre><span></span><code><span class="nf">append</span><span class="p">(</span><span class="n">used_hf</span><span class="p">)</span>
+</code></pre></div>
+
+    <div class="doc doc-contents ">
+
+        <p>Append a boolean HF-usage flag.</p>
+
+
+    </div>
+
+</div>
+
+<div class="doc doc-object doc-function">
+
+
+<h6 id="gp_active_mcmc.inference.EvaluationLog.replace_last" class="doc doc-heading">
+<code class="doc-symbol doc-symbol-heading doc-symbol-method"></code>            <span class="doc doc-object-name doc-function-name">replace_last</span>
+
+
+</h6>
+<div class="doc-signature highlight"><pre><span></span><code><span class="nf">replace_last</span><span class="p">(</span><span class="n">used_hf</span><span class="p">)</span>
+</code></pre></div>
+
+    <div class="doc doc-contents ">
+
+        <p>Replace the most recent HF-usage flag.</p>
+<p>If the log is empty, this method appends a new entry. This behaviour
+is convenient for samplers that call <a class="autorefs autorefs-internal" title="            fine" href="#gp_active_mcmc.inference.ActiveMCMCModel.fine"><code>ActiveMCMCModel.fine</code></a>
+as a correction following a prior coarse evaluation in the same MCMC step.</p>
+
+
+    </div>
+
+</div>
+
+
+
+  </div>
+
+    </div>
+
+</div>
+
+<div class="doc doc-object doc-class">
+
+
+
+<h4 id="gp_active_mcmc.inference.AdaptiveHook" class="doc doc-heading">
+<code class="doc-symbol doc-symbol-heading doc-symbol-class"></code>            <span class="doc doc-object-name doc-class-name">AdaptiveHook</span>
+
+
+</h4>
+
+
+    <div class="doc doc-contents ">
+            <p class="doc doc-class-bases">
+              Bases: <code><span title="typing.Protocol">Protocol</span></code></p>
+
+
+
+        <p>Callback interface for adaptive policies (e.g., adaptive subchains).</p>
+<p><a class="autorefs autorefs-internal" title="            ActiveMCMCModel
+
+
+  
+      dataclass
+  " href="#gp_active_mcmc.inference.ActiveMCMCModel"><code>ActiveMCMCModel</code></a> is responsible for
+coupling LF and HF. Adaptive logic (such as choosing a changing subchain length) is
+expressed as an external hook so that the active model remains small and testable.</p>
+<p>The hook receives notifications during model evaluations:</p>
+<ul>
+<li><a class="autorefs autorefs-internal" title="            on_coarse_call" href="#gp_active_mcmc.inference.AdaptiveHook.on_coarse_call"><code>on_coarse_call</code></a> is called at the start of
+  <a class="autorefs autorefs-internal" title="            coarse" href="#gp_active_mcmc.inference.ActiveMCMCModel.coarse"><code>ActiveMCMCModel.coarse</code></a>.</li>
+<li><a class="autorefs autorefs-internal" title="            on_fine_call" href="#gp_active_mcmc.inference.AdaptiveHook.on_fine_call"><code>on_fine_call</code></a> is called inside
+  <a class="autorefs autorefs-internal" title="            fine" href="#gp_active_mcmc.inference.ActiveMCMCModel.fine"><code>ActiveMCMCModel.fine</code></a>, <strong>before</strong>
+  updating the surrogate with the new HF observation.</li>
+</ul>
+
+
+<details class="note" open>
+  <summary>Notes</summary>
+  <p>The hook is deliberately narrow: it observes what happened and updates its own
+state; it does not perform I/O and it does not change the model outputs directly.</p>
+</details>
+
+<details class="see-also" open>
+  <summary>See Also</summary>
+  <p><a class="autorefs autorefs-internal" title="            AdaptiveSubchain
+
+
+  
+      dataclass
+  " href="#gp_active_mcmc.inference.AdaptiveSubchain"><code>AdaptiveSubchain</code></a>
+    Default adaptive policy provided by the library.</p>
+</details>
+
+
+
+
+
+
+
+
+
+
+<div class="doc doc-children">
+
+
+
+
+
+
+
+
+<h5 id="gp_active_mcmc.inference.AdaptiveHook-functions">Functions</h5>
+
+<div class="doc doc-object doc-function">
+
+
+<h6 id="gp_active_mcmc.inference.AdaptiveHook.on_coarse_call" class="doc doc-heading">
+<code class="doc-symbol doc-symbol-heading doc-symbol-method"></code>            <span class="doc doc-object-name doc-function-name">on_coarse_call</span>
+
+
+</h6>
+<div class="doc-signature highlight"><pre><span></span><code><span class="nf">on_coarse_call</span><span class="p">()</span>
+</code></pre></div>
+
+    <div class="doc doc-contents ">
+
+        <p>Called at the start of a coarse evaluation.</p>
+
+
+    </div>
+
+</div>
+
+<div class="doc doc-object doc-function">
+
+
+<h6 id="gp_active_mcmc.inference.AdaptiveHook.on_fine_call" class="doc doc-heading">
+<code class="doc-symbol doc-symbol-heading doc-symbol-method"></code>            <span class="doc doc-object-name doc-function-name">on_fine_call</span>
+
+
+</h6>
+<div class="doc-signature highlight"><pre><span></span><code><span class="nf">on_fine_call</span><span class="p">(</span><span class="o">*</span><span class="p">,</span> <span class="n">y_hf</span><span class="p">,</span> <span class="n">y_lf</span><span class="p">)</span>
+</code></pre></div>
+
+    <div class="doc doc-contents ">
+
+        <p>Called during fine evaluation before updating the surrogate.</p>
+
+
+<p><span class="doc-section-title">Parameters:</span></p>
+    <table>
+      <thead>
+        <tr>
+          <th>Name</th>
+          <th>Type</th>
+          <th>Description</th>
+          <th>Default</th>
+        </tr>
+      </thead>
+      <tbody>
+          <tr class="doc-section-item">
+            <td>
+                <code>y_hf</code>
+            </td>
+            <td>
+                  <code><span title="gp_active_mcmc.inference.model.FloatArray">FloatArray</span></code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>HF model output at the current <code>theta</code>.</p>
+              </div>
+            </td>
+            <td>
+                <em>required</em>
+            </td>
+          </tr>
+          <tr class="doc-section-item">
+            <td>
+                <code>y_lf</code>
+            </td>
+            <td>
+                  <code><span title="gp_active_mcmc.inference.model.FloatArray">FloatArray</span></code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>LF predictive mean at the current <code>theta</code>, computed <strong>before</strong> the LF
+model is updated with <code>(theta, y_hf)</code>.</p>
+              </div>
+            </td>
+            <td>
+                <em>required</em>
+            </td>
+          </tr>
+      </tbody>
+    </table>
+
+
+    </div>
+
+</div>
+
+
+
+  </div>
+
+    </div>
+
+</div>
+
+<div class="doc doc-object doc-class">
+
+
+
+<h4 id="gp_active_mcmc.inference.AdaptiveMetropolisShared" class="doc doc-heading">
+<code class="doc-symbol doc-symbol-heading doc-symbol-class"></code>            <span class="doc doc-object-name doc-class-name">AdaptiveMetropolisShared</span>
+
+
+</h4>
+<div class="doc-signature highlight"><pre><span></span><code><span class="nf">AdaptiveMetropolisShared</span><span class="p">(</span><span class="o">*</span><span class="n">args</span><span class="p">,</span> <span class="n">share_across_deepcopy</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">)</span>
+</code></pre></div>
+
+    <div class="doc doc-contents ">
+            <p class="doc doc-class-bases">
+              Bases: <code><span title="tinyDA.AdaptiveMetropolis">AdaptiveMetropolis</span></code></p>
+
+
+
+        <p>Adaptive Metropolis proposal with controlled deep-copy semantics.</p>
+<p>This proposal extends <code>tinyDA.AdaptiveMetropolis</code> by
+defining what happens when the object is deep-copied.</p>
+
+
+<details class="why-this-matters" open>
+  <summary>Why this matters</summary>
+  <p>Some sampling workflows deep-copy the proposal (explicitly or implicitly), for example:</p>
+<ul>
+<li><strong>chunked sampling</strong>, where the sampler is re-entered multiple times, and</li>
+<li>certain multi-chain patterns.</li>
+</ul>
+<p>For adaptive proposals, deep-copying changes the algorithmic behaviour:</p>
+<ul>
+<li><strong>Shared state</strong>: adaptation continues across chunks as if there were a single proposal.
+  This is typically what you want for chunked active sampling.</li>
+<li><strong>Independent state</strong>: each deepcopy adapts independently, which is appropriate only
+  when you truly want independent proposals (e.g., fully independent chains).</li>
+</ul>
+<p>In this library, shared state is often the default because
+<a class="autorefs autorefs-internal" title="            sample_adaptive_active_chain" href="#gp_active_mcmc.inference.sample_adaptive_active_chain"><code>sample_adaptive_active_chain</code></a>
+runs <code>tinyDA</code> repeatedly in chunks and we want a single evolving proposal.</p>
+</details>
+
+<p><span class="doc-section-title">Parameters:</span></p>
+    <table>
+      <thead>
+        <tr>
+          <th>Name</th>
+          <th>Type</th>
+          <th>Description</th>
+          <th>Default</th>
+        </tr>
+      </thead>
+      <tbody>
+          <tr class="doc-section-item">
+            <td>
+                <code>*args</code>
+            </td>
+            <td>
+                  <code><span title="typing.Any">Any</span></code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>Passed through to <code>tinyDA.AdaptiveMetropolis</code>.</p>
+              </div>
+            </td>
+            <td>
+                  <code>()</code>
+            </td>
+          </tr>
+          <tr class="doc-section-item">
+            <td>
+                <code>**kwargs</code>
+            </td>
+            <td>
+                  <code><span title="typing.Any">Any</span></code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>Passed through to <code>tinyDA.AdaptiveMetropolis</code>.</p>
+              </div>
+            </td>
+            <td>
+                  <code>()</code>
+            </td>
+          </tr>
+          <tr class="doc-section-item">
+            <td>
+                <code>share_across_deepcopy</code>
+            </td>
+            <td>
+                  <code><span title="bool">bool</span></code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>Controls deepcopy behaviour:</p>
+<ul>
+<li>True (default): <code>copy.deepcopy(proposal)</code> returns the same instance
+  (proposal state is shared).</li>
+<li>False: deepcopies produce independent clones with a deep-copied internal state.</li>
+</ul>
+              </div>
+            </td>
+            <td>
+                  <code>True</code>
+            </td>
+          </tr>
+      </tbody>
+    </table>
+
+
+<details class="note" open>
+  <summary>Notes</summary>
+  <p>Returning <code>self</code> from <code>__deepcopy__</code> is a deliberate deviation from standard Python
+semantics. It preserves adaptation history in workflows where deepcopies are an
+implementation detail rather than a user intent.</p>
+</details>
+
+<details class="see-also" open>
+  <summary>See Also</summary>
+  <p><a class="autorefs autorefs-internal" title="            sample_adaptive_active_chain" href="#gp_active_mcmc.inference.sample_adaptive_active_chain"><code>sample_adaptive_active_chain</code></a>
+    Chunked sampler where shared proposal state is typically desired.
+<a class="autorefs autorefs-internal" title="            ChunkedMCMCConfig
+
+
+  
+      dataclass
+  " href="#gp_active_mcmc.inference.ChunkedMCMCConfig"><code>ChunkedMCMCConfig</code></a>
+    Configuration controlling chunk size for adaptive sampling.</p>
+</details>
+
+<p><span class="doc-section-title">Examples:</span></p>
+    <p>Shared adaptation across chunks:</p>
+    <div class="highlight"><pre><span></span><code><span class="gp">&gt;&gt;&gt; </span><span class="n">prop</span> <span class="o">=</span> <span class="n">AdaptiveMetropolisShared</span><span class="p">(</span><span class="n">C0</span><span class="o">=</span><span class="n">C0</span><span class="p">,</span> <span class="n">period</span><span class="o">=</span><span class="mi">100</span><span class="p">,</span> <span class="n">share_across_deepcopy</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+</code></pre></div>
+    <p>Independent adaptation (useful for truly independent chains):</p>
+    <div class="highlight"><pre><span></span><code><span class="gp">&gt;&gt;&gt; </span><span class="n">prop</span> <span class="o">=</span> <span class="n">AdaptiveMetropolisShared</span><span class="p">(</span><span class="n">C0</span><span class="o">=</span><span class="n">C0</span><span class="p">,</span> <span class="n">period</span><span class="o">=</span><span class="mi">100</span><span class="p">,</span> <span class="n">share_across_deepcopy</span><span class="o">=</span><span class="kc">False</span><span class="p">)</span>
+</code></pre></div>
+
+
+
+
+
+
+
+
+
+
+
+<div class="doc doc-children">
+
+
+
+
+
+
+
+
+<h5 id="gp_active_mcmc.inference.AdaptiveMetropolisShared-functions">Functions</h5>
+
+<div class="doc doc-object doc-function">
+
+
+<h6 id="gp_active_mcmc.inference.AdaptiveMetropolisShared.__deepcopy__" class="doc doc-heading">
+<code class="doc-symbol doc-symbol-heading doc-symbol-method"></code>            <span class="doc doc-object-name doc-function-name">__deepcopy__</span>
+
+
+</h6>
+<div class="doc-signature highlight"><pre><span></span><code><span class="nf">__deepcopy__</span><span class="p">(</span><span class="n">memo</span><span class="p">)</span>
+</code></pre></div>
+
+    <div class="doc doc-contents ">
+
+        <p>Deep-copy the proposal according to <code>share_across_deepcopy</code>.</p>
+
+
+<p><span class="doc-section-title">Parameters:</span></p>
+    <table>
+      <thead>
+        <tr>
+          <th>Name</th>
+          <th>Type</th>
+          <th>Description</th>
+          <th>Default</th>
+        </tr>
+      </thead>
+      <tbody>
+          <tr class="doc-section-item">
+            <td>
+                <code>memo</code>
+            </td>
+            <td>
+                  <code><span title="dict">dict</span>[<span title="int">int</span>, <span title="object">object</span>]</code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>Standard deepcopy memo dictionary used to preserve object identity and
+avoid infinite recursion.</p>
+              </div>
+            </td>
+            <td>
+                <em>required</em>
+            </td>
+          </tr>
+      </tbody>
+    </table>
+
+
+    <p><span class="doc-section-title">Returns:</span></p>
+    <table>
+      <thead>
+        <tr>
+          <th>Type</th>
+          <th>Description</th>
+        </tr>
+      </thead>
+      <tbody>
+          <tr class="doc-section-item">
+            <td>
+                  <code><span title="gp_active_mcmc.inference.proposal">proposal</span></code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>If <code>share_across_deepcopy=True</code>, returns <code>self</code> (shared state).
+Otherwise returns a deep-copied independent clone.</p>
+              </div>
+            </td>
+          </tr>
+      </tbody>
+    </table>
+
+
+    </div>
+
+</div>
+
+
+
+  </div>
+
+    </div>
+
+</div>
+
+<div class="doc doc-object doc-class">
+
+
+
+<h4 id="gp_active_mcmc.inference.ChunkedMCMCConfig" class="doc doc-heading">
+<code class="doc-symbol doc-symbol-heading doc-symbol-class"></code>            <span class="doc doc-object-name doc-class-name">ChunkedMCMCConfig</span>
+
+
+  <span class="doc doc-labels">
+      <small class="doc doc-label doc-label-dataclass"><code>dataclass</code></small>
+  </span>
+
+</h4>
+<div class="doc-signature highlight"><pre><span></span><code><span class="nf">ChunkedMCMCConfig</span><span class="p">(</span><span class="n">chain_key</span><span class="p">,</span> <span class="n">chunk_size</span><span class="o">=</span><span class="mi">500</span><span class="p">)</span>
+</code></pre></div>
+
+    <div class="doc doc-contents ">
+
+
+
+        <p>Configuration for chunked sampling.</p>
+<p>Chunked sampling is used when an algorithm needs to periodically re-enter <code>tinyDA</code>
+(i.e., call <code>tda.sample</code> multiple times) rather than running one long
+sampling call.</p>
+<p>In this library, chunking is primarily used to support
+<a class="autorefs autorefs-internal" title="            AdaptiveSubchain
+
+
+  
+      dataclass
+  " href="#gp_active_mcmc.inference.AdaptiveSubchain"><code>AdaptiveSubchain</code></a>:
+the subsampling rate (coarse steps per fine correction) can change between chunks.</p>
+
+
+<p><span class="doc-section-title">Parameters:</span></p>
+    <table>
+      <thead>
+        <tr>
+          <th>Name</th>
+          <th>Type</th>
+          <th>Description</th>
+          <th>Default</th>
+        </tr>
+      </thead>
+      <tbody>
+          <tr class="doc-section-item">
+            <td>
+                <code>chain_key</code>
+            </td>
+            <td>
+                  <code><span title="str">str</span></code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>Key used by <code>tinyDA</code> to identify the chain inside the returned object, e.g.
+<code>"chain_0"</code> or <code>"chain_coarse_0"</code>.</p>
+              </div>
+            </td>
+            <td>
+                <em>required</em>
+            </td>
+          </tr>
+          <tr class="doc-section-item">
+            <td>
+                <code>chunk_size</code>
+            </td>
+            <td>
+                  <code><span title="int">int</span></code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>Budget per chunk measured in <em>coarse evaluation units</em>.</p>
+<p>A "coarse evaluation unit" corresponds to one LF-first evaluation in the active model
+(one step in the coarse chain). In adaptive workflows we treat this as the primary
+computational budget and derive <code>tinyDA</code> iterations accordingly.</p>
+              </div>
+            </td>
+            <td>
+                  <code>500</code>
+            </td>
+          </tr>
+      </tbody>
+    </table>
+
+
+<details class="see-also" open>
+  <summary>See Also</summary>
+  <p><a class="autorefs autorefs-internal" title="            sample_adaptive_active_chain" href="#gp_active_mcmc.inference.sample_adaptive_active_chain"><code>sample_adaptive_active_chain</code></a>
+    Chunked sampler that uses this configuration.</p>
+</details>
+
+
+
+
+
+
+
+
+
+
+<div class="doc doc-children">
+
+
+
+
+
+
+
+
+
+
+
+
+  </div>
+
+    </div>
+
+</div>
+<h3 id="gp_active_mcmc.inference-functions">Functions</h3>
+
+<div class="doc doc-object doc-function">
+
+
+<h4 id="gp_active_mcmc.inference.sample_active_chain" class="doc doc-heading">
+<code class="doc-symbol doc-symbol-heading doc-symbol-function"></code>            <span class="doc doc-object-name doc-function-name">sample_active_chain</span>
+
+
+</h4>
+<div class="doc-signature highlight"><pre><span></span><code><span class="nf">sample_active_chain</span><span class="p">(</span><span class="o">*</span><span class="p">,</span> <span class="n">model</span><span class="p">,</span> <span class="n">posterior</span><span class="p">,</span> <span class="n">proposal</span><span class="p">,</span> <span class="n">iterations</span><span class="p">,</span> <span class="n">initial_parameters</span><span class="p">,</span> <span class="n">subsampling_rate</span><span class="p">,</span> <span class="n">chain_key</span><span class="p">,</span> <span class="n">n_chains</span><span class="o">=</span><span class="mi">1</span><span class="p">,</span> <span class="n">force_sequential</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span> <span class="n">store_coarse_chain</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+</code></pre></div>
+
+    <div class="doc doc-contents ">
+
+        <p>Run Active-(DA)-MCMC with a fixed subsampling rate (single <code>tinyDA</code> call).</p>
+<p>This is the main entrypoint when the subsampling rate is fixed throughout sampling.</p>
+
+
+<details class="interpretation-of-`posterior`" open>
+  <summary>Interpretation of <code>posterior</code></summary>
+  <p>The <code>posterior</code> argument determines the algorithmic mode:</p>
+<ul>
+<li>If <code>posterior</code> is a single <code>tinyDA.Posterior</code>, the run corresponds to
+  <strong>MCMC-guided active learning</strong> (single level).</li>
+<li>If <code>posterior</code> is a list of two posteriors <code>[coarse, fine]</code>, the run corresponds to
+  <strong>delayed-acceptance MCMC (DA-MCMC) guided active learning</strong>.</li>
+</ul>
+<p>In both cases, <code>subsampling_rate</code> controls the frequency of the fine correction:
+roughly, the fine posterior is evaluated every <code>subsampling_rate</code> coarse steps
+(depending on <code>tinyDA</code>'s internal delayed-acceptance implementation).</p>
+</details>
+
+<p><span class="doc-section-title">Parameters:</span></p>
+    <table>
+      <thead>
+        <tr>
+          <th>Name</th>
+          <th>Type</th>
+          <th>Description</th>
+          <th>Default</th>
+        </tr>
+      </thead>
+      <tbody>
+          <tr class="doc-section-item">
+            <td>
+                <code>model</code>
+            </td>
+            <td>
+                  <code><span title="typing.Any">Any</span></code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>Active model used during sampling. After sampling it is queried to extract HF usage
+flags for diagnostics. In typical workflows this is an
+<a class="autorefs autorefs-internal" title="            ActiveMCMCModel
+
+
+  
+      dataclass
+  " href="#gp_active_mcmc.inference.ActiveMCMCModel"><code>ActiveMCMCModel</code></a>.</p>
+              </div>
+            </td>
+            <td>
+                <em>required</em>
+            </td>
+          </tr>
+          <tr class="doc-section-item">
+            <td>
+                <code>posterior</code>
+            </td>
+            <td>
+                  <code><span title="tinyDA.Posterior">Posterior</span> | <span title="list">list</span>[<span title="tinyDA.Posterior">Posterior</span>]</code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>Either a single posterior (single-level) or a list of two posteriors <code>[coarse, fine]</code>
+for DA-MCMC.</p>
+              </div>
+            </td>
+            <td>
+                <em>required</em>
+            </td>
+          </tr>
+          <tr class="doc-section-item">
+            <td>
+                <code>proposal</code>
+            </td>
+            <td>
+                  <code><span title="tinyDA.Proposal">Proposal</span></code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>Proposal passed to <code>tinyDA.sample</code>. The proposal is deep-copied to
+avoid mutating the caller's instance.</p>
+              </div>
+            </td>
+            <td>
+                <em>required</em>
+            </td>
+          </tr>
+          <tr class="doc-section-item">
+            <td>
+                <code>iterations</code>
+            </td>
+            <td>
+                  <code><span title="int">int</span></code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>Number of <code>tinyDA</code> iterations to run.</p>
+              </div>
+            </td>
+            <td>
+                <em>required</em>
+            </td>
+          </tr>
+          <tr class="doc-section-item">
+            <td>
+                <code>initial_parameters</code>
+            </td>
+            <td>
+                  <code><span title="numpy.typing.ArrayLike">ArrayLike</span></code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>Initial parameter vector.</p>
+              </div>
+            </td>
+            <td>
+                <em>required</em>
+            </td>
+          </tr>
+          <tr class="doc-section-item">
+            <td>
+                <code>subsampling_rate</code>
+            </td>
+            <td>
+                  <code><span title="int">int</span></code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>Fine-correction frequency. Must be positive.</p>
+              </div>
+            </td>
+            <td>
+                <em>required</em>
+            </td>
+          </tr>
+          <tr class="doc-section-item">
+            <td>
+                <code>chain_key</code>
+            </td>
+            <td>
+                  <code><span title="str">str</span></code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>Chain key used by <a class="autorefs autorefs-internal" title="            extract_samples" href="../utils/#gp_active_mcmc.utils.extract_samples"><code>extract_samples</code></a> to locate the
+chain inside the object returned by <code>tinyDA</code>.</p>
+              </div>
+            </td>
+            <td>
+                <em>required</em>
+            </td>
+          </tr>
+          <tr class="doc-section-item">
+            <td>
+                <code>n_chains</code>
+            </td>
+            <td>
+                  <code><span title="int">int</span></code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>Number of chains to run (passed to <code>tinyDA</code>).</p>
+              </div>
+            </td>
+            <td>
+                  <code>1</code>
+            </td>
+          </tr>
+          <tr class="doc-section-item">
+            <td>
+                <code>force_sequential</code>
+            </td>
+            <td>
+                  <code><span title="bool">bool</span></code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>If True, force sequential execution (useful for reproducibility).</p>
+              </div>
+            </td>
+            <td>
+                  <code>True</code>
+            </td>
+          </tr>
+          <tr class="doc-section-item">
+            <td>
+                <code>store_coarse_chain</code>
+            </td>
+            <td>
+                  <code><span title="bool">bool</span></code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>If True, store the coarse chain (when supported by <code>tinyDA</code>).</p>
+              </div>
+            </td>
+            <td>
+                  <code>True</code>
+            </td>
+          </tr>
+      </tbody>
+    </table>
+
+
+    <p><span class="doc-section-title">Returns:</span></p>
+    <table>
+      <thead>
+        <tr>
+          <th>Type</th>
+          <th>Description</th>
+        </tr>
+      </thead>
+      <tbody>
+          <tr class="doc-section-item">
+            <td>
+                  <code><span title="result">result</span></code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p><a class="autorefs autorefs-internal" title="            SamplingResult
+
+
+  
+      dataclass
+  " href="#gp_active_mcmc.inference.SamplingResult"><code>SamplingResult</code></a> containing:</p>
+<ul>
+<li><code>chain</code>: an immutable <a class="autorefs autorefs-internal" title="            MCMCChain
+
+
+  
+      dataclass
+  " href="#gp_active_mcmc.inference.MCMCChain"><code>MCMCChain</code></a></li>
+<li><code>metadata</code>: a dict recording run configuration</li>
+</ul>
+              </div>
+            </td>
+          </tr>
+      </tbody>
+    </table>
+
+
+<p><span class="doc-section-title">Raises:</span></p>
+    <table>
+      <thead>
+        <tr>
+          <th>Type</th>
+          <th>Description</th>
+        </tr>
+      </thead>
+      <tbody>
+          <tr class="doc-section-item">
+            <td>
+                  <code><span title="ValueError">ValueError</span></code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>If <code>iterations</code> or <code>subsampling_rate</code> are not positive.</p>
+              </div>
+            </td>
+          </tr>
+      </tbody>
+    </table>
+
+
+<details class="see-also" open>
+  <summary>See Also</summary>
+  <p><a class="autorefs autorefs-internal" title="            sample_adaptive_active_chain" href="#gp_active_mcmc.inference.sample_adaptive_active_chain"><code>sample_adaptive_active_chain</code></a>
+    Chunked sampler used when the subsampling rate changes over time.</p>
+</details>
+
+    </div>
+
+</div>
+
+<div class="doc doc-object doc-function">
+
+
+<h4 id="gp_active_mcmc.inference.sample_adaptive_active_chain" class="doc doc-heading">
+<code class="doc-symbol doc-symbol-heading doc-symbol-function"></code>            <span class="doc doc-object-name doc-function-name">sample_adaptive_active_chain</span>
+
+
+</h4>
+<div class="doc-signature highlight"><pre><span></span><code><span class="nf">sample_adaptive_active_chain</span><span class="p">(</span><span class="o">*</span><span class="p">,</span> <span class="n">model</span><span class="p">,</span> <span class="n">posterior</span><span class="p">,</span> <span class="n">proposal</span><span class="p">,</span> <span class="n">n_coarse_evals</span><span class="p">,</span> <span class="n">initial_parameters</span><span class="p">,</span> <span class="n">chain_key</span><span class="p">,</span> <span class="n">config</span><span class="p">,</span> <span class="n">n_chains</span><span class="o">=</span><span class="mi">1</span><span class="p">,</span> <span class="n">force_sequential</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span> <span class="n">store_coarse_chain</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+</code></pre></div>
+
+    <div class="doc doc-contents ">
+
+        <p>Run adaptive DA-MCMC guided active learning using chunked sampling.</p>
+<p>This entrypoint supports the recommended workflow:</p>
+<ul>
+<li>DA-MCMC (two posteriors: coarse + fine), and</li>
+<li>an adaptive policy such as
+  <a class="autorefs autorefs-internal" title="            AdaptiveSubchain
+
+
+  
+      dataclass
+  " href="#gp_active_mcmc.inference.AdaptiveSubchain"><code>AdaptiveSubchain</code></a>
+  attached to the active model.</li>
+</ul>
+
+
+<details class="why-chunking-is-needed" open>
+  <summary>Why chunking is needed</summary>
+  <p>In adaptive runs, the subsampling rate may change over time (because the subchain length
+is adapted online). Since <code>tinyDA.sample</code> takes a fixed <code>subsampling_rate</code>
+per call, we run multiple shorter calls ("chunks") and update the subsampling rate between
+chunks.</p>
+</details>
+
+<details class="budgeting" open>
+  <summary>Budgeting</summary>
+  <p>The overall budget is expressed as a total number of <em>coarse evaluation units</em>
+(<code>n_coarse_evals</code>). Each chunk consumes up to <code>config.chunk_size</code> coarse evaluations.</p>
+</details>
+
+<details class="requirements" open>
+  <summary>Requirements</summary>
+  <ul>
+<li>The adaptive workflow requires <code>model.adaptive.state.subchain_length</code>.</li>
+<li>DA-MCMC is mandatory in this mode: <code>posterior</code> should be <code>[coarse, fine]</code>.</li>
+</ul>
+</details>
+
+<p><span class="doc-section-title">Parameters:</span></p>
+    <table>
+      <thead>
+        <tr>
+          <th>Name</th>
+          <th>Type</th>
+          <th>Description</th>
+          <th>Default</th>
+        </tr>
+      </thead>
+      <tbody>
+          <tr class="doc-section-item">
+            <td>
+                <code>model</code>
+            </td>
+            <td>
+                  <code><span title="typing.Any">Any</span></code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>Active model with an adaptive policy. Must expose <code>model.adaptive.state.subchain_length</code>
+(see <a class="autorefs autorefs-internal" title="            AdaptiveSubchainState
+
+
+  
+      dataclass
+  " href="#gp_active_mcmc.inference.AdaptiveSubchainState"><code>AdaptiveSubchainState.subchain_length</code></a>).</p>
+              </div>
+            </td>
+            <td>
+                <em>required</em>
+            </td>
+          </tr>
+          <tr class="doc-section-item">
+            <td>
+                <code>posterior</code>
+            </td>
+            <td>
+                  <code><span title="tinyDA.Posterior">Posterior</span> | <span title="list">list</span>[<span title="tinyDA.Posterior">Posterior</span>]</code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>Two-level posterior list <code>[coarse, fine]</code> (DA-MCMC).</p>
+              </div>
+            </td>
+            <td>
+                <em>required</em>
+            </td>
+          </tr>
+          <tr class="doc-section-item">
+            <td>
+                <code>proposal</code>
+            </td>
+            <td>
+                  <code><span title="tinyDA.Proposal">Proposal</span></code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>Proposal passed to <code>tinyDA</code>. A working copy is deep-copied once and then reused across
+chunks to preserve proposal adaptation state.</p>
+              </div>
+            </td>
+            <td>
+                <em>required</em>
+            </td>
+          </tr>
+          <tr class="doc-section-item">
+            <td>
+                <code>n_coarse_evals</code>
+            </td>
+            <td>
+                  <code><span title="int">int</span></code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>Total budget in coarse evaluation units.</p>
+              </div>
+            </td>
+            <td>
+                <em>required</em>
+            </td>
+          </tr>
+          <tr class="doc-section-item">
+            <td>
+                <code>initial_parameters</code>
+            </td>
+            <td>
+                  <code><span title="numpy.typing.ArrayLike">ArrayLike</span></code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>Initial parameter vector.</p>
+              </div>
+            </td>
+            <td>
+                <em>required</em>
+            </td>
+          </tr>
+          <tr class="doc-section-item">
+            <td>
+                <code>chain_key</code>
+            </td>
+            <td>
+                  <code><span title="str">str</span></code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>Chain key used by <a class="autorefs autorefs-internal" title="            extract_samples" href="../utils/#gp_active_mcmc.utils.extract_samples"><code>extract_samples</code></a>.</p>
+              </div>
+            </td>
+            <td>
+                <em>required</em>
+            </td>
+          </tr>
+          <tr class="doc-section-item">
+            <td>
+                <code>config</code>
+            </td>
+            <td>
+                  <code><a class="autorefs autorefs-internal" title="            ChunkedMCMCConfig
+
+
+  
+      dataclass
+   (gp_active_mcmc.inference.sampling.ChunkedMCMCConfig)" href="#gp_active_mcmc.inference.ChunkedMCMCConfig">ChunkedMCMCConfig</a></code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>Chunking configuration (<code>chunk_size</code> and <code>chain_key</code>).</p>
+              </div>
+            </td>
+            <td>
+                <em>required</em>
+            </td>
+          </tr>
+          <tr class="doc-section-item">
+            <td>
+                <code>n_chains</code>
+            </td>
+            <td>
+                  <code><span title="int">int</span></code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>Number of chains. Currently only <code>n_chains=1</code> is supported for chunked adaptive runs.</p>
+              </div>
+            </td>
+            <td>
+                  <code>1</code>
+            </td>
+          </tr>
+          <tr class="doc-section-item">
+            <td>
+                <code>force_sequential</code>
+            </td>
+            <td>
+                  <code><span title="bool">bool</span></code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>If True, force sequential execution.</p>
+              </div>
+            </td>
+            <td>
+                  <code>True</code>
+            </td>
+          </tr>
+          <tr class="doc-section-item">
+            <td>
+                <code>store_coarse_chain</code>
+            </td>
+            <td>
+                  <code><span title="bool">bool</span></code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>If True, store the coarse chain.</p>
+              </div>
+            </td>
+            <td>
+                  <code>True</code>
+            </td>
+          </tr>
+      </tbody>
+    </table>
+
+
+    <p><span class="doc-section-title">Returns:</span></p>
+    <table>
+      <thead>
+        <tr>
+          <th>Type</th>
+          <th>Description</th>
+        </tr>
+      </thead>
+      <tbody>
+          <tr class="doc-section-item">
+            <td>
+                  <code><span title="result">result</span></code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p><a class="autorefs autorefs-internal" title="            SamplingResult
+
+
+  
+      dataclass
+  " href="#gp_active_mcmc.inference.SamplingResult"><code>SamplingResult</code></a> with:</p>
+<ul>
+<li>concatenated samples across chunks,</li>
+<li>aligned HF usage flags,</li>
+<li>optional subchain-length history (if available).</li>
+</ul>
+              </div>
+            </td>
+          </tr>
+      </tbody>
+    </table>
+
+
+<p><span class="doc-section-title">Raises:</span></p>
+    <table>
+      <thead>
+        <tr>
+          <th>Type</th>
+          <th>Description</th>
+        </tr>
+      </thead>
+      <tbody>
+          <tr class="doc-section-item">
+            <td>
+                  <code><span title="ValueError">ValueError</span></code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>If budgets are non-positive, if <code>n_chains != 1</code>, or if adaptive state is missing.</p>
+              </div>
+            </td>
+          </tr>
+      </tbody>
+    </table>
+
+
+<details class="see-also" open>
+  <summary>See Also</summary>
+  <p><a class="autorefs autorefs-internal" title="            ChunkedMCMCConfig
+
+
+  
+      dataclass
+  " href="#gp_active_mcmc.inference.ChunkedMCMCConfig"><code>ChunkedMCMCConfig</code></a>
+    Chunk configuration controlling <code>chunk_size</code>.
+<a class="autorefs autorefs-internal" title="            ActiveMCMCModel
+
+
+  
+      dataclass
+  " href="#gp_active_mcmc.inference.ActiveMCMCModel"><code>ActiveMCMCModel</code></a>
+    Active model that provides <code>coarse</code> and <code>fine</code> callables for the two posteriors.</p>
+</details>
+
+    </div>
+
+</div>
+
+
+
+  </div>
+
+    </div>
+
+</div>
+
+
+
+
+
+
+
+
+
+
+
+
+                
+              </article>
+            </div>
+          
+          
+<script>var target=document.getElementById(location.hash.slice(1));target&&target.name&&(target.checked=target.name.startsWith("__tabbed_"))</script>
+        </div>
+        
+      </main>
+      
+        <footer class="md-footer">
+  
+  <div class="md-footer-meta md-typeset">
+    <div class="md-footer-meta__inner md-grid">
+      <div class="md-copyright">
+  
+  
+    Made with
+    <a href="https://squidfunk.github.io/mkdocs-material/" target="_blank" rel="noopener">
+      Material for MkDocs
+    </a>
+  
+</div>
+      
+    </div>
+  </div>
+</footer>
+      
+    </div>
+    <div class="md-dialog" data-md-component="dialog">
+      <div class="md-dialog__inner md-typeset"></div>
+    </div>
+    
+    
+    
+      
+      
+      <script id="__config" type="application/json">{"annotate": null, "base": "../..", "features": ["navigation.tabs", "navigation.sections", "toc.follow", "content.code.copy"], "search": "../../assets/javascripts/workers/search.2c215733.min.js", "tags": null, "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}, "version": null}</script>
+    
+    
+      <script src="../../assets/javascripts/bundle.79ae519e.min.js"></script>
+      
+        <script src="https://polyfill.io/v3/polyfill.min.js?features=es6"></script>
+      
+        <script src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-mml-chtml.js"></script>
+      
+    
+  </body>
+</html>
