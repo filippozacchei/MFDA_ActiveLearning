@@ -19,6 +19,29 @@ dependencies = [
   "GPy==1.13.2",
 ]
 
+[project.optional-dependencies]
+test = [
+  "pytest>=9",
+  "pytest-cov",
+]
+docs = [
+  "mkdocs==1.6.1",
+  "mkdocs-material>=9.5",
+  "mkdocstrings[python]>=0.24",
+  "mkdocs-gen-files>=0.5",
+  "mkdocs-literate-nav>=0.6",
+  "mkdocs-section-index>=0.3",
+  "mkdocs-autorefs",
+  "mkdocs-jupyter",
+  "pymdown-extensions",
+]
+dev = [
+  "pre-commit",
+  "ruff",
+  "mypy",
+  "nox",
+]
+
 [tool.setuptools.packages.find]
 where = ["src"]
 include = ["gp_active_mcmc*"]
