@@ -78,13 +78,21 @@ testpaths = ["tests"]
 log_level = "INFO"
 xfail_strict = true
 addopts = ["-ra", "--strict-config", "--strict-markers"]
-
 filterwarnings = [
   "error",
-  # If these become too noisy, keep them as "default" instead of failing the suite.
+  # Keep important classes visible (or strict as you prefer)
   "default::DeprecationWarning",
   "default::PendingDeprecationWarning",
   "default::ImportWarning",
+  # --- Third-party noise (GPy/paramz) ---------------------------------------
+  # GPy leaves some files unclosed at import time -> ResourceWarning
+  "ignore:unclosed file:ResourceWarning:GPy\\..*",
+  "ignore:unclosed file:ResourceWarning:paramz\\..*",
+  # In some environments the warning originates from generic modules but the text matches
+  "ignore:unclosed file.*GPy:ResourceWarning",
+  "ignore:unclosed file.*paramz:ResourceWarning",
+  # paramz emits deprecation warnings about assigning .data
+  "ignore:Assigning the 'data' attribute is an inherently unsafe operation:DeprecationWarning:paramz\\..*",
 ]
 
 [tool.ruff]
