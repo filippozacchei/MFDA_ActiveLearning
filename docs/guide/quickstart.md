@@ -174,6 +174,9 @@ or run `mkdocs build --strict` to regenerate the site (CI executes the same comm
 - **User Guide → Concepts** for deeper explanations of adaptive policies and likelihood design.
 - **Tutorials → Navier–Stokes** for a PDE-scale benchmark (remember to provision the MPI/FEniCS stack).
 - **API Reference** for exhaustive documentation of each module.
+- **Background reading**:
+  - [MCMC-guided active learning with Gaussian-process surrogates](https://www.sciencedirect.com/science/article/pii/S099775382600001X)
+  - [Delayed-acceptance MLDA / tinyDA framework](https://epubs.siam.org/doi/10.1137/22M1476770)
 - **Contributing** if you plan to propose changes—run `nox -s tests lint typecheck docs`.
 
 Happy sampling!

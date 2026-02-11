@@ -12,6 +12,8 @@ Use it when you need to:
 - run PDE-scale examples such as the Navier–Stokes backward-facing-step benchmark;
 - collect diagnostics (HF usage, subchain history, predictive error) for publications.
 
+[![Documentation](https://img.shields.io/badge/docs-mkdocs%20material-blue)](https://filippozacchei.github.io/MFDA_ActiveLearning/)
+
 ---
 
 ## Installation
@@ -126,6 +128,11 @@ documentation block above, then run the scripts under `examples/navier_stokes/`.
 - Community expectations: [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md)
 - Contribution process: [CONTRIBUTING.md](CONTRIBUTING.md)
 - Citation info: [CITATION.cff](CITATION.cff)
+
+## Background reading
+
+- [MCMC-guided active learning with Gaussian-process surrogates](https://www.sciencedirect.com/science/article/pii/S099775382600001X) – core strategy this project implements and extends with POD regression.
+- [Delayed-acceptance multi-level data assimilation (MLDA)](https://epubs.siam.org/doi/10.1137/22M1476770) – reference for the MLDA/tinyDA library that powers the delayed-acceptance workflow.
 
 ---
 

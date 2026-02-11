@@ -65,6 +65,11 @@ Navier–Stokes scripts additionally require a conda-forge environment with `fen
 - Behavior in GitHub issues/PRs is governed by the [Code of Conduct](../CODE_OF_CONDUCT.md).
 - Citation details live in [CITATION.cff](../CITATION.cff).
 
+## Background reading
+
+- [MCMC-guided active learning with Gaussian-process surrogates](https://www.sciencedirect.com/science/article/pii/S099775382600001X) — primary reference for the active-learning scheme adopted here.
+- [Delayed-acceptance MLDA / tinyDA framework](https://epubs.siam.org/doi/10.1137/22M1476770) — details the underlying sampler infrastructure we rely on.
+
 Ready to dive in? Start with the Quickstart guide below.
 
 > **Next:** [User Guide → Quickstart](guide/quickstart.md)
