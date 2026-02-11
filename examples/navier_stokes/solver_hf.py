@@ -161,11 +161,11 @@ def solve_ipcs_bfs(
     if time is None:
         time = MFTimeConfig()
     if fluid is None:
-        fluid = (MFFluidConfig(),)
+        fluid = MFFluidConfig()
     if mesh_opts is None:
-        mesh_opts = (MeshOptions(),)
+        mesh_opts = MeshOptions()
     if markers is None:
-        markers = (BoundaryMarkers(),)
+        markers = BoundaryMarkers()
     if U_in <= 0.0:
         raise ValueError("U_in must be positive.")
     if outlet_ny <= 1:
@@ -412,11 +412,11 @@ def forward_model(
     if time is None:
         time = MFTimeConfig()
     if fluid is None:
-        fluid = (MFFluidConfig(),)
+        fluid = MFFluidConfig()
     if mesh_opts is None:
-        mesh_opts = (MeshOptions(),)
+        mesh_opts = MeshOptions()
     if markers is None:
-        markers = (BoundaryMarkers(),)
+        markers = BoundaryMarkers()
     prof = solve_ipcs_bfs(
         geom=BFSGeometry(h1=h1, h2=h2, L_up=L_up, L_down=L_down),
         U_in=U_in,

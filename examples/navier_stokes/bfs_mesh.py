@@ -110,7 +110,7 @@ def build_bfs_mesh(
     if mesh_opts is None:
         mesh_opts = MeshOptions()
     if markers is None:
-        markers = (BoundaryMarkers(),)
+        markers = BoundaryMarkers()
     if mesh_opts.gdim != 2:
         raise ValueError(f"build_bfs_mesh currently supports gdim=2 only. Got {mesh_opts.gdim}.")
 
