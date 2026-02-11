@@ -1,39 +1,49 @@
 # GP-Active MCMC
 
-`gp_active_mcmc` is a research-oriented Python package for **multi-fidelity Bayesian inference**
+`gp_active_mcmc` is a research-grade Python package for **multi-fidelity Bayesian inference**
 using **Gaussian-process surrogates** and **Active/Adaptive MCMC** strategies. It couples a fast,
 uncertain _low-fidelity_ (LF) surrogate with an accurate but expensive _high-fidelity_ (HF) model,
 switching to HF evaluations when needed and optionally adapting the HF subchain length during sampling.
 
-The goal is to rely on the GP surrogate as much as possible during MCMC sampling, and leverage GP predictive uncertainty to decide when/where to switch to HF solver. This maintains the accuracy of the MCMC sampling and reduces at minimum the costs of the data-fit model training phase.
+Use it when you need to:
+
+- prototype active-learning workflows on toy problems (`docs/tutorials/forward_toy_notebook.py`);
+- couple POD–GP surrogates with delayed-acceptance / adaptive MCMC;
+- run PDE-scale examples such as the Navier–Stokes backward-facing-step benchmark;
+- collect diagnostics (HF usage, subchain history, predictive error) for publications.
 
 ---
 
 ## Installation
 
-### Core package
-
-The package is developed and tested with the following pinned versions:
+The package is developed and tested with pinned versions to stay compatible with `tinyDA` and `GPy`:
 
 - Python `3.10.19`
 - NumPy `1.26.4`
 - SciPy `1.12.0`
 - scikit-learn `1.7.2`
 - tinyDA `0.9.21`
-- Ray `2.53.0`
+- Ray `2.53.0` (transitively required by `tinyDA`)
 - GPy `1.13.2`
 
-A typical development install:
+### Core install
 
 ```bash
-pip install -e .
+python -m venv .venv
+source .venv/bin/activate
+python -m pip install --upgrade pip
+python -m pip install -e .
 ```
 
-Run tests:
+Smoke-test the install:
 
 ```bash
 pytest -q
+python examples/toy_problem/run_forward_toy.py
 ```
+
+> **Why is Ray pinned?** `tinyDA` currently depends on `ray>=2.53.0`. Even if you do not call Ray
+> explicitly, the pin ensures our stack stays synchronized with upstream releases.
 
 ---
 
@@ -87,6 +97,38 @@ Examples are located in `examples/`:
 
 ---
 
+## Quickstart workflow
+
+1. **Generate surrogate snapshots**
+   ```bash
+   python examples/toy_problem/run_forward_toy.py --n-snapshots 200 --pod-rank 20
+   ```
+2. **Run the inverse problem**
+   ```bash
+   python examples/toy_problem/run_backward_toy.py --mode adaptive --n-evals 1000
+   ```
+3. **Inspect diagnostics**
+   Use `gp_active_mcmc.diagnostics` plotting helpers or run `mkdocs serve` and open the _Tutorials_
+   section.
+
+For the Navier–Stokes benchmark, provision a conda environment with the requirements listed in the
+documentation block above, then run the scripts under `examples/navier_stokes/`.
+
+## Development workflow
+
+- Install dev extras with `pip install -e ".[dev]"`.
+- Run the `nox` sessions locally (`tests`, `lint`, `typecheck`, `docs`) before opening a PR.
+- Enable pre-commit hooks via `pre-commit install`.
+- See [CONTRIBUTING.md](CONTRIBUTING.md) for detailed guidance.
+
+## Governance
+
+- Community expectations: [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md)
+- Contribution process: [CONTRIBUTING.md](CONTRIBUTING.md)
+- Citation info: [CITATION.cff](CITATION.cff)
+
+---
+
 ## Core concepts
 
 ### Multi-fidelity active sampling
@@ -110,4 +152,4 @@ Sampling functions return a \[`gp_active_mcmc.inference.SamplingResult`\][] cont
 
 ## License
 
-See `LICENSE`.
+This project is distributed under the MIT License (see [`LICENSE`](LICENSE)).

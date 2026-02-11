@@ -1,0 +1,10 @@
+cff-version: 1.2.0
+message: Please cite gp_active_mcmc if it helps your research.
+title: gp_active_mcmc
+version: 0.1.0
+date-released: 2026-02-11
+authors:
+  - given-names: Filippo
+    family-names: Zacchei
+    email: filippo.zacchei@mail.polimi.it
+repository-code: https://github.com/filippozacchei/MFDA_ActiveLearning

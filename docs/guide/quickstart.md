@@ -1,123 +1,179 @@
 # Quickstart
 
-This quickstart introduces the typical workflow implemented in `gp_active_mcmc`:
+This guide walks you through the fastest path to a functioning
+`gp_active_mcmc` environment and a reproducible toy experiment. You will:
 
-1. build a **low-fidelity (LF) surrogate**,
-1. couple it with a **high-fidelity (HF) forward model** through an **active model**,
-1. run **Active / DA-MCMC** (optionally with **adaptive subchains**) and inspect diagnostics.
-
-The package is organised around a separation of concerns:
-
-- **Surrogates** (`gp_active_mcmc.surrogates`): POD, Gaussian processes, and POD–GP coupling.
-- **Inference** (`gp_active_mcmc.inference`): active model, likelihoods, proposals, adaptive subchain policy, and sampler entrypoints.
-- **Diagnostics** (`gp_active_mcmc.diagnostics`): plotting helpers returning `(fig, ax)` and never calling `plt.show()`.
-- **Utils** (`gp_active_mcmc.utils`): numerical helpers (no plotting).
+1. create a dedicated Python environment,
+2. build a POD–GP surrogate from synthetic data,
+3. wrap the surrogate + HF model in `ActiveMCMCModel`,
+4. run both fixed-rate and adaptive active-learning samplers,
+5. inspect diagnostics to confirm everything worked.
 
 ---
 
-## Installation
+## 0. Prerequisites
 
-### Development install
+- Linux or macOS shell with Python 3.10 (matching CI).
+- A working C/C++ toolchain (required by `tinyDA`, `GPy`, and scientific deps).
+- Optional: conda-forge environment with `fenics-dolfinx`, `mpich`, `gmsh`,
+  `python-gmsh`, and `pyvista` if you plan to run the Navier–Stokes benchmark.
 
-From the repository root:
+---
+
+## 1. Set up your environment
 
 ```bash
-pip install -e .
+git clone https://github.com/filippozacchei/MFDA_ActiveLearning.git
+cd MFDA_ActiveLearning
+python -m venv .venv
+source .venv/bin/activate
+python -m pip install --upgrade pip
+python -m pip install -e ".[dev]"
+pre-commit install
 ```
 
-Run the unit tests:
+Run the test suite to ensure the stack is healthy:
 
 ```bash
 pytest -q
 ```
 
----
-
-## Core ideas
-
-### 1) The active model is the core abstraction
-
-`ActiveMCMCModel` is the heart of the library. It couples:
-
-- an **LF surrogate** (fast, uncertain), and
-- an **HF model** (accurate, expensive),
-
-and exposes two callables that can be plugged into `tinyDA.Posterior`:
-
-- `model.coarse(theta)`: LF-first; may trigger HF if surrogate uncertainty is large.
-- `model.fine(theta)`: always HF; also updates the surrogate.
-
-When HF is evaluated, the LF surrogate is updated online. This is the mechanism that enables _active learning during inference_.
-
-See: \[`ActiveMCMCModel`\][gp_active_mcmc.inference.model.ActiveMCMCModel].
-
-### 2) Your choice of posterior(s) determines the inference scheme
-
-In `gp_active_mcmc`, the _posterior argument_ is not just a technicality: it defines the algorithmic mode.
-
-#### Single posterior → MCMC-guided active learning (single-level)
-
-Use only the coarse model:
-
-- `posterior = Posterior(prior, loglike, model.coarse)`
-- run with a fixed-rate sampler such as:
-  \[`sample_active_chain`\][gp_active_mcmc.inference.sampling.sample_active_chain]
-
-In this mode, HF calls happen only when triggered inside `coarse(...)`.
-
-#### Two posteriors → DA-MCMC guided active learning (delayed acceptance)
-
-Use coarse and fine posteriors:
-
-- `posterior = [Posterior(..., model.coarse), Posterior(..., model.fine)]`
-- run with:
-  \[`sample_active_chain`\][gp_active_mcmc.inference.sampling.sample_active_chain]
-
-This corresponds to delayed-acceptance MCMC (DA-MCMC), where the fine level corrects the coarse approximation periodically (controlled by `subsampling_rate`).
-
-### 3) Adaptive subchains (recommended) require DA-MCMC
-
-`AdaptiveSubchain` adapts the **HF correction frequency** online by monitoring LF–HF discrepancy (e.g., RMSE between LF mean and HF output when HF is evaluated).
-
-Important constraints:
-
-- **DA-MCMC is mandatory**: you must pass **two posteriors** `[coarse, fine]`.
-- Adaptation implies the subsampling rate can change over time, so sampling must be **chunked**:
-  \[`sample_adaptive_active_chain`\][gp_active_mcmc.inference.sampling.sample_adaptive_active_chain]
-  with \[`ChunkedMCMCConfig`\][gp_active_mcmc.inference.sampling.ChunkedMCMCConfig].
-
-See: \[`AdaptiveSubchain`\][gp_active_mcmc.inference.adaptive_subchain.AdaptiveSubchain].
+> **Heads-up:** `tinyDA` currently depends on `ray==2.53.0`. Even if your workflow
+> does not use Ray, keep the pin to remain compatible with upstream releases.
 
 ---
 
-## Minimal end-to-end workflow (toy problem)
+## 2. Build the toy surrogate
 
-The toy problem is a lightweight baseline that does not require external PDE solvers.
+Use the ready-made script (mirrors the _Forward toy_ tutorial):
 
-A typical workflow is:
+```bash
+python examples/toy_problem/run_forward_toy.py \
+  --n-snapshots 200 \
+  --test-fraction 0.25 \
+  --pod-rank 20 \
+  --kernel matern52
+```
 
-1. **Define a time grid** and the HF forward model `y = f_hf(theta)`.
-1. **Generate an initial design** (parameter samples) and HF snapshots.
-1. **Fit a POD–GP surrogate** (LF model).
-1. **Wrap LF + HF in `ActiveMCMCModel`**.
-1. **Choose the inference mode** by selecting one posterior (single-level) or two posteriors (DA-MCMC).
-1. **Optionally enable adaptive subchains** (DA-MCMC only).
-1. **Run sampling** and inspect diagnostics (HF usage, subchain history, trace plots).
+This produces:
 
-The documentation includes notebook-style tutorials:
+- a POD basis fitted on HF snapshots (`rank=20`),
+- a multi-output GP mapping parameters → POD coefficients,
+- quick metrics (RMSE, predictive std, coverage) printed to stdout,
+- optional plots (POD energy, error vs uncertainty, prediction slices).
 
-- **Forward toy**: build and validate a POD–GP surrogate.
-  See: `Tutorials → Forward toy (POD-GP)`.
-- **Backward toy**: Bayesian inversion with Active / DA-MCMC and adaptive subchains.
-  See: `Tutorials → Backward toy (Active-MCMC)`.
+You can interactively reproduce the steps by opening
+`docs/tutorials/forward_toy_notebook.py` in your IDE or via `mkdocs serve`.
 
 ---
 
-## API pointers
+## 3. Configure the active model
 
-If you want to navigate the implementation, these pages are the most useful entrypoints:
+The minimal pattern:
 
-- \[`Inference`\]\[gp_active_mcmc.inference\]: active model, samplers, likelihood, proposals, result containers.
-- \[`Surrogates`\]\[gp_active_mcmc.surrogates\]: POD, GP, POD–GP surrogate.
-- \[`Diagnostics`\]\[gp_active_mcmc.diagnostics\]: plotting helpers returning `(fig, ax)`.
-- \[`Utils`\]\[gp_active_mcmc.utils\]: numerical helpers.
+```python
+from gp_active_mcmc.inference import ActiveMCMCModel, ActiveGPLogLike
+from gp_active_mcmc.inference import (
+    AdaptiveSubchain,
+    AdaptiveSubchainControl,
+    AdaptiveSubchainState,
+)
+from gp_active_mcmc.surrogates import PODGPSurrogate
+
+lf_surrogate = PODGPSurrogate(pod=pod, gp=gp)
+model = ActiveMCMCModel(
+    lf_model=lf_surrogate,
+    hf_model=hf_forward,
+    gamma_threshold=0.10,
+    adaptive=AdaptiveSubchain(
+        state=AdaptiveSubchainState(subchain_length=20),
+        control=AdaptiveSubchainControl(
+            update_every=5,
+            target_error=0.05,
+            min_subchain=1,
+            max_subchain=500,
+        ),
+    ),
+)
+
+loglike = ActiveGPLogLike(y_obs, C_obs)
+posterior = [
+    tda.Posterior(prior, loglike, model.coarse),
+    tda.Posterior(prior, loglike, model.fine),
+]
+```
+
+Key decisions:
+
+- **Single posterior** → LF-only active learning (simple but no formal DA correction).
+- **Two posteriors** → delayed-acceptance Active MCMC; required for adaptive subchains.
+
+---
+
+## 4. Run sampling
+
+Fixed subsampling rate (single `tinyDA` call):
+
+```python
+from gp_active_mcmc.inference import sample_active_chain
+
+result = sample_active_chain(
+    model=model,
+    posterior=posterior,
+    proposal=proposal,
+    iterations=2000,
+    initial_parameters=theta0,
+    subsampling_rate=50,
+    chain_key="chain_0",
+)
+```
+
+Adaptive subchain workflow (chunked runs, subsampling changes online):
+
+```python
+from gp_active_mcmc.inference import sample_adaptive_active_chain, ChunkedMCMCConfig
+
+result = sample_adaptive_active_chain(
+    model=model,
+    posterior=posterior,
+    proposal=proposal,
+    n_chunks=8,
+    chunk_config=ChunkedMCMCConfig(chain_key="chain_coarse_0", chunk_size=250),
+    initial_parameters=theta0,
+    subsampling_rate=50,
+)
+```
+
+Both functions return a `SamplingResult` containing an immutable `MCMCChain`
+with HF usage flags, (optional) acceptance flags, and subchain history.
+
+---
+
+## 5. Inspect diagnostics
+
+```python
+from gp_active_mcmc.diagnostics import (
+    plot_chain_2d,
+    plot_cumulative_hf_fraction,
+    plot_subchain_length_history,
+)
+
+chain = result.chain
+plot_chain_2d(chain.samples, theta_true=theta_star)
+plot_cumulative_hf_fraction(chain.extras.used_hf, burn_in=100)
+plot_subchain_length_history(chain.extras.subchain_length)
+```
+
+For publication-ready figures, reuse the helper functions in `docs/tutorials`
+or run `mkdocs build --strict` to regenerate the site (CI executes the same command).
+
+---
+
+## Where to go next
+
+- **User Guide → Concepts** for deeper explanations of adaptive policies and likelihood design.
+- **Tutorials → Navier–Stokes** for a PDE-scale benchmark (remember to provision the MPI/FEniCS stack).
+- **API Reference** for exhaustive documentation of each module.
+- **Contributing** if you plan to propose changes—run `nox -s tests lint typecheck docs`.
+
+Happy sampling!
