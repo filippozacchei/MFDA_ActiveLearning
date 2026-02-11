@@ -12,6 +12,8 @@ Use it when you need to:
 - run PDE-scale examples such as the Navier–Stokes backward-facing-step benchmark;
 - collect diagnostics (HF usage, subchain history, predictive error) for publications.
 
+Hosted documentation: https://filippozacchei.github.io/MFDA_ActiveLearning/
+
 [![Tests](https://github.com/filippozacchei/MFDA_ActiveLearning/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/filippozacchei/MFDA_ActiveLearning/actions/workflows/ci.yml)
 [![Docs](https://github.com/filippozacchei/MFDA_ActiveLearning/actions/workflows/docs.yml/badge.svg?branch=main)](https://github.com/filippozacchei/MFDA_ActiveLearning/actions/workflows/docs.yml)
 [![Documentation](https://img.shields.io/badge/docs-mkdocs%20material-blue)](https://filippozacchei.github.io/MFDA_ActiveLearning/)
