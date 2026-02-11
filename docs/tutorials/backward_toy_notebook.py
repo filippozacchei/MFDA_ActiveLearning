@@ -38,7 +38,7 @@ from scipy.stats import multivariate_normal
 # For documentation builds, import the toy helpers from the tutorial package.
 # If you place this file at `docs/tutorials/backward_toy_notebook.py`, also place
 # `toy.py` in the same directory so this import works.
-from toy_tutorial import make_forward_model, make_observation, make_timeline
+from docs.tutorials.toy_tutorial import make_forward_model, make_observation, make_timeline
 
 # Diagnostics return (fig, ax) and never force `plt.show()` unless `show=True`.
 from gp_active_mcmc.diagnostics import (

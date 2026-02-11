@@ -31,8 +31,7 @@ from sklearn.model_selection import train_test_split
 #
 # For documentation notebooks, prefer a *local* `toy.py` next to this file
 # (e.g. `docs/tutorials/toy.py`) and import from there:
-from toy_tutorial import make_timeline, toy_forward
-
+from docs.tutorials.toy_tutorial import make_timeline, toy_forward
 from gp_active_mcmc.diagnostics.pod import plot_pod_energy
 from gp_active_mcmc.diagnostics.surrogate import (
     plot_error_vs_uncertainty,
