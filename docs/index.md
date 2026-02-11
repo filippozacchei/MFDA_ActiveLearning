@@ -31,11 +31,12 @@ The tested stack (pinned for `tinyDA`/`GPy` stability):
 - GPy `1.13.2`
 
 ```bash
+git clone https://github.com/filippozacchei/MFDA_ActiveLearning.git
+cd MFDA_ActiveLearning
 python -m venv .venv
 source .venv/bin/activate
 python -m pip install --upgrade pip
 python -m pip install -e .
-pytest -q
 python examples/toy_problem/run_forward_toy.py
 ```
 
@@ -44,6 +45,8 @@ macOS-specific setup (Apple Silicon and Intel):
 ```bash
 xcode-select --install
 brew install python@3.10
+git clone https://github.com/filippozacchei/MFDA_ActiveLearning.git
+cd MFDA_ActiveLearning
 python3.10 -m venv .venv
 source .venv/bin/activate
 python -m pip install --upgrade pip setuptools wheel
@@ -55,6 +58,13 @@ Documentation stack:
 ```bash
 python -m pip install -e ".[docs]"
 mkdocs serve  # open http://127.0.0.1:8000
+```
+
+Testing stack (optional):
+
+```bash
+python -m pip install -e ".[test]"
+python -m pytest -q
 ```
 
 Navier–Stokes scripts additionally require a conda-forge environment with `fenics-dolfinx=0.9.0`,

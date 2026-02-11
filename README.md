@@ -35,6 +35,8 @@ The package is developed and tested with pinned versions to stay compatible with
 ### Core install
 
 ```bash
+git clone https://github.com/filippozacchei/MFDA_ActiveLearning.git
+cd MFDA_ActiveLearning
 python -m venv .venv
 source .venv/bin/activate
 python -m pip install --upgrade pip
@@ -53,6 +55,8 @@ brew install python@3.10
 Then create the project environment with the pinned interpreter:
 
 ```bash
+git clone https://github.com/filippozacchei/MFDA_ActiveLearning.git
+cd MFDA_ActiveLearning
 python3.10 -m venv .venv
 source .venv/bin/activate
 python -m pip install --upgrade pip setuptools wheel
@@ -65,8 +69,14 @@ and run the same `pip install -e .` command inside it.
 Smoke-test the install:
 
 ```bash
-pytest -q
 python examples/toy_problem/run_forward_toy.py
+```
+
+Run tests (optional, requires test extras):
+
+```bash
+python -m pip install -e ".[test]"
+python -m pytest -q
 ```
 
 > **Why is Ray pinned?** `tinyDA` currently depends on `ray>=2.53.0`. Even if you do not call Ray
@@ -75,6 +85,13 @@ python examples/toy_problem/run_forward_toy.py
 ---
 
 ## Optional dependencies
+
+### Testing
+
+```bash
+python -m pip install -e ".[test]"
+python -m pytest -q
+```
 
 ### Documentation (MkDocs)
 
