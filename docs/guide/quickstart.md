@@ -1,26 +1,16 @@
 # Quickstart
 
-This guide walks you through the fastest path to a functioning
-`gp_active_mcmc` environment and a reproducible toy experiment. You will:
-
-1. create a dedicated Python environment,
-2. build a POD–GP surrogate from synthetic data,
-3. wrap the surrogate + HF model in `ActiveMCMCModel`,
-4. run both fixed-rate and adaptive active-learning samplers,
-5. inspect diagnostics to confirm everything worked.
+This page is command-first. If you want a working run with minimal setup, follow
+sections 1-3 in order.
 
 ---
 
-## 0. Prerequisites
+## 1. Install
 
-- Linux or macOS shell with Python 3.10 (matching CI).
-- A working C/C++ toolchain (required by `tinyDA`, `GPy`, and scientific deps).
-- Optional: conda-forge environment with `fenics-dolfinx`, `mpich`, `gmsh`,
-  `python-gmsh`, and `pyvista` if you plan to run the Navier–Stokes benchmark.
+Prerequisites:
 
----
-
-## 1. Set up your environment
+- Python 3.10
+- C/C++ toolchain (`tinyDA`/`GPy` build dependencies)
 
 ```bash
 git clone https://github.com/filippozacchei/MFDA_ActiveLearning.git
@@ -29,154 +19,83 @@ python -m venv .venv
 source .venv/bin/activate
 python -m pip install --upgrade pip
 python -m pip install -e ".[dev]"
-pre-commit install
 ```
 
-Run the test suite to ensure the stack is healthy:
+macOS note:
 
 ```bash
-pytest -q
+xcode-select --install
+brew install python@3.10
 ```
 
-> **Heads-up:** `tinyDA` currently depends on `ray==2.53.0`. Even if your workflow
-> does not use Ray, keep the pin to remain compatible with upstream releases.
-
----
-
-## 2. Build the toy surrogate
-
-Use the ready-made script (mirrors the _Forward toy_ tutorial):
+If your shell does not find `pytest`, run tests as:
 
 ```bash
-python examples/toy_problem/run_forward_toy.py \
-  --n-snapshots 200 \
-  --test-fraction 0.25 \
-  --pod-rank 20 \
-  --kernel matern52
+python -m pytest -q
 ```
-
-This produces:
-
-- a POD basis fitted on HF snapshots (`rank=20`),
-- a multi-output GP mapping parameters → POD coefficients,
-- quick metrics (RMSE, predictive std, coverage) printed to stdout,
-- optional plots (POD energy, error vs uncertainty, prediction slices).
-
-You can interactively reproduce the steps by opening
-`docs/tutorials/forward_toy_notebook.py` in your IDE or via `mkdocs serve`.
 
 ---
 
-## 3. Configure the active model
+## 2. Run the toy forward workflow
 
-The minimal pattern:
-
-```python
-from gp_active_mcmc.inference import ActiveMCMCModel, ActiveGPLogLike
-from gp_active_mcmc.inference import (
-    AdaptiveSubchain,
-    AdaptiveSubchainControl,
-    AdaptiveSubchainState,
-)
-from gp_active_mcmc.surrogates import PODGPSurrogate
-
-lf_surrogate = PODGPSurrogate(pod=pod, gp=gp)
-model = ActiveMCMCModel(
-    lf_model=lf_surrogate,
-    hf_model=hf_forward,
-    gamma_threshold=0.10,
-    adaptive=AdaptiveSubchain(
-        state=AdaptiveSubchainState(subchain_length=20),
-        control=AdaptiveSubchainControl(
-            update_every=5,
-            target_error=0.05,
-            min_subchain=1,
-            max_subchain=500,
-        ),
-    ),
-)
-
-loglike = ActiveGPLogLike(y_obs, C_obs)
-posterior = [
-    tda.Posterior(prior, loglike, model.coarse),
-    tda.Posterior(prior, loglike, model.fine),
-]
+```bash
+python examples/toy_problem/run_forward_toy.py
 ```
 
-Key decisions:
+This script:
 
-- **Single posterior** → LF-only active learning (simple but no formal DA correction).
-- **Two posteriors** → delayed-acceptance Active MCMC; required for adaptive subchains.
+- generates synthetic snapshots from the toy HF model,
+- fits a POD basis and a multi-output GP,
+- prints validation metrics (RMSE and coverage),
+- produces diagnostic plots.
 
 ---
 
-## 4. Run sampling
+## 3. Run the toy inverse workflow
 
-Fixed subsampling rate (single `tinyDA` call):
-
-```python
-from gp_active_mcmc.inference import sample_active_chain
-
-result = sample_active_chain(
-    model=model,
-    posterior=posterior,
-    proposal=proposal,
-    iterations=2000,
-    initial_parameters=theta0,
-    subsampling_rate=50,
-    chain_key="chain_0",
-)
+```bash
+python examples/toy_problem/run_backward_toy.py
 ```
 
-Adaptive subchain workflow (chunked runs, subsampling changes online):
+This script runs both:
 
-```python
-from gp_active_mcmc.inference import sample_adaptive_active_chain, ChunkedMCMCConfig
+- single-posterior active MCMC, and
+- delayed-acceptance active MCMC with adaptive subchain updates.
 
-result = sample_adaptive_active_chain(
-    model=model,
-    posterior=posterior,
-    proposal=proposal,
-    n_chunks=8,
-    chunk_config=ChunkedMCMCConfig(chain_key="chain_coarse_0", chunk_size=250),
-    initial_parameters=theta0,
-    subsampling_rate=50,
-)
-```
-
-Both functions return a `SamplingResult` containing an immutable `MCMCChain`
-with HF usage flags, (optional) acceptance flags, and subchain history.
+It also plots posterior samples, HF usage, and subchain behavior.
 
 ---
 
-## 5. Inspect diagnostics
+## 4. Change run settings
 
-```python
-from gp_active_mcmc.diagnostics import (
-    plot_chain_2d,
-    plot_cumulative_hf_fraction,
-    plot_subchain_length_history,
-)
+Both toy scripts are notebook-style Python files with configuration constants near
+the top. Edit those constants directly:
 
-chain = result.chain
-plot_chain_2d(chain.samples, theta_true=theta_star)
-plot_cumulative_hf_fraction(chain.extras.used_hf, burn_in=100)
-plot_subchain_length_history(chain.extras.subchain_length)
-```
+- `examples/toy_problem/run_forward_toy.py` for snapshot count, POD rank, GP kernel
+- `examples/toy_problem/run_backward_toy.py` for chain length, burn-in, thresholds, and adaptive controls
 
-For publication-ready figures, reuse the helper functions in `docs/tutorials`
-or run `mkdocs build --strict` to regenerate the site (CI executes the same command).
+There is currently no CLI argument parser for these scripts.
 
 ---
 
-## Where to go next
+## 5. Use the docs notebooks
 
-- **User Guide → Concepts** for deeper explanations of adaptive policies and likelihood design.
-- **Tutorials → Navier–Stokes** for a PDE-scale benchmark (remember to provision the MPI/FEniCS stack).
-- **API Reference** for exhaustive documentation of each module.
-- **Background reading**:
-  - [MCMC-guided active learning with Gaussian-process surrogates](https://www.sciencedirect.com/science/article/pii/S099775382600001X)
-  - [Delayed-acceptance MLDA / tinyDA framework](https://epubs.siam.org/doi/10.1137/22M1476770)
-- **Contributing** if you plan to propose changes—run `nox -s tests lint typecheck docs`.
+For step-by-step narrative versions of the same workflows:
 
-Happy sampling!
+- `docs/tutorials/forward_toy_notebook.py`
+- `docs/tutorials/backward_toy_notebook.py`
+
+Serve docs locally:
+
+```bash
+python -m pip install -e ".[docs]"
+mkdocs serve
+```
+
+---
+
+## 6. Next steps
+
+- Read [Concepts](summary.md) for the model and algorithm details.
+- Open the API reference pages for module-level docs.
+- For the PDE benchmark, see `examples/navier_stokes/` and the Navier-Stokes tutorial page.

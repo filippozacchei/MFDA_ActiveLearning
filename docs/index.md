@@ -6,8 +6,7 @@ The library lets you:
 
 - build POD–GP surrogates from snapshot data,
 - run delayed-acceptance or adaptive-subchain samplers backed by `tinyDA`,
-- instrument HF usage, surrogate error, and posterior summaries for publications,
-- reproduce the Navier–Stokes backward-facing-step benchmark used in our papers.
+- instrument HF usage, surrogate error, and posterior summaries for publications.
 
 ---
 
