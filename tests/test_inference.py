@@ -1,18 +1,19 @@
 from __future__ import annotations
 
-import numpy as np
-import pytest
 import copy
 
-from gp_active_mcmc.inference.likelihood import ActiveGPLogLike
-from gp_active_mcmc.inference.proposal import AdaptiveMetropolisShared
+import numpy as np
+import pytest
+
 from gp_active_mcmc.inference.adaptive_subchain import (
-    AdaptiveSubchainState,
-    AdaptiveSubchainControl,
     AdaptiveSubchain,
+    AdaptiveSubchainControl,
+    AdaptiveSubchainState,
 )
 from gp_active_mcmc.inference.coarse_output import CoarseOutput
+from gp_active_mcmc.inference.likelihood import ActiveGPLogLike
 from gp_active_mcmc.inference.model import ActiveMCMCModel
+from gp_active_mcmc.inference.proposal import AdaptiveMetropolisShared
 
 
 def _manual_gaussian_loglike(y: np.ndarray, m: np.ndarray, C: np.ndarray) -> float:
@@ -21,7 +22,7 @@ def _manual_gaussian_loglike(y: np.ndarray, m: np.ndarray, C: np.ndarray) -> flo
     m = np.asarray(m, dtype=float).ravel()
     C = np.asarray(C, dtype=float)
 
-    sign, logdet = np.linalg.slogdet(C)
+    sign, _ = np.linalg.slogdet(C)
     if sign <= 0:
         raise ValueError("Covariance must be positive definite.")
     diff = y - m

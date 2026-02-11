@@ -1,11 +1,10 @@
 # examples/navier_stokes/utils/mf_ipcs.py
 from __future__ import annotations
+
 from dataclasses import dataclass
 
 import numpy as np
 import tqdm.autonotebook
-from mpi4py import MPI
-from petsc4py import PETSc
 from basix.ufl import element
 from dolfinx.fem import (
     Constant,
@@ -16,30 +15,31 @@ from dolfinx.fem import (
     locate_dofs_topological,
 )
 from dolfinx.fem.petsc import (
+    apply_lifting,
     assemble_matrix,
     assemble_vector,
-    apply_lifting,
     create_vector,
     set_bc,
 )
+from mpi4py import MPI
+from petsc4py import PETSc
 from ufl import (
-    TrialFunction,
     TestFunction,
-    dot,
-    grad,
+    TrialFunction,
     div,
-    nabla_grad,
+    dot,
     dx,
-    lhs,
+    grad,
     inner,
+    lhs,
+    nabla_grad,
 )
 
-
 from .bfs_mesh import build_bfs_mesh
+from .ns_types import BFSGeometry, BoundaryMarkers, MeshOptions, OutletProfile
 from .outlet import sample_outlet_u_x
-from .types import BFSGeometry, MeshOptions, BoundaryMarkers, OutletProfile
 
-"""Medium-fidelity Navier–Stokes solver for the backward-facing step (BFS).
+"""Medium-fidelity Navier-Stokes solver for the backward-facing step (BFS).
 
 This module provides a *medium-fidelity* forward model for incompressible flow in a
 2D backward-facing step geometry, solved with an IPCS-like (incremental pressure
@@ -53,12 +53,12 @@ Scope and intent
 
 Model and discretisation
 ------------------------
-- Governing equations: incompressible Navier–Stokes.
+- Governing equations: incompressible Navier-Stokes.
 - Time discretisation:
   - Explicit convection using AB2 advecting velocity.
   - Implicit diffusion.
 - Spatial discretisation:
-  - Taylor–Hood elements (P2 velocity, P1 pressure).
+  - Taylor-Hood elements (P2 velocity, P1 pressure).
 
 Boundary conditions
 -------------------
@@ -74,7 +74,7 @@ Returns an :class:`~your_pkg.cfd.types.OutletProfile` containing:
 
 Notes for reproducibility
 -------------------------
-- Assembly and linear solvers are re-used across time steps.
+- Assembly and linear solvers are reused across time steps.
 - The progress bar is enabled only on rank 0 and can be disabled in MFTimeConfig.
 
 Caveats
@@ -120,16 +120,16 @@ def solve_ipcs_bfs(
     *,
     geom: BFSGeometry,
     U_in: float,
-    time: MFTimeConfig = MFTimeConfig(),
-    fluid: MFFluidConfig = MFFluidConfig(),
-    mesh_opts: MeshOptions = MeshOptions(),
-    markers: BoundaryMarkers = BoundaryMarkers(),
+    time: MFTimeConfig | None = None,
+    fluid: MFFluidConfig | None = None,
+    mesh_opts: MeshOptions | None = None,
+    markers: BoundaryMarkers | None = None,
     outlet_ny: int = 100,
     comm: MPI.Comm = MPI.COMM_WORLD,
     store_velocity_frames: bool = False,
     frame_stride: int = 10,
 ) -> OutletProfile:
-    """Solve incompressible Navier–Stokes on a BFS domain using an IPCS-like split scheme.
+    """Solve incompressible Navier-Stokes on a BFS domain using an IPCS-like split scheme.
 
     Parameters
     ----------
@@ -158,6 +158,14 @@ def solve_ipcs_bfs(
     ValueError
         If `U_in <= 0` or if `outlet_ny <= 1`.
     """
+    if time is None:
+        time = MFTimeConfig()
+    if fluid is None:
+        fluid = (MFFluidConfig(),)
+    if mesh_opts is None:
+        mesh_opts = (MeshOptions(),)
+    if markers is None:
+        markers = (BoundaryMarkers(),)
     if U_in <= 0.0:
         raise ValueError("U_in must be positive.")
     if outlet_ny <= 1:
@@ -173,7 +181,7 @@ def solve_ipcs_bfs(
     fdim = mesh.topology.dim - 1
 
     # ---------------------------------------------------------------------
-    # Function spaces (Taylor–Hood P2/P1)
+    # Function spaces (Taylor-Hood P2/P1)
     # ---------------------------------------------------------------------
     v_cg2 = element("Lagrange", mesh.basix_cell(), 2, shape=(mesh.geometry.dim,))
     s_cg1 = element("Lagrange", mesh.basix_cell(), 1)
@@ -367,10 +375,10 @@ def forward_model(
     h2: float = 0.20,
     L_up: float = 0.10,
     L_down: float = 0.40,
-    time: MFTimeConfig = MFTimeConfig(),
-    fluid: MFFluidConfig = MFFluidConfig(),
-    mesh_opts: MeshOptions = MeshOptions(),
-    markers: BoundaryMarkers = BoundaryMarkers(),
+    time: MFTimeConfig | None = None,
+    fluid: MFFluidConfig | None = None,
+    mesh_opts: MeshOptions | None = None,
+    markers: BoundaryMarkers | None = None,
     outlet_ny: int = 100,
     comm: MPI.Comm = MPI.COMM_WORLD,
 ) -> tuple[np.ndarray, np.ndarray]:
@@ -401,6 +409,14 @@ def forward_model(
     This function is intentionally “pure” from the perspective of active-learning
     inference: it takes scalar inputs and returns NumPy arrays.
     """
+    if time is None:
+        time = MFTimeConfig()
+    if fluid is None:
+        fluid = (MFFluidConfig(),)
+    if mesh_opts is None:
+        mesh_opts = (MeshOptions(),)
+    if markers is None:
+        markers = (BoundaryMarkers(),)
     prof = solve_ipcs_bfs(
         geom=BFSGeometry(h1=h1, h2=h2, L_up=L_up, L_down=L_down),
         U_in=U_in,

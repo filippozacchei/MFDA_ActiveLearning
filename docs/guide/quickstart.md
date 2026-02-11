@@ -3,8 +3,8 @@
 This quickstart introduces the typical workflow implemented in `gp_active_mcmc`:
 
 1. build a **low-fidelity (LF) surrogate**,
-2. couple it with a **high-fidelity (HF) forward model** through an **active model**,
-3. run **Active / DA-MCMC** (optionally with **adaptive subchains**) and inspect diagnostics.
+1. couple it with a **high-fidelity (HF) forward model** through an **active model**,
+1. run **Active / DA-MCMC** (optionally with **adaptive subchains**) and inspect diagnostics.
 
 The package is organised around a separation of concerns:
 
@@ -47,13 +47,13 @@ and exposes two callables that can be plugged into `tinyDA.Posterior`:
 - `model.coarse(theta)`: LF-first; may trigger HF if surrogate uncertainty is large.
 - `model.fine(theta)`: always HF; also updates the surrogate.
 
-When HF is evaluated, the LF surrogate is updated online. This is the mechanism that enables *active learning during inference*.
+When HF is evaluated, the LF surrogate is updated online. This is the mechanism that enables _active learning during inference_.
 
-See: [`ActiveMCMCModel`][gp_active_mcmc.inference.model.ActiveMCMCModel].
+See: \[`ActiveMCMCModel`\][gp_active_mcmc.inference.model.ActiveMCMCModel].
 
 ### 2) Your choice of posterior(s) determines the inference scheme
 
-In `gp_active_mcmc`, the *posterior argument* is not just a technicality: it defines the algorithmic mode.
+In `gp_active_mcmc`, the _posterior argument_ is not just a technicality: it defines the algorithmic mode.
 
 #### Single posterior → MCMC-guided active learning (single-level)
 
@@ -61,7 +61,7 @@ Use only the coarse model:
 
 - `posterior = Posterior(prior, loglike, model.coarse)`
 - run with a fixed-rate sampler such as:
-  [`sample_active_chain`][gp_active_mcmc.inference.sampling.sample_active_chain]
+  \[`sample_active_chain`\][gp_active_mcmc.inference.sampling.sample_active_chain]
 
 In this mode, HF calls happen only when triggered inside `coarse(...)`.
 
@@ -71,7 +71,7 @@ Use coarse and fine posteriors:
 
 - `posterior = [Posterior(..., model.coarse), Posterior(..., model.fine)]`
 - run with:
-  [`sample_active_chain`][gp_active_mcmc.inference.sampling.sample_active_chain]
+  \[`sample_active_chain`\][gp_active_mcmc.inference.sampling.sample_active_chain]
 
 This corresponds to delayed-acceptance MCMC (DA-MCMC), where the fine level corrects the coarse approximation periodically (controlled by `subsampling_rate`).
 
@@ -83,10 +83,10 @@ Important constraints:
 
 - **DA-MCMC is mandatory**: you must pass **two posteriors** `[coarse, fine]`.
 - Adaptation implies the subsampling rate can change over time, so sampling must be **chunked**:
-  [`sample_adaptive_active_chain`][gp_active_mcmc.inference.sampling.sample_adaptive_active_chain]
-  with [`ChunkedMCMCConfig`][gp_active_mcmc.inference.sampling.ChunkedMCMCConfig].
+  \[`sample_adaptive_active_chain`\][gp_active_mcmc.inference.sampling.sample_adaptive_active_chain]
+  with \[`ChunkedMCMCConfig`\][gp_active_mcmc.inference.sampling.ChunkedMCMCConfig].
 
-See: [`AdaptiveSubchain`][gp_active_mcmc.inference.adaptive_subchain.AdaptiveSubchain].
+See: \[`AdaptiveSubchain`\][gp_active_mcmc.inference.adaptive_subchain.AdaptiveSubchain].
 
 ---
 
@@ -97,18 +97,18 @@ The toy problem is a lightweight baseline that does not require external PDE sol
 A typical workflow is:
 
 1. **Define a time grid** and the HF forward model `y = f_hf(theta)`.
-2. **Generate an initial design** (parameter samples) and HF snapshots.
-3. **Fit a POD–GP surrogate** (LF model).
-4. **Wrap LF + HF in `ActiveMCMCModel`**.
-5. **Choose the inference mode** by selecting one posterior (single-level) or two posteriors (DA-MCMC).
-6. **Optionally enable adaptive subchains** (DA-MCMC only).
-7. **Run sampling** and inspect diagnostics (HF usage, subchain history, trace plots).
+1. **Generate an initial design** (parameter samples) and HF snapshots.
+1. **Fit a POD–GP surrogate** (LF model).
+1. **Wrap LF + HF in `ActiveMCMCModel`**.
+1. **Choose the inference mode** by selecting one posterior (single-level) or two posteriors (DA-MCMC).
+1. **Optionally enable adaptive subchains** (DA-MCMC only).
+1. **Run sampling** and inspect diagnostics (HF usage, subchain history, trace plots).
 
 The documentation includes notebook-style tutorials:
 
-- **Forward toy**: build and validate a POD–GP surrogate.  
+- **Forward toy**: build and validate a POD–GP surrogate.
   See: `Tutorials → Forward toy (POD-GP)`.
-- **Backward toy**: Bayesian inversion with Active / DA-MCMC and adaptive subchains.  
+- **Backward toy**: Bayesian inversion with Active / DA-MCMC and adaptive subchains.
   See: `Tutorials → Backward toy (Active-MCMC)`.
 
 ---
@@ -117,7 +117,7 @@ The documentation includes notebook-style tutorials:
 
 If you want to navigate the implementation, these pages are the most useful entrypoints:
 
-- [`Inference`][gp_active_mcmc.inference]: active model, samplers, likelihood, proposals, result containers.
-- [`Surrogates`][gp_active_mcmc.surrogates]: POD, GP, POD–GP surrogate.
-- [`Diagnostics`][gp_active_mcmc.diagnostics]: plotting helpers returning `(fig, ax)`.
-- [`Utils`][gp_active_mcmc.utils]: numerical helpers.
+- \[`Inference`\]\[gp_active_mcmc.inference\]: active model, samplers, likelihood, proposals, result containers.
+- \[`Surrogates`\]\[gp_active_mcmc.surrogates\]: POD, GP, POD–GP surrogate.
+- \[`Diagnostics`\]\[gp_active_mcmc.diagnostics\]: plotting helpers returning `(fig, ax)`.
+- \[`Utils`\]\[gp_active_mcmc.utils\]: numerical helpers.

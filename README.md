@@ -2,10 +2,10 @@
 
 `gp_active_mcmc` is a research-oriented Python package for **multi-fidelity Bayesian inference**
 using **Gaussian-process surrogates** and **Active/Adaptive MCMC** strategies. It couples a fast,
-uncertain *low-fidelity* (LF) surrogate with an accurate but expensive *high-fidelity* (HF) model,
+uncertain _low-fidelity_ (LF) surrogate with an accurate but expensive _high-fidelity_ (HF) model,
 switching to HF evaluations when needed and optionally adapting the HF subchain length during sampling.
 
-The goal is to rely on the GP surrogate as much as possible during MCMC sampling, and leverage GP predictive uncertainty to decide when/where to switch to HF solver. This mantains the accuracy of teh MCMC sampling and reduces at minimum the costs of the data-fit model training phase.
+The goal is to rely on the GP surrogate as much as possible during MCMC sampling, and leverage GP predictive uncertainty to decide when/where to switch to HF solver. This maintains the accuracy of the MCMC sampling and reduces at minimum the costs of the data-fit model training phase.
 
 ---
 
@@ -75,12 +75,13 @@ conda install -c conda-forge fenics-dolfinx=0.9.0 mpich gmsh=4.15.0 python-gmsh=
 
 Main subpackages:
 
-- [`gp_active_mcmc.surrogates`][]: POD, GP, and POD–GP surrogate components.
-- [`gp_active_mcmc.inference`][]: likelihoods, proposals, adaptive subchain policy, samplers, and result containers.
-- [`gp_active_mcmc.utils`][]: pure numerical helpers and post-processing utilities (no plotting).
-- [`gp_active_mcmc.diagnostics`][]: plotting utilities returning `(fig, ax)` (no `plt.show()` calls).
+- \[`gp_active_mcmc.surrogates`\]\[\]: POD, GP, and POD–GP surrogate components.
+- \[`gp_active_mcmc.inference`\]\[\]: likelihoods, proposals, adaptive subchain policy, samplers, and result containers.
+- \[`gp_active_mcmc.utils`\]\[\]: pure numerical helpers and post-processing utilities (no plotting).
+- \[`gp_active_mcmc.diagnostics`\]\[\]: plotting utilities returning `(fig, ax)` (no `plt.show()` calls).
 
 Examples are located in `examples/`:
+
 - `examples/toy_problem/`
 - `examples/navier-stokes/`
 
@@ -89,19 +90,21 @@ Examples are located in `examples/`:
 ## Core concepts
 
 ### Multi-fidelity active sampling
+
 At each evaluation, the sampler uses the LF surrogate unless the surrogate uncertainty exceeds a threshold.
 When HF is used, the surrogate is updated online.
 
 ### Adaptive subchains (optional)
+
 When enabled, the HF subsampling rate (HF correction frequency) is adjusted online based on the
 surrogate–HF discrepancy, aiming to reduce HF calls while controlling error.
 
 ### Results
-Sampling functions return a [`gp_active_mcmc.inference.SamplingResult`][] containing:
-- a [`gp_active_mcmc.inference.MCMCChain`][] of samples and aligned per-step extras (e.g., HF usage flags, subchain length history),
+
+Sampling functions return a \[`gp_active_mcmc.inference.SamplingResult`\][] containing:
+
+- a \[`gp_active_mcmc.inference.MCMCChain`\][] of samples and aligned per-step extras (e.g., HF usage flags, subchain length history),
 - flexible `metadata` describing the run configuration.
-
-
 
 ---
 

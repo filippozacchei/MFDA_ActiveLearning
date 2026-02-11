@@ -1,19 +1,19 @@
 # examples/navier-stokes/cfd/run_mf.py
 from __future__ import annotations
 
+from collections.abc import Iterable
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Iterable
 
 import matplotlib.pyplot as plt
 
-from utils.solver import solve_ipcs_bfs
-from utils.types import BFSGeometry
+from examples.navier_stokes.ns_types import BFSGeometry
+from examples.navier_stokes.solver_hf import solve_ipcs_bfs
 
 
 @dataclass(frozen=True, slots=True)
 class PlotConfig:
-    """Plot configuration for the MF Navier–Stokes BFS example."""
+    """Plot configuration for the MF Navier-Stokes BFS example."""
 
     figsize: tuple[float, float] = (6.0, 4.5)
     show: bool = True
@@ -33,11 +33,15 @@ def plot_vs_upstream_height(
     *,
     h1_values: Iterable[float],
     U_in: float,
-    geom_base: BFSGeometry = BFSGeometry(),
-    cfg: PlotConfig = PlotConfig(),
+    geom_base: BFSGeometry | None = None,
+    cfg: PlotConfig | None = None,
 ) -> None:
     """Compare outlet profiles while varying downstream channel height h2."""
     profiles = []
+    if geom_base is None:
+        geom_base = BFSGeometry()
+    if cfg is None:
+        cfg = PlotConfig()
     for h1 in h1_values:
         geom = BFSGeometry(h1=h1, h2=geom_base.h2, L_up=geom_base.L_up, L_down=geom_base.L_down)
         prof = solve_ipcs_bfs(geom=geom, U_in=float(U_in))
@@ -64,11 +68,15 @@ def plot_vs_inlet_velocity(
     *,
     inlet_velocities: Iterable[float],
     h1: float,
-    geom_base: BFSGeometry = BFSGeometry(),
-    cfg: PlotConfig = PlotConfig(),
+    geom_base: BFSGeometry | None = None,
+    cfg: PlotConfig | None = None,
 ) -> None:
     """Compare outlet profiles while varying inlet velocity U_in."""
     profiles = []
+    if geom_base is None:
+        geom_base = BFSGeometry()
+    if cfg is None:
+        cfg = PlotConfig()
     for U_in in inlet_velocities:
         geom = BFSGeometry(h1=h1, h2=geom_base.h2, L_up=geom_base.L_up, L_down=geom_base.L_down)
         prof = solve_ipcs_bfs(geom=geom, U_in=float(U_in))

@@ -6,7 +6,7 @@ from typing import Literal
 
 import numpy as np
 
-"""Lightweight domain types for the Navier–Stokes backward-facing step example.
+"""Lightweight domain types for the Navier-Stokes backward-facing step example.
 
 This module defines *pure* dataclasses used across the example code.
 
@@ -157,7 +157,12 @@ class BoundaryMarkers:
 
     def as_dict(self) -> dict[str, int]:
         """Return markers as a plain dict (useful for serialisation/logging)."""
-        return {"fluid": self.fluid, "inlet": self.inlet, "outlet": self.outlet, "wall": self.wall}
+        return {
+            "fluid": self.fluid,
+            "inlet": self.inlet,
+            "outlet": self.outlet,
+            "wall": self.wall,
+        }
 
 
 @dataclass(frozen=True, slots=True)

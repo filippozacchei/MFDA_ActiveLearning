@@ -1,6 +1,0 @@
-numpy==1.26.4
-scipy==1.12.0
-scikit-learn==1.7.2
-tinyda==0.9.21
-ray==2.53.0
-GPy==1.13.2

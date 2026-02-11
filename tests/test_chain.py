@@ -15,7 +15,7 @@ def test_chain_validation_and_slicing() -> None:
     assert chain.n_steps == 10
     assert chain.n_dim == 2
 
-    b = chain.burnin(3)
+    b = chain.burn_in(3)
     assert b.samples.shape == (7, 2)
     assert b.extras.used_hf is not None
     assert b.extras.subchain_length is not None

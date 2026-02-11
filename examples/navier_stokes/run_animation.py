@@ -4,9 +4,9 @@ from pathlib import Path
 
 import numpy as np
 
-from utils.types import BFSGeometry
-from utils.solver import MFTimeConfig, solve_ipcs_bfs
-from utils.animation import FieldSampleGrid, make_velocity_animation
+from examples.navier_stokes.animation import FieldSampleGrid, make_velocity_animation
+from examples.navier_stokes.ns_types import BFSGeometry
+from examples.navier_stokes.solver_hf import MFTimeConfig, solve_ipcs_bfs
 
 
 def main() -> None:

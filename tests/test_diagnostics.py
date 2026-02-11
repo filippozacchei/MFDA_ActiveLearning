@@ -7,14 +7,17 @@ matplotlib.use("Agg")
 import numpy as np
 import pytest
 
-from gp_active_mcmc.diagnostics.surrogate import plot_error_vs_uncertainty, plot_prediction_at_theta
 from gp_active_mcmc.diagnostics.mcmc import (
     plot_chain_2d,
     plot_cumulative_hf_fraction,
     plot_subchain_length_history,
     plot_surrogate_error_history,
 )
-from gp_active_mcmc.diagnostics.pod import pod_energy_from_snapshots, plot_pod_energy
+from gp_active_mcmc.diagnostics.pod import plot_pod_energy, pod_energy_from_snapshots
+from gp_active_mcmc.diagnostics.surrogate import (
+    plot_error_vs_uncertainty,
+    plot_prediction_at_theta,
+)
 
 
 class DummyModel:
@@ -42,10 +45,10 @@ def test_plot_prediction_at_theta_returns_fig_ax() -> None:
 
 
 def test_plot_cumulative_hf_fraction_handles_empty() -> None:
-    out = plot_cumulative_hf_fraction([], burnin=0)
+    out = plot_cumulative_hf_fraction([], burn_in=0)
     assert out is None
 
-    out2 = plot_cumulative_hf_fraction(np.array([True, False, True]), burnin=1)
+    out2 = plot_cumulative_hf_fraction(np.array([True, False, True]), burn_in=1)
     assert out2 is not None
 
 

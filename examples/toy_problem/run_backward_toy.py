@@ -13,14 +13,14 @@
 #
 # 2. **DA-MCMC guided active learning with an adaptive subchain (two posteriors, recommended)**
 #    The sampler uses a *coarse* posterior and a *fine* posterior (delayed acceptance).
-#    An `AdaptiveSubchain` monitors LF–HF discrepancy during HF corrections and adjusts
+#    An `AdaptiveSubchain` monitors LF-HF discrepancy during HF corrections and adjusts
 #    how often the fine level is called. Because `tinyDA` uses a fixed subsampling rate per
 #    call, the run is performed in *chunks*.
 #
 # Along the way we:
 #
 # - define a Gaussian prior and generate a synthetic observation,
-# - train a POD–GP surrogate on an initial design,
+# - train a POD-GP surrogate on an initial design,
 # - wrap surrogate + HF model into an `ActiveMCMCModel`,
 # - run short chains and plot lightweight diagnostics.
 #
@@ -28,42 +28,38 @@
 
 # %% Imports
 from __future__ import annotations
+
 import copy
 
 import numpy as np
 import tinyDA as tda
 from scipy.stats import multivariate_normal
 
-from gp_active_mcmc.inference import (
-    ActiveMCMCModel,
-    ActiveGPLogLike,
-    AdaptiveSubchain,
-    AdaptiveSubchainControl,
-    AdaptiveSubchainState,
-    AdaptiveMetropolisShared,
-    ChunkedMCMCConfig,
-    sample_active_chain,
-    sample_adaptive_active_chain,
-)
-from gp_active_mcmc.utils.rng import set_seed
-from gp_active_mcmc.surrogates import POD, PODGPSurrogate, MultiOutputGP
-
 # For documentation builds, import the toy helpers from the tutorial package.
 # If you place this file at `docs/tutorials/backward_toy_notebook.py`, also place
 # `toy.py` in the same directory so this import works.
-#
-# Alternative patterns:
-# - `from gp_active_mcmc.toy import ...` if you move the toy utilities into the package
-# - `from examples.toy_problem.toy import ...` if you keep them under `examples/`
 from toy import make_forward_model, make_observation, make_timeline
 
 # Diagnostics return (fig, ax) and never force `plt.show()` unless `show=True`.
 from gp_active_mcmc.diagnostics import (
     plot_chain_2d,
     plot_cumulative_hf_fraction,
-    plot_subchain_length_history,
     plot_prediction_at_theta,
+    plot_subchain_length_history,
 )
+from gp_active_mcmc.inference import (
+    ActiveGPLogLike,
+    ActiveMCMCModel,
+    AdaptiveMetropolisShared,
+    AdaptiveSubchain,
+    AdaptiveSubchainControl,
+    AdaptiveSubchainState,
+    ChunkedMCMCConfig,
+    sample_active_chain,
+    sample_adaptive_active_chain,
+)
+from gp_active_mcmc.surrogates import POD, MultiOutputGP, PODGPSurrogate
+from gp_active_mcmc.utils.rng import set_seed
 
 # %% [markdown]
 # ## Configuration
@@ -103,7 +99,7 @@ gamma_threshold = 0.10
 
 # MCMC budget (expressed as coarse evaluations)
 n_coarse_evals = 1000
-burnin = 100
+burn_in = 100
 
 # Chunking for the adaptive workflow
 chunk_size = 250
@@ -129,7 +125,7 @@ theta_train = prior.rvs(size=n_init, random_state=rng)
 y_train = np.asarray([hf_forward(th) for th in np.atleast_2d(theta_train)], dtype=float)
 
 # %% [markdown]
-# ## Fit a POD–GP surrogate
+# ## Fit a POD-GP surrogate
 #
 # 1. Fit POD on snapshot matrix `y_train` to obtain a reduced basis.
 # 2. Project snapshots to POD coefficients.
@@ -273,8 +269,7 @@ result_single = sample_active_chain(
 )
 
 chain_single = result_single.chain
-summary_single = chain_single.summary(theta_true=theta_true, burnin=burnin)
-summary_single
+chain_single.summary(theta_true=theta_true, burn_in=burn_in)
 
 # %%
 samples_single = chain_single.samples
@@ -299,7 +294,7 @@ fig2, ax2 = plot_cumulative_hf_fraction(
 #
 # Now we pass *two* posteriors `[coarse, fine]` and sample with `sample_adaptive_active_chain`.
 #
-# The adaptive policy updates `subchain_length` online using LF–HF discrepancy computed at HF calls.
+# The adaptive policy updates `subchain_length` online using LF-HF discrepancy computed at HF calls.
 # Because `tinyDA` uses a fixed `subsampling_rate` per call, we run sampling in chunks and update the
 # subsampling rate between chunks.
 
@@ -326,8 +321,8 @@ result_adapt = sample_adaptive_active_chain(
 )
 
 chain_adapt = result_adapt.chain
-summary_adapt = chain_adapt.summary(theta_true=theta_true, burnin=burnin)
-summary_adapt
+chain_adapt.summary(theta_true=theta_true, burn_in=burn_in)
+
 
 # %%
 samples_adapt = chain_adapt.samples

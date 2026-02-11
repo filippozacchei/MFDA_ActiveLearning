@@ -1,6 +1,6 @@
 from __future__ import annotations
+
 from dataclasses import dataclass
-from typing import Optional
 
 import numpy as np
 from numpy.typing import ArrayLike, NDArray
@@ -32,7 +32,7 @@ In this library, POD is typically used to compress high-dimensional model output
 training a surrogate model (e.g. a GP) on POD coefficients.
 """
 
-FloatArray = NDArray[np.floating]
+FloatArray = NDArray[np.float64]
 
 
 def _as_2d_float_array(x: ArrayLike, *, name: str) -> FloatArray:
@@ -65,6 +65,34 @@ def _require_fitted(is_fitted: bool) -> None:
     """Raise if the POD instance has not been fitted."""
     if not is_fitted:
         raise RuntimeError("POD is not fitted yet. Call 'fit(Y)' before using this method.")
+
+
+def _randomized_svd_float(
+    Yc: FloatArray,
+    *,
+    n_components: int,
+    n_oversamples: int,
+    n_iter: int,
+    random_state: int | None,
+) -> tuple[FloatArray, FloatArray, FloatArray]:
+    """
+    Typed wrapper around sklearn.randomized_svd.
+
+    We cast because sklearn is treated as untyped (ignore_missing_imports),
+    so randomized_svd returns Any to mypy.
+    """
+    U_any, S_any, Vt_any = randomized_svd(
+        Yc,
+        n_components=n_components,
+        n_oversamples=n_oversamples,
+        n_iter=n_iter,
+        random_state=random_state,
+    )
+
+    U: FloatArray = np.asarray(U_any, dtype=np.float64)
+    S: FloatArray = np.asarray(S_any, dtype=np.float64)
+    Vt: FloatArray = np.asarray(Vt_any, dtype=np.float64)
+    return U, S, Vt
 
 
 @dataclass(slots=True)
@@ -115,12 +143,12 @@ class POD:
     randomized: bool = True
     n_oversamples: int = 10
     n_iter: int = 2
-    random_state: Optional[int] = 0
+    random_state: int | None = 0
 
-    mean_: Optional[FloatArray] = None
-    components_: Optional[FloatArray] = None
-    singular_values_: Optional[FloatArray] = None
-    explained_energy_: Optional[FloatArray] = None
+    mean_: FloatArray | None = None
+    components_: FloatArray | None = None
+    singular_values_: FloatArray | None = None
+    explained_energy_: FloatArray | None = None
 
     @property
     def is_fitted(self) -> bool:
@@ -149,7 +177,7 @@ class POD:
         assert self.components_ is not None  # guarded
         return int(self.components_.shape[0])
 
-    def fit(self, Y: ArrayLike) -> "POD":
+    def fit(self, Y: ArrayLike) -> POD:
         """Fit a POD basis from snapshots.
 
         Parameters
@@ -178,7 +206,7 @@ class POD:
         Yc = Y_arr - mean
 
         if self.randomized:
-            _U, S, Vt = randomized_svd(
+            _, S, Vt = _randomized_svd_float(
                 Yc,
                 n_components=r,
                 n_oversamples=self.n_oversamples,
@@ -186,13 +214,13 @@ class POD:
                 random_state=self.random_state,
             )
         else:
-            _U, S_full, Vt_full = np.linalg.svd(Yc, full_matrices=False)
-            S = S_full[:r]
-            Vt = Vt_full[:r]
+            _, S_full, Vt_full = np.linalg.svd(Yc, full_matrices=False)
+            S = np.asarray(S_full[:r], dtype=np.float64)
+            Vt = np.asarray(Vt_full[:r], dtype=np.float64)
 
-        self.mean_ = np.asarray(mean, dtype=float)
-        self.singular_values_ = np.asarray(S, dtype=float)
-        self.components_ = np.asarray(Vt, dtype=float)  # (r, n_obs)
+        self.mean_ = np.asarray(mean, dtype=np.float64)
+        self.singular_values_ = np.asarray(S, dtype=np.float64)
+        self.components_ = np.asarray(Vt, dtype=np.float64)
 
         total = float(np.sum(self.singular_values_**2))
         if total == 0.0:
@@ -332,7 +360,7 @@ def pod_energy(
         r = min(r, max_rank)
 
     if randomized:
-        _U, S, _Vt = randomized_svd(
+        _U, S, _Vt = _randomized_svd_float(
             Yc,
             n_components=r,
             n_oversamples=n_oversamples,
@@ -340,11 +368,11 @@ def pod_energy(
             random_state=random_state,
         )
     else:
-        _U, S_full, _Vt_full = np.linalg.svd(Yc, full_matrices=False)
-        S = S_full[:r]
+        _U, S_full, _Vt = np.linalg.svd(Yc, full_matrices=False)
+        S = np.asarray(S_full[:r], dtype=np.float64)
 
-    S = np.asarray(S, dtype=float)
     total = float(np.sum(S**2))
     if total == 0.0:
         return np.zeros_like(S)
-    return np.cumsum(S**2) / total
+    res: FloatArray = np.cumsum(S**2) / total
+    return res

@@ -1,7 +1,7 @@
 # %% [markdown]
-# # Forward toy: build and validate a POD–GP surrogate
+# # Forward toy: build and validate a POD-GP surrogate
 #
-# This notebook-style tutorial shows how to construct a **POD–GP surrogate** for the toy
+# This notebook-style tutorial shows how to construct a **POD-GP surrogate** for the toy
 # forward model and how to perform a minimal validation.
 #
 # The forward (surrogate-building) workflow is the foundation for the rest of the library:
@@ -27,26 +27,20 @@ import numpy as np
 from scipy.stats import multivariate_normal
 from sklearn.model_selection import train_test_split
 
-from gp_active_mcmc.surrogates import MultiOutputGP, POD, PODGPSurrogate
-from gp_active_mcmc.utils.metrics import coverage, rmse
-from gp_active_mcmc.utils.rng import set_seed
+# Toy utilities.
+#
+# For documentation notebooks, prefer a *local* `toy.py` next to this file
+# (e.g. `docs/tutorials/toy.py`) and import from there:
+from toy_tutorial import make_timeline, toy_forward
 
 from gp_active_mcmc.diagnostics.pod import plot_pod_energy
 from gp_active_mcmc.diagnostics.surrogate import (
     plot_error_vs_uncertainty,
     plot_prediction_at_theta,
 )
-
-# Toy utilities.
-#
-# For documentation notebooks, prefer a *local* `toy.py` next to this file
-# (e.g. `docs/tutorials/toy.py`) and import from there:
-#
-#   from toy import make_timeline, toy_forward
-#
-# If you keep the toy utilities under `examples/toy_problem/toy.py`, this alternative
-# import is fine as long as the examples package is on `PYTHONPATH`.
-from examples.toy_problem.toy import make_timeline, toy_forward
+from gp_active_mcmc.surrogates import POD, MultiOutputGP, PODGPSurrogate
+from gp_active_mcmc.utils.metrics import coverage, rmse
+from gp_active_mcmc.utils.rng import set_seed
 
 # %% [markdown]
 # ## Configuration
@@ -97,7 +91,7 @@ X = np.asarray([prior.rvs(random_state=rng) for _ in range(N_SNAPSHOTS)], dtype=
 Y = np.asarray([toy_forward(theta, t) for theta in X], dtype=float)
 
 # %% [markdown]
-# ## Train–test split
+# ## Train-test split
 #
 # We hold out a fraction of snapshots to evaluate predictive accuracy and uncertainty.
 
@@ -105,7 +99,7 @@ Y = np.asarray([toy_forward(theta, t) for theta in X], dtype=float)
 X_tr, X_te, Y_tr, Y_te = train_test_split(X, Y, test_size=TEST_FRACTION, random_state=0)
 
 # %% [markdown]
-# ## Build a POD–GP surrogate
+# ## Build a POD-GP surrogate
 #
 # The surrogate is built in three conceptual steps:
 #
@@ -189,8 +183,7 @@ metrics = {
     "Coverage 90%": float(np.mean(cov90)),
     "Coverage 95%": float(np.mean(cov95)),
 }
-metrics
-
+print(metrics)
 # %% [markdown]
 # ## Visual inspection at representative parameters
 #

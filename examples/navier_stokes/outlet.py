@@ -2,13 +2,13 @@
 from __future__ import annotations
 
 import numpy as np
-from dolfinx.geometry import bb_tree, compute_collisions_points, compute_colliding_cells
+from dolfinx.geometry import bb_tree, compute_colliding_cells, compute_collisions_points
 
-from .types import OutletProfile
+from .ns_types import OutletProfile
 
 """Outlet sampling utilities (QoI extraction).
 
-This module defines the quantity of interest (QoI) used in the Navier–Stokes example:
+This module defines the quantity of interest (QoI) used in the Navier-Stokes example:
 the outlet streamwise velocity profile u_x(y) at the plane x = L.
 
 Design goals
@@ -107,50 +107,3 @@ def sample_outlet_u_x(
         u_x[i] = float(val[0])
 
     return OutletProfile(y=y, u_x=u_x)
-
-
-def resample_profile(y: np.ndarray, u: np.ndarray, *, T: int) -> np.ndarray:
-    """Resample a 1D profile onto a uniform grid using linear interpolation.
-
-    This is useful when downstream workflows expect a fixed-length vector, e.g.:
-    - POD on outlet profiles,
-    - GP training on coefficients,
-    - likelihood evaluations on a fixed observation grid.
-
-    Parameters
-    ----------
-    y
-        Coordinates (n,). May be unsorted.
-    u
-        Profile values (n,), aligned with `y`.
-    T
-        Number of points in the resampled grid.
-
-    Returns
-    -------
-    u_new
-        Resampled profile of length `T`.
-
-    Raises
-    ------
-    ValueError
-        If shapes mismatch, if `T < 2`, or if fewer than two samples are provided.
-    """
-    y = np.asarray(y, dtype=float).ravel()
-    u = np.asarray(u, dtype=float).ravel()
-
-    if y.size != u.size:
-        raise ValueError("y and u must have the same length.")
-    if y.size < 2:
-        raise ValueError("Need at least two points to resample.")
-    if int(T) < 2:
-        raise ValueError("T must be >= 2.")
-
-    # Ensure monotone y for np.interp
-    if not np.all(np.diff(y) >= 0.0):
-        idx = np.argsort(y)
-        y = y[idx]
-        u = u[idx]
-
-    y_new = np.linspace(float(y.min()), float(y.max()), int(T))
-    return np.interp(y_new, y, u)

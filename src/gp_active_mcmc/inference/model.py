@@ -9,7 +9,7 @@ from numpy.typing import ArrayLike, NDArray
 from gp_active_mcmc.inference.coarse_output import CoarseOutput
 from gp_active_mcmc.protocols import ActiveSurrogate, HighFidelityModel
 
-FloatArray = NDArray[np.floating]
+FloatArray = NDArray[np.float64]
 
 
 def _as_1d_theta(theta: ArrayLike) -> FloatArray:
@@ -174,7 +174,7 @@ class ActiveMCMCModel:
 
     In practice, users typically:
 
-    1. Build an LF surrogate (e.g., POD–GP).
+    1. Build an LF surrogate (e.g., POD-GP).
     2. Wrap LF + HF in an `ActiveMCMCModel`.
     3. Choose an inference mode by deciding which posterior(s) to pass to a sampler.
     4. Run a sampler and analyse both samples and HF-usage diagnostics.
@@ -201,7 +201,7 @@ class ActiveMCMCModel:
 
     **Adaptive DA-MCMC (recommended)**
         Use DA-MCMC (two posteriors) and pass an adaptive subchain policy via `adaptive=...`.
-        The adaptive policy monitors LF–HF discrepancy and adjusts how often fine (HF)
+        The adaptive policy monitors LF-HF discrepancy and adjusts how often fine (HF)
         corrections are applied.
 
         - DA-MCMC is mandatory: you must use two posteriors.
@@ -260,7 +260,7 @@ class ActiveMCMCModel:
         if self.gamma_threshold < 0.0:
             raise ValueError("gamma_threshold must be non-negative.")
 
-    def coarse(self, theta: ArrayLike) -> np.ndarray | CoarseOutput:
+    def coarse(self, theta: ArrayLike) -> FloatArray | CoarseOutput:
         """Evaluate the coupled model in LF-first (coarse) mode.
 
         Workflow
@@ -317,7 +317,7 @@ class ActiveMCMCModel:
         self.log.append(False)
         return CoarseOutput(mean, var)
 
-    def fine(self, theta: ArrayLike, *, replace_last: bool = True) -> np.ndarray:
+    def fine(self, theta: ArrayLike, *, replace_last: bool = True) -> FloatArray:
         """Evaluate the coupled model in HF (fine) mode and update the surrogate.
 
         This method always evaluates the HF model and then updates the LF surrogate.
@@ -342,7 +342,7 @@ class ActiveMCMCModel:
         See Also
         --------
         [`AdaptiveSubchain`][gp_active_mcmc.inference.adaptive_subchain.AdaptiveSubchain]
-            Adaptive policy notified during fine evaluations (LF–HF discrepancy monitoring).
+            Adaptive policy notified during fine evaluations (LF-HF discrepancy monitoring).
         """
         th = _as_1d_theta(theta)
 

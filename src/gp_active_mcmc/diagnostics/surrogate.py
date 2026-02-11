@@ -6,7 +6,9 @@ import matplotlib.pyplot as plt
 import numpy as np
 from matplotlib.axes import Axes
 from matplotlib.figure import Figure
-from numpy.typing import ArrayLike
+from numpy.typing import ArrayLike, NDArray
+
+FloatArray = NDArray[np.float64]
 
 
 class PredictMeanVar(Protocol):
@@ -22,11 +24,11 @@ class PredictMeanVar(Protocol):
 
     Notes
     -----
-    This is intentionally duck-typed: the model can be a POD–GP surrogate, a GP-only
+    The model can be a POD-GP surrogate, a GP-only
     model, or any wrapper that exposes the same interface.
     """
 
-    def predict(self, theta: ArrayLike):
+    def predict(self, theta: ArrayLike) -> FloatArray:
         """Predict mean and marginal variance in observation space.
 
         Parameters

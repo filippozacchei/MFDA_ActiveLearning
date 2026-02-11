@@ -23,3 +23,6 @@ outputs/
 *cache
 *nox
 *site
+*.egg-info/
+build/
+dist/

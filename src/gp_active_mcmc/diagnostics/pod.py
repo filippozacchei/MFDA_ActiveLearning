@@ -4,14 +4,16 @@ import matplotlib.pyplot as plt
 import numpy as np
 from matplotlib.axes import Axes
 from matplotlib.figure import Figure
-from numpy.typing import ArrayLike
+from numpy.typing import ArrayLike, NDArray
+
+FloatArray = NDArray[np.float64]
 
 
 def pod_energy_from_snapshots(
     Y: ArrayLike,
     *,
     center: bool = True,
-) -> tuple[np.ndarray, np.ndarray]:
+) -> tuple[FloatArray, FloatArray]:
     """Compute POD energy fractions from a snapshot matrix.
 
     This helper computes the singular values of the snapshot matrix and returns:

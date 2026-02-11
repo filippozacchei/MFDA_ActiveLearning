@@ -1,10 +1,10 @@
 # %% [markdown]
-# # Backward Navier–Stokes inverse problem (Active / Adaptive DA-MCMC)
+# # Backward Navier-Stokes inverse problem (Active / Adaptive DA-MCMC)
 #
-# Bayesian inversion for a Navier–Stokes outlet-profile QoI using:
+# Bayesian inversion for a Navier-Stokes outlet-profile QoI using:
 #
-# - **LF model**: POD–GP surrogate trained on HF snapshots (fast, uncertain)
-# - **HF model**: Navier–Stokes forward solver (expensive, accurate)
+# - **LF model**: POD-GP surrogate trained on HF snapshots (fast, uncertain)
+# - **HF model**: Navier-Stokes forward solver (expensive, accurate)
 #
 # The LF and HF models are coupled through `gp_active_mcmc.inference.ActiveMCMCModel`.
 #
@@ -31,22 +31,31 @@
 #
 # Requirements
 # ------------
-# This example requires the Navier–Stokes/FEniCS stack and the helper utilities in
+# This example requires the Navier-Stokes/FEniCS stack and the helper utilities in
 # `examples/navier-stokes/utils/` (or your chosen path).
 
 # %% Imports
 from __future__ import annotations
 
 import copy
-from typing import Callable
+from collections.abc import Callable
 
 import numpy as np
 import tinyDA as tda
 from scipy.stats import multivariate_normal
 
+# Local utilities (Navier-Stokes example)
+from examples.navier_stokes.resample import resample_profile
+from examples.navier_stokes.solver_hf import forward_model as hf_solver
+from gp_active_mcmc.diagnostics import (
+    plot_chain_2d,
+    plot_cumulative_hf_fraction,
+    plot_prediction_at_theta,
+    plot_subchain_length_history,
+)
 from gp_active_mcmc.inference import (
-    ActiveMCMCModel,
     ActiveGPLogLike,
+    ActiveMCMCModel,
     AdaptiveMetropolisShared,
     AdaptiveSubchain,
     AdaptiveSubchainControl,
@@ -55,20 +64,8 @@ from gp_active_mcmc.inference import (
     sample_active_chain,
     sample_adaptive_active_chain,
 )
-
-from gp_active_mcmc.surrogates import MultiOutputGP, POD, PODGPSurrogate
+from gp_active_mcmc.surrogates import POD, MultiOutputGP, PODGPSurrogate
 from gp_active_mcmc.utils.rng import set_seed
-
-from gp_active_mcmc.diagnostics import (
-    plot_chain_2d,
-    plot_cumulative_hf_fraction,
-    plot_subchain_length_history,
-    plot_prediction_at_theta,
-)
-
-# Local utilities (Navier–Stokes example)
-from utils.outlet import resample_profile
-from utils.solver import forward_model as hf_solver
 
 # %% [markdown]
 # ## Configuration
@@ -82,7 +79,7 @@ T = 100  # outlet profile length after resampling
 
 # MCMC budgets (measured in coarse-evaluation units)
 N_COARSE_EVALS = 1_000
-BURNIN = 100
+BURN_IN = 100
 
 # Surrogate training
 N_INIT = 25  # number of HF snapshots for initial surrogate
@@ -113,7 +110,7 @@ L_MIN, L_MAX = 0.30, 0.50
 # %% [markdown]
 # ## HF forward model wrapper
 #
-# We assume the HF solver returns an outlet profile `(y, u_x)` which we resample to length `T`.
+# We assume the HF solver returns an outlet profile `(y, u_x)` which we resample_ to length `T`.
 # The active-learning / inference stack expects model outputs as 1D arrays.
 
 
@@ -153,7 +150,7 @@ y_obs = y_clean + SIGMA_OBS * rng.standard_normal(size=T)
 t_plot = np.arange(T)  # abscissa for plotting (index along resampled outlet line)
 
 # %% [markdown]
-# ## Build initial POD–GP surrogate (LF model)
+# ## Build initial POD-GP surrogate (LF model)
 
 # %%
 X_init = prior.rvs(size=N_INIT, random_state=rng)
@@ -247,7 +244,7 @@ result_active = sample_active_chain(
     store_coarse_chain=True,
 )
 
-chain_active = result_active.chain.burnin(burnin=BURNIN)
+chain_active = result_active.chain.burn_in(burn_in=BURN_IN)
 samples_active = chain_active.samples
 used_hf_active = chain_active.extras.used_hf
 
@@ -263,7 +260,7 @@ plot_prediction_at_theta(
 )
 
 if used_hf_active is not None:
-    plot_cumulative_hf_fraction(used_hf_active, burnin=0, show=True)
+    plot_cumulative_hf_fraction(used_hf_active, burn_in=0, show=True)
 
 # 2D view of (h1, U_in)
 fig_a, ax_a = plot_chain_2d(
@@ -336,7 +333,7 @@ result_adapt = sample_adaptive_active_chain(
     store_coarse_chain=True,
 )
 
-chain_adapt = result_adapt.chain.burnin(burnin=BURNIN)
+chain_adapt = result_adapt.chain.burn_in(burn_in=BURN_IN)
 samples_adapt = chain_adapt.samples
 used_hf_adapt = chain_adapt.extras.used_hf
 subchain_hist = chain_adapt.extras.subchain_length
@@ -352,7 +349,7 @@ plot_prediction_at_theta(
 )
 
 if used_hf_adapt is not None:
-    plot_cumulative_hf_fraction(used_hf_adapt, burnin=0, show=True)
+    plot_cumulative_hf_fraction(used_hf_adapt, burn_in=0, show=True)
 
 fig_b, ax_b = plot_chain_2d(
     samples_adapt[:, :2],

@@ -1,12 +1,14 @@
 # examples/navier_stokes/utils/bfs_mesh.py
 from __future__ import annotations
-from dataclasses import dataclass
-import numpy as np
-import gmsh
-from mpi4py import MPI
-from dolfinx.io import gmshio
 
-from .types import BFSGeometry, MeshOptions, BoundaryMarkers
+from dataclasses import dataclass
+
+import gmsh
+import numpy as np
+from dolfinx.io import gmshio
+from mpi4py import MPI
+
+from .ns_types import BFSGeometry, BoundaryMarkers, MeshOptions
 
 """Mesh generation for the backward-facing step (BFS) benchmark.
 
@@ -23,8 +25,8 @@ Notes
 -----
 The geometry is built as the union of two rectangles:
 
-- upstream rectangle:  [0, L_up] × [0, h1]
-- downstream rectangle: [L_up, L_up + L_down] × [0, h2]
+- upstream rectangle:  [0, L_up] x [0, h1]
+- downstream rectangle: [L_up, L_up + L_down] x [0, h2]
 
 The step is located at x = L_up.
 
@@ -71,8 +73,8 @@ def _gmsh_reset() -> None:
 def build_bfs_mesh(
     *,
     geom: BFSGeometry,
-    mesh_opts: MeshOptions = MeshOptions(),
-    markers: BoundaryMarkers = BoundaryMarkers(),
+    mesh_opts: MeshOptions | None = None,
+    markers: BoundaryMarkers | None = None,
     comm: MPI.Comm = MPI.COMM_WORLD,
     model_rank: int = 0,
     atol: float = 1e-10,
@@ -105,6 +107,10 @@ def build_bfs_mesh(
     ValueError
         If `mesh_opts.gdim` is not 2 for this mesh generator.
     """
+    if mesh_opts is None:
+        mesh_opts = MeshOptions()
+    if markers is None:
+        markers = (BoundaryMarkers(),)
     if mesh_opts.gdim != 2:
         raise ValueError(f"build_bfs_mesh currently supports gdim=2 only. Got {mesh_opts.gdim}.")
 

@@ -1,20 +1,31 @@
 from __future__ import annotations
 
 from collections.abc import Sequence
-from typing import Any
 
 import matplotlib.pyplot as plt
 import numpy as np
 from matplotlib.axes import Axes
 from matplotlib.figure import Figure
-from numpy.typing import ArrayLike
+from numpy.typing import ArrayLike, NDArray
+
+try:
+    # Python 3.10+: available in typing in many installs, but be robust.
+    from typing import TypeGuard
+except ImportError:  # pragma: no cover
+    from typing import TypeGuard
+
+FloatArray = NDArray[np.float64]
+BoolArray = NDArray[np.bool_]
 
 
-def _is_sequence_but_not_array(x: Any) -> bool:
-    """Return True for non-string Sequences that are not NumPy arrays.
+def _is_series_collection(x: ArrayLike | Sequence[ArrayLike]) -> TypeGuard[Sequence[ArrayLike]]:
+    """Type guard for "a collection of series" vs "a single array-like series".
 
-    This is used to distinguish a single 1D array of flags from a list/tuple of
-    multiple series.
+    We treat Python Sequences (list/tuple) as a collection of multiple series, but we do
+    *not* treat NumPy arrays as sequences here: a NumPy array should be interpreted as a
+    single series (even though it is technically a Sequence).
+
+    Strings/bytes are excluded to avoid treating them as sequences of characters.
 
     Parameters
     ----------
@@ -23,14 +34,13 @@ def _is_sequence_but_not_array(x: Any) -> bool:
 
     Returns
     -------
-    is_seq
-        True if `x` is a `Sequence` (e.g. list/tuple) but not a NumPy array and not a
-        string/bytes object.
+    is_collection
+        True if `x` is a non-string Sequence that is not a NumPy ndarray.
     """
     return isinstance(x, Sequence) and not isinstance(x, (np.ndarray, str, bytes))
 
 
-def _as_1d_bool(x: ArrayLike, *, name: str) -> np.ndarray:
+def _as_1d_bool(x: ArrayLike, *, name: str) -> BoolArray:
     """Convert an array-like to a 1D boolean array.
 
     Parameters
@@ -53,13 +63,13 @@ def _as_1d_bool(x: ArrayLike, *, name: str) -> np.ndarray:
     arr = np.asarray(x)
     if arr.ndim != 1:
         raise ValueError(f"{name} must be 1D. Got shape {arr.shape}.")
-    return arr.astype(bool, copy=False)
+    return np.asarray(arr, dtype=np.bool_)
 
 
 def plot_cumulative_hf_fraction(
     used_hf: ArrayLike | Sequence[ArrayLike],
     *,
-    burnin: int = 0,
+    burn_in: int = 0,
     labels: Sequence[str] | None = None,
     title: str = "High-fidelity usage over iterations",
     show: bool = False,
@@ -76,7 +86,7 @@ def plot_cumulative_hf_fraction(
     used_hf
         Either a single boolean array of shape ``(n_steps,)`` or a sequence of such arrays.
         True indicates that the HF model was used at that step.
-    burnin
+    burn_in
         Number of initial steps to discard before computing the cumulative fraction.
         Must be non-negative.
     labels
@@ -97,7 +107,7 @@ def plot_cumulative_hf_fraction(
     Raises
     ------
     ValueError
-        If `burnin` is negative or if `labels` has the wrong length.
+        If `burn_in` is negative or if `labels` has the wrong length.
 
     Notes
     -----
@@ -110,15 +120,15 @@ def plot_cumulative_hf_fraction(
     [`plot_subchain_length_history`][gp_active_mcmc.diagnostics.mcmc.plot_subchain_length_history]
         Visualise how the adaptive subchain length changes over time.
     """
-    if burnin < 0:
-        raise ValueError("burnin must be non-negative.")
+    if burn_in < 0:
+        raise ValueError("burn_in must be non-negative.")
 
-    series: list[np.ndarray] = []
-    if _is_sequence_but_not_array(used_hf):
-        for x in used_hf:  # type: ignore[union-attr]
+    series: list[BoolArray] = []
+    if _is_series_collection(used_hf):
+        for x in used_hf:
             series.append(_as_1d_bool(x, name="used_hf item"))
     else:
-        series.append(_as_1d_bool(used_hf, name="used_hf"))
+        series.append(_as_1d_bool(np.asarray(used_hf), name="used_hf"))
 
     if labels is not None and len(labels) != len(series):
         raise ValueError("labels length must match number of series.")
@@ -127,10 +137,10 @@ def plot_cumulative_hf_fraction(
     plotted_any = False
 
     for i, flags in enumerate(series):
-        if flags.size == 0 or burnin >= flags.size:
+        if flags.size == 0 or burn_in >= flags.size:
             continue
 
-        tail = flags[burnin:].astype(float)
+        tail = flags[burn_in:].astype(float)
         it = np.arange(1, tail.size + 1, dtype=float)
         cum = np.cumsum(tail) / it
 
@@ -215,7 +225,7 @@ def plot_surrogate_error_history(
     title: str = "Surrogate accuracy over time",
     show: bool = False,
 ) -> tuple[Figure, Axes] | None:
-    """Plot surrogate–HF discrepancy over fine evaluations.
+    """Plot surrogate-HF discrepancy over fine evaluations.
 
     Parameters
     ----------
@@ -289,7 +299,7 @@ def plot_chain_2d(
         each step. If provided, surrogate-only steps and HF steps are plotted with
         different markers.
     theta_true
-        Optional reference parameter of shape ``(2,)`` to overlay as a star marker.
+        Optional reference parameter of shape ``(2,)`` to overlay as a marker.
     title
         Optional title.
     names
@@ -301,22 +311,6 @@ def plot_chain_2d(
     -------
     fig, ax
         Matplotlib figure and axes.
-
-    Raises
-    ------
-    ValueError
-        If `samples` is not shape ``(n_steps, 2)``, if `used_hf` has the wrong length,
-        or if `theta_true` is not shape ``(2,)``.
-
-    Notes
-    -----
-    This function is intended for quick diagnostics and documentation examples. For
-    higher-dimensional chains, prefer pair plots or marginal traces.
-
-    See Also
-    --------
-    [`plot_cumulative_hf_fraction`][gp_active_mcmc.diagnostics.mcmc.plot_cumulative_hf_fraction]
-        Cumulative HF usage fraction over time.
     """
     chain = np.asarray(samples, dtype=float)
     if chain.ndim != 2 or chain.shape[1] != 2:
@@ -335,18 +329,19 @@ def plot_chain_2d(
     if uhf is None:
         ax.scatter(chain[:, 0], chain[:, 1], s=25, alpha=0.6)
     else:
-        sur_idx = np.where(~uhf)[0]
-        hf_idx = np.where(uhf)[0]
+        # Avoid bitwise invert (~) to satisfy numpy typing rules.
+        sur_idx = np.where(uhf == False)[0]  # noqa: E712
+        hf_idx = np.where(uhf == True)[0]  # noqa: E712
 
         if sur_idx.size:
             ax.scatter(chain[sur_idx, 0], chain[sur_idx, 1], s=20, alpha=0.4, label="surrogate")
         if hf_idx.size:
-            ax.scatter(chain[hf_idx, 0], chain[hf_idx, 1], s=40, marker="x", label="high-fidelity")
+            ax.scatter(chain[hf_idx, 0], chain[hf_idx, 1], s=40, label="high-fidelity")
 
         ax.legend()
 
     if tt is not None:
-        ax.scatter(tt[0], tt[1], s=140, marker="*", c="k", label=r"$\theta_{\mathrm{true}}$")
+        ax.scatter(tt[0], tt[1], s=140, c="k", label=r"$\theta_{\mathrm{true}}$")
         ax.legend()
 
     ax.set_xlabel(names[0])

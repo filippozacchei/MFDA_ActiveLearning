@@ -1,4 +1,10 @@
+ci:
+  autoupdate_schedule: "monthly"
+  autoupdate_commit_msg: "chore(deps): update pre-commit hooks"
+  autofix_commit_msg: "style: pre-commit fixes"
+
 repos:
+  # Basic hygiene (required by repo-review)
   - repo: https://github.com/pre-commit/pre-commit-hooks
     rev: "v6.0.0"
     hooks:
@@ -6,16 +12,60 @@ repos:
       - id: check-case-conflict
       - id: check-merge-conflict
       - id: check-symlinks
+      - id: check-toml
       - id: check-yaml
       - id: debug-statements
       - id: end-of-file-fixer
       - id: mixed-line-ending
-      - id: name-tests-test
-        args: ["--pytest-test-first"]
-      - id: requirements-txt-fixer
       - id: trailing-whitespace
-  - repo: https://github.com/psf/black
-    rev: 23.7.0
+
+  # Pygrep hooks (repo-review wants it; harmless even without rST)
+  - repo: https://github.com/pre-commit/pygrep-hooks
+    rev: "v1.10.0"
     hooks:
-      - id: black
-        language_version: python3
+      - id: python-check-blanket-noqa
+      - id: python-no-log-warn
+      - id: rst-backticks
+
+  # Ruff (lint + optional autofix)
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: "v0.15.0"
+    hooks:
+      - id: ruff-check
+        args: ["--fix", "--show-fixes"]
+      - id: ruff-format
+
+  - repo: https://github.com/adamchainz/blacken-docs
+    rev: "1.20.0"
+    hooks:
+      - id: blacken-docs
+        additional_dependencies: [black==24.*]
+
+  # MyPy (repo-review wants mirrors-mypy)
+  - repo: https://github.com/pre-commit/mirrors-mypy
+    rev: "v1.19.1"
+    hooks:
+      - id: mypy
+        name: mypy (src only)
+        args: ["--config-file=pyproject.toml", "src/gp_active_mcmc"]
+        pass_filenames: false
+        additional_dependencies:
+          - numpy
+          - scipy
+          - scikit-learn
+          - scipy-stubs
+          - matplotlib-stubs
+
+  # Spell checker (codespell is common)
+  - repo: https://github.com/codespell-project/codespell
+    rev: "v2.4.1"
+    hooks:
+      - id: codespell
+        args: ["--toml=pyproject.toml"]
+        additional_dependencies: ["tomli"]
+
+  - repo: https://github.com/rbubley/mirrors-prettier
+    rev: "v3.8.1"
+    hooks:
+      - id: prettier
+        types_or: [yaml, markdown, html, css, scss, javascript, json]

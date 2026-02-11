@@ -23,19 +23,18 @@ A representative conda installation (adjust to your environment):
 conda install -c conda-forge fenics-dolfinx=0.9.0 mpich gmsh=4.15.0 python-gmsh=4.15.0 pyvista
 ```
 
-
 ## Where to find the code
 
 The full example lives in the repository under:
 
-- `examples/navier-stokes/utils/` — mesh, solver, QoI extraction, animation utilities  
-- `examples/navier-stokes/run_forward_*.py` — build/validate a POD–GP surrogate  
-- `examples/navier-stokes/run_backward_*.py` — inverse problem with Active/Adaptive MCMC  
+- `examples/navier-stokes/utils/` — mesh, solver, QoI extraction, animation utilities
+- `examples/navier-stokes/run_forward_*.py` — build/validate a POD–GP surrogate
+- `examples/navier-stokes/run_backward_*.py` — inverse problem with Active/Adaptive MCMC
 
 Start here:
 
-- **Forward (surrogate)**: `examples/navier-stokes/run_forward_ns_hf_surrogate.py`  
-- **Backward (inference)**: `examples/navier-stokes/run_backward_ns_active_mcmc.py`  
+- **Forward (surrogate)**: `examples/navier-stokes/run_forward_ns_hf_surrogate.py`
+- **Backward (inference)**: `examples/navier-stokes/run_backward_ns_active_mcmc.py`
 - **MF/HF solver sweep**: `examples/navier-stokes/cfd/run_mf.py`
 
 ## Precomputed outputs (from the example)
@@ -77,14 +76,13 @@ Not reliable and seed-dependent.
 
 Robust and accurate.
 
-
 ![Samples using DA-MCMC-Active Learning](../assets/navier-stokes/samples2.png)
 ![HF Fraction using DA-MCMC-Active Learning](../assets/navier-stokes/hf_usage_2.png)
 ![Subchain Lengths using DA-MCMC-Active Learning](../assets/navier-stokes/subchain.png)
 ![Prediction after MCMC sampling](../assets/navier-stokes/prediction2.png)
 
-
 Summary
+
 ```
 Active MCMC summary: {'n_steps': 901, 'n_dim': 3, 'move_fraction': 0.04666666666666667, 'hf_call_fraction': 0.003329633740288568, 'n_hf_calls': 3, 'posterior_rmse': 0.02565835473083319}
 

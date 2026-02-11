@@ -6,7 +6,7 @@ from typing import Any
 import tinyDA as tda
 
 
-class AdaptiveMetropolisShared(tda.AdaptiveMetropolis):
+class AdaptiveMetropolisShared(tda.AdaptiveMetropolis):  # type: ignore[misc]
     """Adaptive Metropolis proposal with controlled deep-copy semantics.
 
     This proposal extends `tinyDA.AdaptiveMetropolis` by
@@ -74,7 +74,7 @@ class AdaptiveMetropolisShared(tda.AdaptiveMetropolis):
         super().__init__(*args, **kwargs)
         self._share_across_deepcopy = bool(share_across_deepcopy)
 
-    def __deepcopy__(self, memo: dict[int, object]) -> "AdaptiveMetropolisShared":
+    def __deepcopy__(self, memo: dict[int, object]) -> AdaptiveMetropolisShared:
         """Deep-copy the proposal according to `share_across_deepcopy`.
 
         Parameters

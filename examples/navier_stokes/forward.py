@@ -1,8 +1,8 @@
 # %% [markdown]
-# # HF Navier–Stokes surrogate demo (POD–GP)
+# # HF Navier-Stokes surrogate demo (POD-GP)
 #
-# This notebook-style example shows how to build and validate a POD–GP surrogate for a
-# **high-fidelity** Navier–Stokes quantity of interest (QoI).
+# This notebook-style example shows how to build and validate a POD-GP surrogate for a
+# **high-fidelity** Navier-Stokes quantity of interest (QoI).
 #
 # **QoI**
 # : Outlet streamwise velocity profile \(u_x(y)\), resampled to a fixed length \(T\).
@@ -25,21 +25,20 @@
 # %% Imports
 from __future__ import annotations
 
-from typing import Callable
+from collections.abc import Callable
 
 import numpy as np
 from scipy.stats import multivariate_normal
 from sklearn.model_selection import train_test_split
 
-from gp_active_mcmc.surrogates import MultiOutputGP, POD, PODGPSurrogate
-from gp_active_mcmc.utils.rng import set_seed
-from gp_active_mcmc.utils.metrics import rmse, coverage
-from gp_active_mcmc.diagnostics.surrogate import plot_prediction_at_theta
+# Local Navier-Stokes utilities (example-specific; not part of gp_active_mcmc)
+from examples.navier_stokes.resample import resample_profile
+from examples.navier_stokes.solver_hf import forward_model as hf_solver
 from gp_active_mcmc.diagnostics.pod import plot_pod_energy
-
-# Local Navier–Stokes utilities (example-specific; not part of gp_active_mcmc)
-from utils.outlet import resample_profile
-from utils.solver import forward_model as hf_solver
+from gp_active_mcmc.diagnostics.surrogate import plot_prediction_at_theta
+from gp_active_mcmc.surrogates import POD, MultiOutputGP, PODGPSurrogate
+from gp_active_mcmc.utils.metrics import coverage, rmse
+from gp_active_mcmc.utils.rng import set_seed
 
 # %% [markdown]
 # ## Configuration
@@ -89,7 +88,8 @@ theta_mean = np.array(
     [0.5 * (H1_MIN + H1_MAX), 0.5 * (U_MIN + U_MAX), 0.5 * (L_MIN + L_MAX)], dtype=float
 )
 theta_sig = np.array(
-    [0.25 * (H1_MAX - H1_MIN), 0.25 * (U_MAX - U_MIN), 0.25 * (L_MAX - L_MIN)], dtype=float
+    [0.25 * (H1_MAX - H1_MIN), 0.25 * (U_MAX - U_MIN), 0.25 * (L_MAX - L_MIN)],
+    dtype=float,
 )
 theta_cov = np.diag(theta_sig**2)
 
@@ -191,7 +191,7 @@ def generate_dataset(
 
 
 # %% [markdown]
-# ## Build POD–GP surrogate
+# ## Build POD-GP surrogate
 #
 # - Fit POD on training profiles \(Y_{\mathrm{train}}\).
 # - Train a multi-output GP on POD coefficients \(A_{\mathrm{train}}\).
@@ -291,7 +291,7 @@ def main() -> None:
     # --------------------------------------------------------------
     metrics = evaluate_surrogate(surrogate=surrogate, X_te=X_te, Y_te=Y_te)
 
-    print("HF POD–GP surrogate for outlet profile")
+    print("HF POD-GP surrogate for outlet profile")
     print(f"inputs: [h1, U_in], fixed (h2={H2}, L_up={L_UP}, L_down={L_DOWN})")
     print(f"POD rank r = {POD_RANK}")
     print(f"N_train = {X_tr.shape[0]}, N_test = {X_te.shape[0]}, T = {T}")
@@ -313,7 +313,11 @@ def main() -> None:
     idx_median = int(metrics["idx_median"])
     idx_worst = int(metrics["idx_worst"])
 
-    for label, idx in [("best", idx_best), ("median", idx_median), ("worst", idx_worst)]:
+    for label, idx in [
+        ("best", idx_best),
+        ("median", idx_median),
+        ("worst", idx_worst),
+    ]:
         theta = X_te[idx]
         y_true = Y_te[idx]
         plot_prediction_at_theta(
@@ -322,7 +326,7 @@ def main() -> None:
             t_plot,
             y_true,
             title=(
-                "HF POD–GP outlet profile — "
+                "HF POD-GP outlet profile — "
                 f"{label} test case (h1={theta[0]:.4f}, U_in={theta[1]:.3f})"
             ),
             show=True,

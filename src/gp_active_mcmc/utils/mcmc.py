@@ -5,7 +5,7 @@ from typing import Any
 import numpy as np
 from numpy.typing import ArrayLike, NDArray
 
-FloatArray = NDArray[np.floating]
+FloatArray = NDArray[np.float64]
 BoolArray = NDArray[np.bool_]
 IntArray = NDArray[np.int_]
 
@@ -48,7 +48,7 @@ def extract_samples(chain: dict[str, Any], *, chain_key: str) -> FloatArray:
     Notes
     -----
     This function performs no thinning or burn-in removal. Those should be done at the
-    `MCMCChain` level (see [`MCMCChain.burnin`][gp_active_mcmc.inference.chain.MCMCChain.burnin]).
+    `MCMCChain` level (see [`MCMCChain.burn_in`][gp_active_mcmc.inference.chain.MCMCChain.burn_in]).
     """
     try:
         links = chain[chain_key]
@@ -57,7 +57,7 @@ def extract_samples(chain: dict[str, Any], *, chain_key: str) -> FloatArray:
 
     try:
         return np.asarray([link.parameters for link in links], dtype=float)
-    except Exception as e:  # noqa: BLE001 (we want a clearer error message)
+    except Exception as e:
         raise TypeError(
             "Could not extract samples: expected chain[chain_key] to be an iterable of "
             "objects exposing a `.parameters` attribute."
@@ -177,7 +177,7 @@ def mean_subchain_length(subchain_length: ArrayLike) -> float:
     return float(np.mean(s))
 
 
-def posterior_rmse(samples: ArrayLike, theta_true: ArrayLike, *, burnin: int = 0) -> float:
+def posterior_rmse(samples: ArrayLike, theta_true: ArrayLike, *, burn_in: int = 0) -> float:
     """Compute a simple posterior error metric against a reference parameter.
 
     The reported value is the mean Euclidean distance between each sample and a
@@ -189,7 +189,7 @@ def posterior_rmse(samples: ArrayLike, theta_true: ArrayLike, *, burnin: int = 0
         Sample matrix of shape ``(n_steps, n_dim)``.
     theta_true
         Reference parameter vector of shape ``(n_dim,)``.
-    burnin
+    burn_in
         Number of initial samples to discard before computing the statistic.
 
     Returns
@@ -200,7 +200,7 @@ def posterior_rmse(samples: ArrayLike, theta_true: ArrayLike, *, burnin: int = 0
     Raises
     ------
     ValueError
-        If shapes are inconsistent or `burnin` is outside `[0, n_steps]`.
+        If shapes are inconsistent or `burn_in` is outside `[0, n_steps]`.
 
     Notes
     -----
@@ -215,9 +215,9 @@ def posterior_rmse(samples: ArrayLike, theta_true: ArrayLike, *, burnin: int = 0
     if th.ndim != 1 or th.shape[0] != s.shape[1]:
         raise ValueError("theta_true must be 1D and match the parameter dimension of samples.")
 
-    b = int(burnin)
+    b = int(burn_in)
     if b < 0 or b > s.shape[0]:
-        raise ValueError("burnin must be between 0 and n_steps.")
+        raise ValueError("burn_in must be between 0 and n_steps.")
 
     err = s[b:] - th[None, :]
     return float(np.mean(np.sqrt(np.sum(err**2, axis=1))))

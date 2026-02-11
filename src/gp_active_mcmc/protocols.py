@@ -2,8 +2,11 @@
 from __future__ import annotations
 
 from typing import Protocol, runtime_checkable
+
 import numpy as np
 from numpy.typing import ArrayLike, NDArray
+
+FloatArray = NDArray[np.float64]
 
 
 @runtime_checkable
@@ -14,7 +17,7 @@ class ActiveSurrogate(Protocol):
     quantification (e.g., predictive variance or covariance).
     """
 
-    def predict(self, theta: ArrayLike) -> tuple[NDArray[np.floating], NDArray[np.floating]]:
+    def predict(self, theta: ArrayLike) -> tuple[FloatArray, FloatArray]:
         """Predict model output at parameter(s) ``theta``.
 
         Parameters
@@ -53,5 +56,5 @@ class ActiveSurrogate(Protocol):
 class HighFidelityModel(Protocol):
     """Forward model interface for high-fidelity evaluations."""
 
-    def __call__(self, theta: ArrayLike) -> NDArray[np.floating]:
+    def __call__(self, theta: ArrayLike) -> FloatArray:
         """Evaluate the forward model at parameter(s) ``theta``."""

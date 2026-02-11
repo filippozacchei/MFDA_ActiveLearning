@@ -1,10 +1,14 @@
 from __future__ import annotations
 
+from typing import Any
+
 import numpy as np
 from numpy.typing import NDArray
 
+FloatArray = NDArray[np.float64]
 
-class CoarseOutput(np.ndarray):
+
+class CoarseOutput(np.ndarray[Any, np.dtype[np.float64]]):
     """Prediction container for LF (surrogate) evaluations.
 
     `CoarseOutput` behaves like a NumPy array containing the predictive mean, while
@@ -57,9 +61,13 @@ class CoarseOutput(np.ndarray):
         Likelihood that uses `CoarseOutput.variance` to inflate the observation covariance.
     """
 
-    variance: NDArray[np.floating]
+    variance: FloatArray | None
 
-    def __new__(cls, mean: np.ndarray, variance: np.ndarray) -> "CoarseOutput":
+    def __new__(
+        cls,
+        mean: np.ndarray[Any, np.dtype[np.float64]],
+        variance: np.ndarray[Any, np.dtype[np.float64]],
+    ) -> CoarseOutput:
         """Create a `CoarseOutput` from mean and marginal variance.
 
         Parameters
@@ -81,8 +89,8 @@ class CoarseOutput(np.ndarray):
             If `mean` and `variance` have different shapes, or if `variance` contains
             negative entries.
         """
-        mean_arr = np.asarray(mean, dtype=float)
-        var_arr = np.asarray(variance, dtype=float)
+        mean_arr: FloatArray = np.asarray(mean, dtype=np.float64)
+        var_arr: FloatArray = np.asarray(variance, dtype=np.float64)
 
         if mean_arr.shape != var_arr.shape:
             raise ValueError(
@@ -104,5 +112,16 @@ class CoarseOutput(np.ndarray):
         from an existing `CoarseOutput`.
         """
         if obj is None:
+            self.variance = None
             return
+        # Preserve variance if present, else None (safe for mypy).
         self.variance = getattr(obj, "variance", None)
+
+    def require_variance(self) -> FloatArray:
+        """Return variance, raising if missing.
+
+        Useful when you want a non-optional array at call sites.
+        """
+        if self.variance is None:
+            raise AttributeError("CoarseOutput.variance is missing on this view.")
+        return self.variance

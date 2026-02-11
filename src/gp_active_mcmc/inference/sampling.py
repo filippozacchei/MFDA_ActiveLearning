@@ -11,7 +11,7 @@ from numpy.typing import ArrayLike, NDArray
 from gp_active_mcmc.inference.chain import MCMCChain, SamplingResult
 from gp_active_mcmc.utils.mcmc import extract_samples
 
-FloatArray = NDArray[np.floating]
+FloatArray = NDArray[np.float64]
 
 
 @dataclass(frozen=True, slots=True)
@@ -48,7 +48,7 @@ class ChunkedMCMCConfig:
     chunk_size: int = 500
 
 
-def _extract_used_hf(model: Any) -> np.ndarray:
+def _extract_used_hf(model: Any) -> FloatArray:
     """Extract HF usage flags from an active model.
 
     This helper exists for backward/forward compatibility across versions where the
@@ -80,12 +80,11 @@ def _extract_used_hf(model: Any) -> np.ndarray:
     if hasattr(model, "used_hf_flags"):
         return np.asarray(model.used_hf_flags, dtype=bool)
     raise AttributeError(
-        "Model does not expose HF usage flags "
-        "(expected model.log.used_hf or model.used_hf_flags)."
+        "Model does not expose HF usage flags (expected model.log.used_hf or model.used_hf_flags)."
     )
 
 
-def _extract_subchain_history(model: Any) -> np.ndarray | None:
+def _extract_subchain_history(model: Any) -> FloatArray | None:
     """Extract adaptive subchain length history if available.
 
     In adaptive runs, the model may store a history of chosen subchain lengths.
@@ -327,8 +326,8 @@ def sample_adaptive_active_chain(
     theta_current = np.asarray(initial_parameters, dtype=float).copy()
 
     coarse_done = 0
-    blocks: list[np.ndarray] = []
-    used_hf_blocks: list[np.ndarray] = []
+    blocks: list[FloatArray] = []
+    used_hf_blocks: list[FloatArray] = []
 
     used_hf_cursor = 0
 

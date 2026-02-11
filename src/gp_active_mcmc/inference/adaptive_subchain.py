@@ -5,14 +5,14 @@ from dataclasses import dataclass, field
 import numpy as np
 from numpy.typing import NDArray
 
-FloatArray = NDArray[np.floating]
+FloatArray = NDArray[np.float64]
 
 
 @dataclass(frozen=True, slots=True)
 class AdaptiveSubchainControl:
     """Hyperparameters for adaptive subchain-length control.
 
-    This control block specifies *how* the adaptive policy reacts to observed LF–HF
+    This control block specifies *how* the adaptive policy reacts to observed LF-HF
     discrepancy during sampling.
 
     In DA-MCMC guided active learning, the sampler periodically performs a **fine**
@@ -21,7 +21,7 @@ class AdaptiveSubchainControl:
 
     The update rule is:
 
-    - if the most recent LF–HF error is **above** `target_error`, decrease the subchain
+    - if the most recent LF-HF error is **above** `target_error`, decrease the subchain
       length (more frequent HF corrections);
     - if the error is **below** `target_error`, increase the subchain length
       (less frequent HF corrections).
@@ -33,7 +33,7 @@ class AdaptiveSubchainControl:
     update_every
         Number of HF evaluations between policy updates. Must be positive.
     target_error
-        Target level for the LF–HF error statistic (non-negative).
+        Target level for the LF-HF error statistic (non-negative).
     min_subchain
         Lower bound on the subchain length (minimum spacing between HF corrections is 1).
     max_subchain
@@ -96,7 +96,7 @@ class AdaptiveSubchainState:
     subchain_history
         Records the subchain length at each coarse evaluation (aligned with coarse calls).
     hf_errors
-        LF–HF error values computed at each fine evaluation.
+        LF-HF error values computed at each fine evaluation.
     total_hf_steps
         Total number of HF evaluations performed.
     _hf_since_update
@@ -146,7 +146,7 @@ class AdaptiveSubchainState:
         self._hf_since_update += 1
 
     def append_error(self, lf_mean: FloatArray, y_hf: FloatArray) -> None:
-        """Compute and record an LF–HF error statistic (RMSE).
+        """Compute and record an LF-HF error statistic (RMSE).
 
         Parameters
         ----------
@@ -213,7 +213,7 @@ class AdaptiveSubchain:
     ---------
     - On each **coarse** call: record the current subchain length.
     - On each **fine** call:
-      1. compute and store LF–HF error (currently RMSE in observation space),
+      1. compute and store LF-HF error (currently RMSE in observation space),
       2. update the subchain length if the update schedule triggers,
       3. increment HF counters.
 

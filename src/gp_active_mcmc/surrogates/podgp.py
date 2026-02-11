@@ -9,12 +9,12 @@ from numpy.typing import ArrayLike, NDArray
 from .gp import MultiOutputGP
 from .pod import POD
 
-FloatArray = NDArray[np.floating]
+FloatArray = NDArray[np.float64]
 
 
 @dataclass(slots=True)
 class PODGPSurrogate:
-    """POD–GP surrogate for trajectory- or field-valued model outputs.
+    """POD-GP surrogate for trajectory- or field-valued model outputs.
 
     This surrogate implements a common two-step construction for high-dimensional outputs:
 
@@ -140,12 +140,14 @@ class PODGPSurrogate:
         if var.ndim == 1:
             # (n_obs, r) @ (r,) -> (n_obs,)
             y_var = (Phi**2) @ var
-            return np.maximum(y_var, float(self.y_var_floor))
+            res1: FloatArray = np.maximum(y_var, float(self.y_var_floor))
+            return res1
 
         if var.ndim == 2:
             # (n, r) @ (r, n_obs) -> (n, n_obs)
             y_var = var @ (Phi**2).T
-            return np.maximum(y_var, float(self.y_var_floor))
+            res2: FloatArray = np.maximum(y_var, float(self.y_var_floor))
+            return res2
 
         raise ValueError(f"var_a must be 1D or 2D. Got shape {var.shape}.")
 
@@ -219,7 +221,7 @@ class PODGPSurrogate:
         """Return the summed marginal log-likelihood of the underlying GP(s)."""
         return self.gp.log_likelihood()
 
-    def copy(self) -> "PODGPSurrogate":
+    def copy(self) -> PODGPSurrogate:
         """Return a deep copy of the surrogate.
 
         This is useful when a workflow needs independent surrogate state, e.g. when

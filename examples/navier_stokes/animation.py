@@ -4,11 +4,10 @@ from __future__ import annotations
 from dataclasses import dataclass
 from pathlib import Path
 
-import numpy as np
 import matplotlib.pyplot as plt
+import numpy as np
+from dolfinx.geometry import bb_tree, compute_colliding_cells, compute_collisions_points
 from matplotlib.animation import FuncAnimation, PillowWriter
-
-from dolfinx.geometry import bb_tree, compute_collisions_points, compute_colliding_cells
 
 
 @dataclass(frozen=True, slots=True)
@@ -108,7 +107,7 @@ def make_velocity_animation(
     def update(k: int):
         dat = _eval_on_grid(mesh, frames[k], grid)
         im.set_data(dat)
-        ax.set_title(f"{title} (frame {k+1}/{len(frames)})")
+        ax.set_title(f"{title} (frame {k + 1}/{len(frames)})")
         return (im,)
 
     anim = FuncAnimation(fig, update, frames=len(frames), interval=interval_ms, blit=False)

@@ -2,14 +2,13 @@ from __future__ import annotations
 
 from typing import Literal
 
+import GPy
 import numpy as np
 from numpy.typing import ArrayLike, NDArray
 from sklearn.preprocessing import StandardScaler
 
-import GPy
-
 KernelName = Literal["rbf", "matern32", "matern52"]
-FloatArray = NDArray[np.floating]
+FloatArray = NDArray[np.float64]
 
 
 def _as_2d_float(x: ArrayLike, *, name: str) -> FloatArray:

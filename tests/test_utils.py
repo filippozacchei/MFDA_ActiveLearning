@@ -52,6 +52,6 @@ def test_mean_subchain_length() -> None:
 def test_posterior_rmse() -> None:
     samples = np.array([[0.0, 0.0], [1.0, 0.0], [1.0, 1.0]])
     theta_true = np.array([0.0, 0.0])
-    rmse = posterior_rmse(samples, theta_true, burnin=1)
+    rmse = posterior_rmse(samples, theta_true, burn_in=1)
     # distances: [1, sqrt(2)] -> mean
     assert rmse == pytest.approx((1.0 + np.sqrt(2.0)) / 2.0)

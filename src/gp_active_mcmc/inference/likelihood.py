@@ -1,12 +1,12 @@
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, cast
 
 import numpy as np
 import tinyDA as tda
 
 
-class ActiveGPLogLike(tda.AdaptiveGaussianLogLike):
+class ActiveGPLogLike(tda.AdaptiveGaussianLogLike):  # type: ignore[misc]
     """Gaussian log-likelihood with surrogate-variance inflation.
 
     `ActiveGPLogLike` is designed for inference workflows where the forward model may
@@ -119,4 +119,5 @@ class ActiveGPLogLike(tda.AdaptiveGaussianLogLike):
         self.total_cov = total_cov
         self.cov_inverse = np.linalg.inv(total_cov)
 
-        return super().loglike(mean)
+        val = super().loglike(mean)
+        return float(cast(float, val))

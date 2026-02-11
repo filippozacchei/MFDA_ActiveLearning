@@ -70,6 +70,7 @@ dev = [
   "ruff",
   "mypy",
   "nox",
+  "scipy-stubs",
 ]
 
 [tool.pytest.ini_options]
@@ -99,7 +100,12 @@ filterwarnings = [
 line-length = 100
 
 [tool.ruff.lint]
-extend-select = ["B", "I", "UP"]
+extend-select = [
+  "B",      # flake8-bugbear
+  "I",      # isort
+  "RUF",    # Ruff-specific
+  "UP",     # pyupgrade
+]
 
 [tool.mypy]
 python_version = "3.10"
@@ -107,11 +113,26 @@ strict = true
 warn_unused_ignores = true
 warn_unreachable = true
 enable_error_code = ["ignore-without-code", "redundant-expr", "truthy-bool"]
+explicit_package_bases = true
+mypy_path = ["src"]
+files = ["src/gp_active_mcmc"]
 
 [[tool.mypy.overrides]]
 module = [
   "tinyDA",
   "sklearn.*",
   "GPy",
+  "dolfinx.*",
+  "ufl.*",
+  "petsc4py.*",
+  "mpi4py.*",
+  "basix.*",
+  "ffcx.*",
+  "gmsh.*",
+  "pyvista.*",
 ]
 ignore_missing_imports = true
+
+[tool.codespell]
+skip = ".git,*.svg,*.pdf,site,.nox"
+ignore-words-list = "crate,nd"
