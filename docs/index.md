@@ -39,6 +39,17 @@ pytest -q
 python examples/toy_problem/run_forward_toy.py
 ```
 
+macOS-specific setup (Apple Silicon and Intel):
+
+```bash
+xcode-select --install
+brew install python@3.10
+python3.10 -m venv .venv
+source .venv/bin/activate
+python -m pip install --upgrade pip setuptools wheel
+python -m pip install -e .
+```
+
 Documentation stack:
 
 ```bash
