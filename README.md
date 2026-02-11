@@ -72,13 +72,6 @@ Smoke-test the install:
 python examples/toy_problem/run_forward_toy.py
 ```
 
-Run tests (optional, requires test extras):
-
-```bash
-python -m pip install -e ".[test]"
-python -m pytest -q
-```
-
 > **Why is Ray pinned?** `tinyDA` currently depends on `ray>=2.53.0`. Even if you do not call Ray
 > explicitly, the pin ensures our stack stays synchronized with upstream releases.
 
