@@ -61,9 +61,9 @@ Navier–Stokes scripts additionally require a conda-forge environment with `fen
 
 ## Community & governance
 
-- Contributions follow [CONTRIBUTING][./CONTRIBUTING.md] and are linted/tested via `nox`.
-- Behavior in GitHub issues/PRs is governed by the [Code of Conduct][./CODE_OF_CONDUCT.md].
-- Citation details live in [CITATION.cff][./CITATION.cff].
+- Contributions follow [CONTRIBUTING](https://github.com/filippozacchei/MFDA_ActiveLearning/blob/main/CONTRIBUTING.md) and are linted/tested via `nox`.
+- Behavior in GitHub issues/PRs is governed by the [Code of Conduct](https://github.com/filippozacchei/MFDA_ActiveLearning/blob/main/CODE_OF_CONDUCT.md).
+- Citation details live in [CITATION.cff](https://github.com/filippozacchei/MFDA_ActiveLearning/blob/main/CITATION.cff).
 
 ## References
 
