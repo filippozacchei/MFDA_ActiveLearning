@@ -41,6 +41,27 @@ python -m pip install --upgrade pip
 python -m pip install -e .
 ```
 
+### macOS install (Apple Silicon and Intel)
+
+Install system prerequisites first:
+
+```bash
+xcode-select --install
+brew install python@3.10
+```
+
+Then create the project environment with the pinned interpreter:
+
+```bash
+python3.10 -m venv .venv
+source .venv/bin/activate
+python -m pip install --upgrade pip setuptools wheel
+python -m pip install -e .
+```
+
+If you use Conda/Mamba on macOS, you can also create a `python=3.10` environment
+and run the same `pip install -e .` command inside it.
+
 Smoke-test the install:
 
 ```bash
