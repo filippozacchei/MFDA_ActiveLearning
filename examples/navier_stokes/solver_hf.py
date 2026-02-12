@@ -281,7 +281,7 @@ def solve_ipcs_bfs(
     b3 = create_vector(L3)
 
     # ---------------------------------------------------------------------
-    # Linear solvers (reasonable defaults for a medium-sized demo problem)
+    # Linear solvers 
     # ---------------------------------------------------------------------
     solver1 = PETSc.KSP().create(mesh.comm)
     solver1.setOperators(A1)
