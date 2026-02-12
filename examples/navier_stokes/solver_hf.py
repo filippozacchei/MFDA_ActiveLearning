@@ -39,17 +39,11 @@ from .bfs_mesh import build_bfs_mesh
 from .ns_types import BFSGeometry, BoundaryMarkers, MeshOptions, OutletProfile
 from .outlet import sample_outlet_u_x
 
-"""Medium-fidelity Navier-Stokes solver for the backward-facing step (BFS).
+"""Navier-Stokes solver for the backward-facing step (BFS).
 
 This module provides a *medium-fidelity* forward model for incompressible flow in a
 2D backward-facing step geometry, solved with an IPCS-like (incremental pressure
 correction) splitting scheme in dolfinx.
-
-Scope and intent
-----------------
-- This code is **example infrastructure**, not part of the core library API.
-- The goal is a reasonably robust, documentation-friendly solver that produces a
-  low-dimensional QoI (outlet velocity profile) suitable for surrogate modelling.
 
 Model and discretisation
 ------------------------
@@ -79,11 +73,7 @@ Notes for reproducibility
 
 Caveats
 -------
-This is a compact educational implementation. For production CFD you would typically:
-- include stabilisation (SUPG/PSPG) at higher Reynolds numbers,
-- use more careful outlet boundary conditions,
-- implement proper pressure nullspace handling (rather than pressure pinning),
-- tune Krylov/AMG options for scalability.
+- Lacks stabilisation (SUPG/PSPG) at higher Reynolds numbers
 """
 
 
@@ -404,10 +394,6 @@ def forward_model(
     y, u_x
         Outlet sampling coordinates and streamwise velocity profile.
 
-    Notes
-    -----
-    This function is intentionally “pure” from the perspective of active-learning
-    inference: it takes scalar inputs and returns NumPy arrays.
     """
     if time is None:
         time = MFTimeConfig()
