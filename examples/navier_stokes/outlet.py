@@ -11,12 +11,6 @@ from .ns_types import OutletProfile
 This module defines the quantity of interest (QoI) used in the Navier-Stokes example:
 the outlet streamwise velocity profile u_x(y) at the plane x = L.
 
-Design goals
-------------
-- Return a small, NumPy-friendly object suitable for surrogate modelling.
-- Keep the sampling logic explicit and robust to points that fall outside the mesh
-  due to floating-point tolerances.
-
 Notes on dolfinx point evaluation
 ---------------------------------
 Evaluating a finite-element function at arbitrary points requires locating the cell
