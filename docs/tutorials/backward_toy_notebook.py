@@ -2,7 +2,7 @@
 # # Backward toy: Bayesian inversion with Active-MCMC (documentation notebook)
 #
 # This notebook-style tutorial demonstrates *how to use* `gp_active_mcmc` on a small toy
-# inverse problem. The goal is clarity and API usage, not performance.
+# inverse problem. 
 #
 # We show **two inference modes** supported by the library:
 #
