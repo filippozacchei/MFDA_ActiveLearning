@@ -1,9 +1,6 @@
 # GP-Active MCMC
 
-`gp_active_mcmc` is a research-grade Python package for **multi-fidelity Bayesian inference**
-using **Gaussian-process surrogates** and **Active/Adaptive MCMC** strategies. It couples a fast,
-uncertain _low-fidelity_ (LF) surrogate with an accurate but expensive _high-fidelity_ (HF) model,
-switching to HF evaluations when needed and optionally adapting the HF subchain length during sampling.
+`gp_active_mcmc` is a research-grade Python package for **multi-fidelity Bayesian inference** using **Gaussian-process surrogates** and **Active/Adaptive MCMC** strategies. It couples a fast, uncertain _low-fidelity_ (LF) surrogate with an accurate but expensive _high-fidelity_ (HF) model, switching to HF evaluations when needed and optionally adapting the HF subchain length during sampling.
 
 Use it when you need to:
 
