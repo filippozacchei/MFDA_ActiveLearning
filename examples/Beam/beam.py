@@ -115,7 +115,9 @@ def beam_forward(
     A = build_beam_operator(E, h)
     rhs = build_load_vector(x, load_scale=load_scale)
 
-    # homogeneous BC rows
+    # homogeneous BC rows 
+
+
     rhs[0] = 0.0
     rhs[1] = 0.0
     rhs[-2] = 0.0
