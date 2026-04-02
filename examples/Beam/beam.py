@@ -80,15 +80,20 @@ def build_beam_operator(E: np.ndarray, h: float) -> np.ndarray:
 
     return A
 
-def build_load_vector(x: np.ndarray, load_scale: float = -1.0) -> np.ndarray:
-    """Simple distributed load."""
-    return load_scale * np.ones_like(x, dtype=float)
+def build_load_vector(x: np.ndarray, load: float | np.ndarray = -1.0) -> np.ndarray:
+    """Distributed load: scalar for uniform, array for pointwise."""
+    load = np.asarray(load, dtype=float)
+    if load.ndim == 0:
+        return load.item() * np.ones_like(x, dtype=float)
+    if load.shape != x.shape:
+        raise ValueError(f"load shape {load.shape} != x shape {x.shape}")
+    return load
 
 
 def beam_forward(
     theta: np.ndarray,
     x: np.ndarray,
-    load_scale: float = -1.0,
+    load: float | np.ndarray = -1.0,
 ) -> np.ndarray:
     """
     Beam forward model.
@@ -99,8 +104,8 @@ def beam_forward(
         Log-stiffness parameters [m1, m2, m3].
     x : ndarray, shape (n_pts,)
         Spatial grid.
-    load_scale : float
-        Distributed load amplitude.
+    load : float or ndarray
+        Distributed load: scalar for uniform, array for pointwise.
 
     Returns
     -------
@@ -113,7 +118,7 @@ def beam_forward(
     E = np.exp(logE)
 
     A = build_beam_operator(E, h)
-    rhs = build_load_vector(x, load_scale=load_scale)
+    rhs = build_load_vector(x, load=load)
 
     # homogeneous BC rows 
 
@@ -139,7 +144,7 @@ def make_observation_operator(n_pts: int, obs_idx: np.ndarray) -> np.ndarray:
 def make_forward_model(
     x: np.ndarray,
     obs_idx: np.ndarray | None = None,
-    load_scale: float = -1.0,
+    load: float | np.ndarray = -1.0,
     return_full_state: bool = False,
 ) -> Callable[[np.ndarray], np.ndarray]:
     """
@@ -154,7 +159,7 @@ def make_forward_model(
         B = make_observation_operator(len(x), obs_idx)
 
     def _forward(theta: np.ndarray) -> np.ndarray:
-        u = beam_forward(theta, x, load_scale=load_scale)
+        u = beam_forward(theta, x, load=load)
         if return_full_state:
             return u
         return B @ u
@@ -167,7 +172,7 @@ def make_observation(
     x: np.ndarray,
     sigma_obs: float,
     obs_idx: np.ndarray,
-    load_scale: float = -1.0,
+    load: float | np.ndarray = -1.0,
 ) -> np.ndarray:
     """
     Generate noisy synthetic observations:
@@ -176,7 +181,7 @@ def make_observation(
     forward = make_forward_model(
         x=x,
         obs_idx=obs_idx,
-        load_scale=load_scale,
+        load=load,
         return_full_state=False,
     )
     y_clean = forward(theta_true)
