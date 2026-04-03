@@ -1,24 +1,14 @@
 # %% [markdown]
 # # Backward beam: Bayesian inversion with Active-MCMC
 #
-# Self-contained implementation following the same logic as `run_backward_toy.py`
-# but applied to the cantilever beam inverse problem.
+# Same workflow as ``run_backward_toy.py``, applied to the cantilever beam inverse
+# problem.  Uses the library's inference machinery (``ActiveMCMCModel``,
+# ``ActiveGPLogLike``, ``AdaptiveSubchain``, samplers, diagnostics).
 #
-# **No dependency on the library's inference machinery** — all MCMC / likelihood /
-# proposal / adaptive-subchain code is implemented locally.  The only library
-# import is `MultiOutputGP` for the GP surrogate (already used & tested in
-# `forward.py`).
-#
-# Two inference modes are demonstrated:
+# Two inference modes:
 #
 # 1. **MCMC-guided active learning (single posterior)**
-#    The sampler uses the *coarse* model which triggers HF when surrogate
-#    uncertainty exceeds a threshold.
-#
 # 2. **DA-MCMC guided active learning with adaptive subchain (recommended)**
-#    A coarse subchain runs for an adaptive number of steps, then a fine (HF)
-#    correction step updates the surrogate and applies a delayed-acceptance ratio.
-#    The subchain length adapts based on LF-HF discrepancy.
 
 # %% Imports
 from __future__ import annotations
@@ -26,502 +16,79 @@ from __future__ import annotations
 import copy
 
 import numpy as np
+import tinyDA as tda
 from scipy.stats import multivariate_normal
-import matplotlib.pyplot as plt
 
 from beam import make_spatial_grid, make_forward_model, make_observation
-from gp_active_mcmc.surrogates import MultiOutputGP  # only library dependency
+import matplotlib.pyplot as plt
+from gp_active_mcmc.diagnostics import (
+    plot_chain_2d,
+    plot_cumulative_hf_fraction,
+    plot_prediction_at_theta,
+    plot_subchain_length_history,
+)
+from gp_active_mcmc.inference import (
+    ActiveGPLogLike,
+    ActiveMCMCModel,
+    AdaptiveMetropolisShared,
+    AdaptiveSubchain,
+    AdaptiveSubchainControl,
+    AdaptiveSubchainState,
+    ChunkedMCMCConfig,
+    sample_active_chain,
+    sample_adaptive_active_chain,
+)
+from gp_active_mcmc.surrogates import MultiOutputGP
+from gp_active_mcmc.utils.rng import set_seed
 
 
 # =====================================================================
-#  Self-contained inference components
+#  Direct GP surrogate (no POD -- observation space is low-dimensional)
 # =====================================================================
-
 
 class DirectGPSurrogate:
     """GP surrogate mapping theta -> observed beam displacements directly.
 
     Satisfies the ActiveSurrogate protocol (predict / update).
-    No POD compression: observation space is already low-dimensional.
     """
 
     def __init__(self, gp: MultiOutputGP):
         self.gp = gp
 
     def predict(self, theta: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
-        """Return (mean, variance) each of shape (n_obs,)."""
-        theta_2d = np.asarray(theta, dtype=float).reshape(1, -1)
-        y_mean, y_var = self.gp.predict(theta_2d)
-        return y_mean[0], y_var[0]
+        theta = np.asarray(theta, dtype=float).reshape(1, -1)
+        y_mean, y_var = self.gp.predict(theta)
+        return y_mean[0], np.maximum(y_var[0], 0.0)
 
     def update(self, theta: np.ndarray, y_hf: np.ndarray) -> None:
-        """Add one new HF observation to the GP training set."""
         theta_1d = np.asarray(theta, dtype=float).ravel()
         y_1d = np.asarray(y_hf, dtype=float).ravel()
         self.gp.update(theta_1d, y_1d)
-
-
-class ActiveModel:
-    """Couples a low-fidelity GP surrogate with a high-fidelity forward model.
-
-    Exposes two evaluation paths mirroring ActiveMCMCModel from the library:
-
-    * ``coarse(theta)`` — LF-first; triggers HF when ``mean(var) > gamma²``.
-    * ``fine(theta)``   — always HF; records LF-HF error and updates surrogate.
-    """
-
-    def __init__(
-        self,
-        lf_model: DirectGPSurrogate,
-        hf_model,
-        gamma_threshold: float,
-    ):
-        self.lf_model = lf_model
-        self.hf_model = hf_model
-        self.gamma_threshold = gamma_threshold
-        self.used_hf: list[bool] = []
-        self.hf_errors: list[float] = []
-
-    # -- coarse path ------------------------------------------------
-    def coarse(self, theta: np.ndarray) -> tuple[np.ndarray, np.ndarray | None]:
-        """LF-first evaluation with uncertainty trigger.
-
-        Returns
-        -------
-        y_mean : ndarray (n_obs,)
-            Predictive mean (LF) or HF output.
-        y_var : ndarray or None
-            Predictive variance if LF was used, ``None`` if HF was triggered.
-        """
-        theta = np.asarray(theta, dtype=float).ravel()
-        y_mean, y_var = self.lf_model.predict(theta)
-        avg_var = float(np.mean(y_var))
-
-        if avg_var > self.gamma_threshold**2:
-            y_hf = np.asarray(self.hf_model(theta), dtype=float).ravel()
-            self.lf_model.update(theta, y_hf)
-            self.used_hf.append(True)
-            return y_hf, None
-
-        self.used_hf.append(False)
-        return y_mean, y_var
-
-    # -- fine path --------------------------------------------------
-    def fine(self, theta: np.ndarray) -> np.ndarray:
-        """Always-HF evaluation; records LF-HF RMSE and updates surrogate."""
-        theta = np.asarray(theta, dtype=float).ravel()
-        y_hf = np.asarray(self.hf_model(theta), dtype=float).ravel()
-
-        # LF-HF discrepancy *before* updating surrogate
-        y_lf, _ = self.lf_model.predict(theta)
-        rmse = float(np.sqrt(np.mean((y_lf - y_hf) ** 2)))
-        self.hf_errors.append(rmse)
-
-        # Update surrogate with new HF point
-        self.lf_model.update(theta, y_hf)
-
-        # Replace last used_hf entry (fine correction at same MCMC step)
-        if self.used_hf:
-            self.used_hf[-1] = True
-        else:
-            self.used_hf.append(True)
-
-        return y_hf
-
-
-# -- Gaussian log-likelihood ----------------------------------------
-
-def gaussian_loglike(
-    y_pred: np.ndarray,
-    y_obs: np.ndarray,
-    cov_obs: np.ndarray,
-    pred_variance: np.ndarray | None = None,
-) -> float:
-    r"""Gaussian log-likelihood with optional surrogate-variance inflation.
-
-    .. math::
-
-        \log p(y_{\mathrm{obs}} \mid \theta) =
-            -\tfrac12 r^T C^{-1} r - \tfrac12 \log|C| - \tfrac{n}{2}\log(2\pi)
-
-    where :math:`C = C_{\mathrm{obs}} + \mathrm{diag}(v_{\mathrm{pred}})` when
-    ``pred_variance`` is not ``None``.
-    """
-    resid = y_obs - y_pred
-    C = cov_obs.copy()
-    if pred_variance is not None:
-        C = C + np.diag(pred_variance)
-
-    try:
-        L = np.linalg.cholesky(C)
-    except np.linalg.LinAlgError:
-        return -np.inf
-
-    alpha = np.linalg.solve(L, resid)
-    n = len(y_obs)
-    ll = -0.5 * np.dot(alpha, alpha)
-    ll -= np.sum(np.log(np.diag(L)))
-    ll -= 0.5 * n * np.log(2.0 * np.pi)
-    return float(ll)
-
-
-# -- Adaptive Metropolis proposal ------------------------------------
-
-class AdaptiveProposal:
-    """Adaptive Metropolis proposal (Haario et al., 2001).
-
-    After ``2 * period`` samples the empirical covariance of the chain is
-    used, scaled by ``sd² × 2.38² / d`` (optimal scaling for Gaussians).
-    """
-
-    def __init__(self, C0: np.ndarray, period: int = 100, sd: float = 1.0):
-        self.C0 = np.array(C0, dtype=float)
-        self.C = self.C0.copy()
-        self.period = period
-        self.sd = sd
-        self.d = C0.shape[0]
-        self._eps = 1e-8 * np.eye(self.d)
-        self._scale = (self.sd**2) * (2.38**2) / self.d
-
-    def get_cov(self) -> np.ndarray:
-        return self.C
-
-    def adapt(self, samples: np.ndarray, step: int) -> None:
-        """Periodically replace the proposal covariance with the empirical one."""
-        if step < 2 * self.period or step < self.d + 1:
-            return
-        if step % self.period != 0:
-            return
-        emp_cov = np.cov(samples[: step + 1].T)
-        self.C = self._scale * emp_cov + self._eps
-
-
-# -- Adaptive subchain policy ----------------------------------------
-
-class AdaptiveSubchainPolicy:
-    """Adjusts subchain length between fine corrections.
-
-    If the latest LF-HF RMSE is *above* ``target_error`` → shrink (more HF).
-    If *below* → grow (less HF).  Updates happen every ``update_every`` HF calls.
-    """
-
-    def __init__(
-        self,
-        subchain_length: int = 20,
-        update_every: int = 5,
-        target_error: float = 0.05,
-        min_subchain: int = 1,
-        max_subchain: int = 500,
-        grow_factor: float = 2.0,
-        shrink_factor: float = 0.5,
-    ):
-        self.subchain_length = subchain_length
-        self.update_every = update_every
-        self.target_error = target_error
-        self.min_subchain = min_subchain
-        self.max_subchain = max_subchain
-        self.grow_factor = grow_factor
-        self.shrink_factor = shrink_factor
-
-        self.subchain_history: list[int] = []
-        self._hf_since_update = 0
-
-    def record_coarse(self) -> None:
-        """Record the current subchain length (one call per coarse eval)."""
-        self.subchain_history.append(self.subchain_length)
-
-    def on_fine(self, hf_errors: list[float]) -> None:
-        """Called after each fine evaluation; may trigger a length update."""
-        self._hf_since_update += 1
-        if self._hf_since_update >= self.update_every and len(hf_errors) > 0:
-            err = hf_errors[-1]
-            if err > self.target_error:
-                new = int(np.floor(self.subchain_length * self.shrink_factor))
-            else:
-                new = int(np.ceil(self.subchain_length * self.grow_factor))
-            self.subchain_length = max(
-                self.min_subchain, min(self.max_subchain, new)
-            )
-            self._hf_since_update = 0
-
-
-# =================================================================
-#  Sampler 1 — MCMC-guided active learning (single posterior)
-# =================================================================
-
-def sample_active_mcmc(
-    model: ActiveModel,
-    y_obs: np.ndarray,
-    cov_obs: np.ndarray,
-    prior,
-    theta0: np.ndarray,
-    n_iter: int,
-    proposal: AdaptiveProposal,
-    rng: np.random.Generator,
-) -> dict:
-    """Standard Metropolis-Hastings with ``model.coarse`` as forward model.
-
-    HF calls happen *inside* ``model.coarse`` when the uncertainty trigger fires.
-    """
-    n_dim = len(theta0)
-    samples = np.zeros((n_iter, n_dim))
-    accepted = np.zeros(n_iter, dtype=bool)
-
-    theta = theta0.copy()
-
-    # Evaluate initial state via LF (no model.coarse to avoid logging)
-    y_init, v_init = model.lf_model.predict(theta)
-    ll_cur = gaussian_loglike(y_init, y_obs, cov_obs, v_init)
-    lp_cur = prior.logpdf(theta)
-
-    for i in range(n_iter):
-        theta_star = rng.multivariate_normal(theta, proposal.get_cov())
-
-        y_star, yvar_star = model.coarse(theta_star)
-        ll_star = gaussian_loglike(y_star, y_obs, cov_obs, yvar_star)
-        lp_star = prior.logpdf(theta_star)
-
-        log_alpha = (lp_star + ll_star) - (lp_cur + ll_cur)
-
-        if np.log(rng.uniform()) < log_alpha:
-            theta = theta_star.copy()
-            ll_cur = ll_star
-            lp_cur = lp_star
-            accepted[i] = True
-
-        samples[i] = theta.copy()
-        proposal.adapt(samples, i)
-
-    used_hf = np.array(model.used_hf, dtype=bool)
-    return {"samples": samples, "used_hf": used_hf, "accepted": accepted}
-
-
-# =================================================================
-#  Sampler 2 — DA-MCMC with adaptive subchain
-# =================================================================
-
-def sample_da_active_mcmc(
-    model: ActiveModel,
-    y_obs: np.ndarray,
-    cov_obs: np.ndarray,
-    prior,
-    theta0: np.ndarray,
-    n_coarse_evals: int,
-    proposal: AdaptiveProposal,
-    policy: AdaptiveSubchainPolicy,
-    rng: np.random.Generator,
-) -> dict:
-    """Delayed-Acceptance MCMC with adaptive subchain length.
-
-    1. Run a coarse MH sub-chain of length ``policy.subchain_length``.
-    2. One fine (HF) correction via the DA ratio.
-    3. Adapt subchain length from LF-HF discrepancy.
-    4. Repeat until budget exhausted.
-    """
-    n_dim = len(theta0)
-    all_samples: list[np.ndarray] = []
-    all_accepted: list[bool] = []
-
-    theta = theta0.copy()
-
-    # Initial coarse evaluation (no logging — used to seed likelihoods)
-    y_c_init, v_c_init = model.lf_model.predict(theta)
-    ll_c_cur = gaussian_loglike(y_c_init, y_obs, cov_obs, v_c_init)
-    lp_cur = prior.logpdf(theta)
-
-    # Initial fine evaluation (needed for the DA ratio)
-    used_hf_cursor = len(model.used_hf)  # bookmark before initial fine
-    y_f = model.fine(theta)
-    ll_f_cur = gaussian_loglike(y_f, y_obs, cov_obs)
-    ll_c_at_fine = ll_c_cur  # coarse log-like at the fine chain's state
-
-    coarse_step = 0
-
-    while coarse_step < n_coarse_evals:
-        S = policy.subchain_length
-        chunk = min(S, n_coarse_evals - coarse_step)
-
-        # ---------- coarse sub-chain ----------
-        for _ in range(chunk):
-            policy.record_coarse()
-
-            theta_star = rng.multivariate_normal(theta, proposal.get_cov())
-            y_c_star, yvar_star = model.coarse(theta_star)
-            ll_c_star = gaussian_loglike(y_c_star, y_obs, cov_obs, yvar_star)
-            lp_star = prior.logpdf(theta_star)
-
-            log_alpha = (lp_star + ll_c_star) - (lp_cur + ll_c_cur)
-
-            acc = False
-            if np.log(rng.uniform()) < log_alpha:
-                theta = theta_star.copy()
-                ll_c_cur = ll_c_star
-                lp_cur = lp_star
-                acc = True
-
-            all_samples.append(theta.copy())
-            all_accepted.append(acc)
-            coarse_step += 1
-
-            proposal.adapt(np.array(all_samples), len(all_samples) - 1)
-
-        # ---------- fine correction (delayed acceptance) ----------
-        if coarse_step < n_coarse_evals:
-            y_f_new = model.fine(theta)
-            ll_f_new = gaussian_loglike(y_f_new, y_obs, cov_obs)
-
-            # DA ratio: compare fine/coarse balance at new vs old state
-            log_alpha_da = (ll_f_new - ll_c_cur) - (ll_f_cur - ll_c_at_fine)
-
-            if np.log(rng.uniform()) < log_alpha_da:
-                ll_f_cur = ll_f_new
-                ll_c_at_fine = ll_c_cur
-
-            policy.on_fine(model.hf_errors)
-
-    # Align used_hf with samples (skip the initial fine entry)
-    raw_hf = np.array(model.used_hf, dtype=bool)
-    used_hf = raw_hf[used_hf_cursor:]
-    n_samples = len(all_samples)
-    if len(used_hf) > n_samples:
-        used_hf = used_hf[:n_samples]
-    elif len(used_hf) < n_samples:
-        used_hf = np.concatenate(
-            [used_hf, np.zeros(n_samples - len(used_hf), dtype=bool)]
-        )
-
-    subchain_hist = np.array(policy.subchain_history, dtype=int)
-    return {
-        "samples": np.array(all_samples),
-        "used_hf": used_hf,
-        "accepted": np.array(all_accepted, dtype=bool),
-        "subchain_history": subchain_hist,
-    }
-
-
-# =====================================================================
-#  Diagnostic helpers
-# =====================================================================
-
-
-def print_summary(
-    samples: np.ndarray,
-    used_hf: np.ndarray,
-    accepted: np.ndarray,
-    theta_true: np.ndarray | None = None,
-    burn_in: int = 0,
-) -> None:
-    n = samples.shape[0]
-    post_burn = samples[burn_in:]
-    n_hf = min(len(used_hf), n)
-
-    print(f"  Chain length     : {n}")
-    print(f"  Burn-in          : {burn_in}")
-    print(f"  Acceptance rate  : {np.mean(accepted):.3f}")
-    print(f"  HF fraction      : {np.mean(used_hf[:n_hf]):.3f}")
-    print(f"  Posterior mean   : {np.mean(post_burn, axis=0)}")
-    print(f"  Posterior std    : {np.std(post_burn, axis=0)}")
-    if theta_true is not None:
-        post_mean = np.mean(post_burn, axis=0)
-        rmse = float(np.sqrt(np.mean((post_mean - theta_true) ** 2)))
-        print(f"  theta_true       : {theta_true}")
-        print(f"  Posterior RMSE   : {rmse:.6f}")
-
-
-def plot_chain_2d(
-    samples, used_hf, theta_true=None, labels=("m1", "m2"), title=""
-):
-    fig, ax = plt.subplots(figsize=(7, 5))
-    n = min(len(samples), len(used_hf))
-    lf_mask = ~used_hf[:n]
-    hf_mask = used_hf[:n]
-
-    ax.scatter(
-        samples[:n][lf_mask, 0],
-        samples[:n][lf_mask, 1],
-        s=4, alpha=0.3, label="LF", color="steelblue",
-    )
-    ax.scatter(
-        samples[:n][hf_mask, 0],
-        samples[:n][hf_mask, 1],
-        s=10, alpha=0.6, label="HF", color="crimson", marker="x",
-    )
-    if theta_true is not None:
-        ax.scatter(
-            *theta_true[:2], s=100, marker="*",
-            color="gold", edgecolors="black", zorder=5, label="true",
-        )
-    ax.set_xlabel(labels[0])
-    ax.set_ylabel(labels[1])
-    ax.set_title(title)
-    ax.legend()
-    plt.tight_layout()
-    return fig, ax
-
-
-def plot_cumulative_hf_fraction(used_hf, title="Cumulative HF fraction"):
-    n = len(used_hf)
-    cumsum = np.cumsum(used_hf.astype(float))
-    frac = cumsum / np.arange(1, n + 1)
-
-    fig, ax = plt.subplots(figsize=(7, 3))
-    ax.plot(frac, color="steelblue")
-    ax.set_xlabel("Iteration")
-    ax.set_ylabel("Cumulative HF fraction")
-    ax.set_title(title)
-    ax.set_ylim(-0.02, 1.02)
-    plt.tight_layout()
-    return fig, ax
-
-
-def plot_subchain_history(subchain_hist, title="Subchain length history"):
-    fig, ax = plt.subplots(figsize=(7, 3))
-    ax.plot(subchain_hist, color="steelblue")
-    ax.set_xlabel("Coarse iteration")
-    ax.set_ylabel("Subchain length")
-    ax.set_title(title)
-    plt.tight_layout()
-    return fig, ax
-
-
-def plot_prediction_at_theta(
-    surrogate, theta, x_obs, y_obs, y_true=None, title=""
-):
-    y_hat, y_var = surrogate.predict(theta)
-    y_std = np.sqrt(np.maximum(y_var, 0.0))
-
-    fig, ax = plt.subplots(figsize=(7, 4))
-    ax.plot(x_obs, y_hat, "s--", label="Surrogate mean")
-    ax.fill_between(
-        x_obs, y_hat - 1.96 * y_std, y_hat + 1.96 * y_std,
-        alpha=0.3, label="95 % CI",
-    )
-    ax.plot(x_obs, y_obs, "o", label="Observed (noisy)")
-    if y_true is not None:
-        ax.plot(x_obs, y_true, "k-", label="True (HF)")
-    ax.set_xlabel("x")
-    ax.set_ylabel("Displacement")
-    ax.set_title(title)
-    ax.legend()
-    ax.grid(True)
-    plt.tight_layout()
-    return fig, ax
 
 
 # =====================================================================
 #  Configuration
 # =====================================================================
 
-rng = np.random.default_rng(42)
+rng = set_seed(2)
 
 # Spatial grid and observation locations
 x = make_spatial_grid(n_pts=31, length=1.0)
 obs_idx = np.array([2, 5, 8, 11, 14, 17, 20, 23, 26, 29])
 x_obs = x[obs_idx]
 
+# Custom distributed load
+loads = np.array([
+    13.944211, 14.107554, 14.168484, 14.127543, 14.080133, 14.031762, 14.037079,
+    13.940349, 13.887439, 13.994669, 14.138576, 14.341531, 14.501729, 14.681951,
+    14.879436, 15.143519, 15.300596, 15.375463, 15.359368, 15.278929, 15.114428,
+    14.966691, 14.792335, 14.662425, 14.541461, 14.426502, 14.309434, 14.195700,
+    14.127510, 13.982456, 13.863596,
+])
+
 # HF forward model: theta -> y_obs (observed displacements only)
 hf_forward = make_forward_model(
-    x=x, obs_idx=obs_idx, load_scale=-1.0, return_full_state=False,
+    x=x, obs_idx=obs_idx, load=-loads, return_full_state=False,
 )
 
 # Prior over theta = [m1, m2, m3]  (log-stiffness on three sub-intervals)
@@ -529,37 +96,36 @@ prior_mean = np.array([10.0, 10.0, 10.0])
 prior_cov = np.diag([2.0**2, 2.0**2, 2.0**2])
 prior = multivariate_normal(mean=prior_mean, cov=prior_cov)
 
-# Observation noise — auto-scaled from a reference forward evaluation
+# Observation noise -- auto-scaled from a reference forward evaluation
 y_ref = hf_forward(prior_mean)
 signal_scale = float(np.max(np.abs(y_ref)))
 sigma_obs = 0.02 * signal_scale          # 2 % relative noise
 
-# Surrogate configuration  (small budget for a quick run)
-n_init = 50
+# Surrogate configuration
+n_init = 200
 gp_kernel = "matern52"
 gp_ard = True
 
-# Active coupling: trigger HF when avg LF std ≈ observation noise
-gamma_threshold = sigma_obs
+# Active coupling: trigger HF when avg LF std exceeds 10x observation noise
+gamma_threshold = 100.0 * sigma_obs
 
 # MCMC budget
-n_coarse_evals = 1000
-burn_in = 100
-chunk_size = 250
+n_coarse_evals = 20000
+n_coarse_evals_da = 5000
+burn_in = 2000
+chunk_size = 500
 
-print(f"signal_scale   = {signal_scale:.3e}")
-print(f"sigma_obs      = {sigma_obs:.3e}")
-print(f"gamma_threshold= {gamma_threshold:.3e}")
+print(f"signal_scale    = {signal_scale:.3e}")
+print(f"sigma_obs       = {sigma_obs:.3e}")
+print(f"gamma_threshold = {gamma_threshold:.3e}")
 
 
 # %% [markdown]
 # ## Synthetic observation
-#
-# Sample a true parameter from the prior, evaluate HF, corrupt with noise.
 
 # %%
 theta_true = prior.rvs(random_state=rng)
-y_obs = make_observation(rng, theta_true, x, sigma_obs, obs_idx)
+y_obs = make_observation(rng, theta_true, x, sigma_obs, obs_idx, load=-loads)
 
 print(f"theta_true = {theta_true}")
 print(f"y_obs      = {y_obs}")
@@ -567,8 +133,6 @@ print(f"y_obs      = {y_obs}")
 
 # %% [markdown]
 # ## Initial surrogate training set
-#
-# Sample parameters from the prior, evaluate HF, build initial design.
 
 # %%
 theta_train = np.asarray(
@@ -579,9 +143,6 @@ y_train = np.asarray([hf_forward(th) for th in theta_train], dtype=float)
 
 # %% [markdown]
 # ## Fit a direct GP surrogate on observed outputs
-#
-# Since the observation space is only 10 points, we skip POD and use a
-# ``MultiOutputGP`` mapping ``theta → y_obs`` directly.
 
 # %%
 gp = MultiOutputGP(
@@ -589,35 +150,76 @@ gp = MultiOutputGP(
     Y_train=y_train,
     kernel=gp_kernel,
     ard=gp_ard,
+    noise_variance=1e-10,
+    update_every=200,
+    n_retrain_max=0,
 )
 
-# Two independent copies — one per inference mode
+# Two independent copies -- one per inference mode
 lf_surrogate_single = DirectGPSurrogate(gp=copy.deepcopy(gp))
 lf_surrogate_adapt = DirectGPSurrogate(gp=copy.deepcopy(gp))
 
 
 # %% [markdown]
-# ## Build active models (LF + HF coupling)
+# ## Wrap LF + HF in an ActiveMCMCModel
 
 # %%
-model_single = ActiveModel(
+model_single = ActiveMCMCModel(
     lf_model=lf_surrogate_single,
     hf_model=hf_forward,
     gamma_threshold=gamma_threshold,
 )
 
-model_adapt = ActiveModel(
+adaptive_policy = AdaptiveSubchain(
+    state=AdaptiveSubchainState(subchain_length=50),
+    control=AdaptiveSubchainControl(
+        update_every=5,
+        target_error=sigma_obs,
+        min_subchain=10,
+        max_subchain=50,
+    ),
+)
+
+model_adapt = ActiveMCMCModel(
     lf_model=lf_surrogate_adapt,
     hf_model=hf_forward,
     gamma_threshold=gamma_threshold,
+    adaptive=adaptive_policy,
 )
 
 
 # %% [markdown]
-# ## Observation covariance
+# ## Likelihood and posterior objects
 
 # %%
-cov_obs = (sigma_obs**2) * np.eye(len(y_obs))
+cov = (sigma_obs**2) * np.eye(len(y_obs))
+
+loglike_coarse = ActiveGPLogLike(data=y_obs, covariance=cov)
+loglike_fine = tda.AdaptiveGaussianLogLike(data=y_obs, covariance=cov)
+
+# Single-level posterior
+posterior_single = tda.Posterior(prior, loglike_coarse, model_single.coarse)
+
+# Two-level posterior (DA-MCMC)
+posterior_adapt = [
+    tda.Posterior(prior, loglike_coarse, model_adapt.coarse),
+    tda.Posterior(prior, loglike_fine, model_adapt.fine),
+]
+
+
+# %% [markdown]
+# ## Proposal
+
+# %%
+theta0 = prior_mean.copy()
+
+proposal = AdaptiveMetropolisShared(
+    C0=0.001 * prior_cov,
+    period=100,
+    share_across_deepcopy=True,
+    adaptive=True,
+    sd=1,
+)
 
 
 # %% [markdown]
@@ -625,158 +227,204 @@ cov_obs = (sigma_obs**2) * np.eye(len(y_obs))
 
 # %%
 plot_prediction_at_theta(
-    lf_surrogate_single,
-    theta_true,
-    x_obs=x_obs,
+    model=lf_surrogate_single,
+    theta=theta_true,
+    t=x_obs,
     y_obs=y_obs,
     y_true=hf_forward(theta_true),
     title="Surrogate prediction (before sampling)",
+    show=True,
 )
-plt.show()
 
 
 # %% [markdown]
-# # Part 1 — MCMC-guided active learning (single posterior)
-#
-# The chain is driven by the coarse model.  HF calls occur *internally*
-# when the uncertainty trigger fires inside ``model.coarse``.
+# # Part 1 -- MCMC-guided active learning (single posterior)
 
 # %%
-print("=" * 60)
-print("Part 1: MCMC-guided active learning (single posterior)")
-print("=" * 60)
-
-theta0 = prior_mean.copy()
-
-proposal_single = AdaptiveProposal(
-    C0=0.1 * prior_cov,
-    period=100,
-    sd=1.0,
-)
-
-result_single = sample_active_mcmc(
+result_single = sample_active_chain(
     model=model_single,
-    y_obs=y_obs,
-    cov_obs=cov_obs,
-    prior=prior,
-    theta0=theta0,
-    n_iter=n_coarse_evals,
-    proposal=proposal_single,
-    rng=rng,
+    posterior=posterior_single,
+    proposal=proposal,
+    subsampling_rate=1,
+    iterations=n_coarse_evals,
+    initial_parameters=theta0,
+    chain_key="chain_0",
 )
 
-print_summary(
-    result_single["samples"],
-    result_single["used_hf"],
-    result_single["accepted"],
-    theta_true=theta_true,
-    burn_in=burn_in,
-)
+chain_single = result_single.chain
+chain_single.summary(theta_true=theta_true, burn_in=burn_in)
 
 # %%
-plot_chain_2d(
-    result_single["samples"],
-    result_single["used_hf"],
-    theta_true=theta_true,
-    labels=("m1", "m2"),
-    title="Single posterior — samples (m1 vs m2)",
-)
-plt.show()
+samples_single = chain_single.samples
+used_hf_single = chain_single.extras.used_hf
 
-plot_cumulative_hf_fraction(
-    result_single["used_hf"],
-    title="Single posterior — cumulative HF fraction",
+fig1, ax1 = plot_chain_2d(
+    samples_single[:, :2],
+    used_hf=used_hf_single,
+    theta_true=theta_true[:2],
+    title="Single posterior: samples (m1 vs m2)",
+    show=True,
 )
-plt.show()
+fig1.savefig("plot_single_chain2d.png", dpi=150, bbox_inches="tight")
+
+fig2, ax2 = plot_cumulative_hf_fraction(
+    used_hf_single,
+    title="Single posterior: cumulative HF fraction",
+    show=True,
+)
+fig2.savefig("plot_single_hf_fraction.png", dpi=150, bbox_inches="tight")
 
 
 # %% [markdown]
-# # Part 2 — DA-MCMC guided active learning with adaptive subchain
-#
-# The coarse sub-chain runs for an adaptive number of steps, then a fine
-# (HF) correction updates the surrogate.  The DA ratio decides acceptance
-# at the fine level.  The subchain length adapts based on LF-HF RMSE.
+# # Part 2 -- DA-MCMC guided active learning with adaptive subchain
 
 # %%
-print("\n" + "=" * 60)
-print("Part 2: DA-MCMC with adaptive subchain")
-print("=" * 60)
-
 theta0 = prior_mean.copy()
 
-proposal_adapt = AdaptiveProposal(
-    C0=0.1 * prior_cov,
+proposal = AdaptiveMetropolisShared(
+    C0=0.001 * prior_cov,
     period=100,
-    sd=1.0,
+    share_across_deepcopy=True,
+    adaptive=True,
+    sd=1,
 )
 
-adaptive_policy = AdaptiveSubchainPolicy(
-    subchain_length=20,
-    update_every=5,
-    target_error=0.05 * signal_scale,   # scaled to the problem's magnitude
-    min_subchain=1,
-    max_subchain=500,
-    grow_factor=2.0,
-    shrink_factor=0.5,
-)
-
-result_adapt = sample_da_active_mcmc(
+result_adapt = sample_adaptive_active_chain(
     model=model_adapt,
-    y_obs=y_obs,
-    cov_obs=cov_obs,
-    prior=prior,
-    theta0=theta0,
-    n_coarse_evals=n_coarse_evals,
-    proposal=proposal_adapt,
-    policy=adaptive_policy,
-    rng=rng,
+    posterior=posterior_adapt,
+    proposal=proposal,
+    n_coarse_evals=n_coarse_evals_da,
+    initial_parameters=theta0,
+    chain_key="chain_coarse_0",
+    config=ChunkedMCMCConfig(chain_key="chain_coarse_0", chunk_size=chunk_size),
+    store_coarse_chain=True,
 )
 
-print_summary(
-    result_adapt["samples"],
-    result_adapt["used_hf"],
-    result_adapt["accepted"],
-    theta_true=theta_true,
-    burn_in=burn_in,
-)
+chain_adapt = result_adapt.chain
+chain_adapt.summary(theta_true=theta_true, burn_in=burn_in)
+
 
 # %%
-plot_chain_2d(
-    result_adapt["samples"],
-    result_adapt["used_hf"],
-    theta_true=theta_true,
-    labels=("m1", "m2"),
-    title="DA-MCMC — samples (m1 vs m2)",
-)
-plt.show()
+samples_adapt = chain_adapt.samples
+used_hf_adapt = chain_adapt.extras.used_hf
 
-plot_cumulative_hf_fraction(
-    result_adapt["used_hf"],
-    title="DA-MCMC — cumulative HF fraction",
+fig3, ax3 = plot_chain_2d(
+    samples_adapt[:, :2],
+    used_hf=used_hf_adapt,
+    theta_true=theta_true[:2],
+    title="Adaptive DA-MCMC: samples (m1 vs m2)",
+    show=True,
 )
-plt.show()
+fig3.savefig("plot_adapt_chain2d.png", dpi=150, bbox_inches="tight")
 
-if len(result_adapt["subchain_history"]) > 0:
-    plot_subchain_history(
-        result_adapt["subchain_history"],
-        title="DA-MCMC — subchain length history",
+fig4, ax4 = plot_cumulative_hf_fraction(
+    used_hf_adapt,
+    title="Adaptive DA-MCMC: cumulative HF fraction",
+    show=True,
+)
+fig4.savefig("plot_adapt_hf_fraction.png", dpi=150, bbox_inches="tight")
+
+if chain_adapt.extras.subchain_length is not None:
+    fig5, ax5 = plot_subchain_length_history(
+        chain_adapt.extras.subchain_length, show=True,
     )
-    plt.show()
+    fig5.savefig("plot_adapt_subchain.png", dpi=150, bbox_inches="tight")
 
 
 # %% [markdown]
 # ## Post-sampling: surrogate prediction at theta_true
-#
-# After sampling, the surrogate has been enriched with HF evaluations
-# triggered during the chain.  Compare the improved prediction.
 
 # %%
 plot_prediction_at_theta(
-    lf_surrogate_adapt,
-    theta_true,
-    x_obs=x_obs,
+    model=lf_surrogate_adapt,
+    theta=theta_true,
+    t=x_obs,
     y_obs=y_obs,
     y_true=hf_forward(theta_true),
     title="Surrogate prediction (after DA-MCMC sampling)",
+    show=True,
 )
+
+
+# %% [markdown]
+# ## Corner plot of the posterior
+
+# %%
+from scipy.stats import gaussian_kde
+
+
+def corner_plot(
+    samples: np.ndarray,
+    labels: list[str],
+    theta_true: np.ndarray | None = None,
+    burn_in: int = 0,
+    title: str = "",
+) -> tuple:
+    """Pair plot with marginal KDEs on the diagonal and scatter on off-diagonal."""
+    post = samples[burn_in:]
+    d = post.shape[1]
+
+    fig, axes = plt.subplots(d, d, figsize=(3 * d, 3 * d))
+
+    for i in range(d):
+        for j in range(d):
+            ax = axes[i, j]
+
+            if j > i:
+                ax.axis("off")
+                continue
+
+            if i == j:
+                # Marginal KDE on the diagonal
+                vals = post[:, i]
+                kde = gaussian_kde(vals)
+                xs = np.linspace(vals.min(), vals.max(), 300)
+                ax.plot(xs, kde(xs), color="steelblue")
+                ax.fill_between(xs, kde(xs), alpha=0.2, color="steelblue")
+                if theta_true is not None:
+                    ax.axvline(theta_true[i], color="crimson", ls="--", lw=1.2)
+            else:
+                # 2D scatter on the off-diagonal
+                ax.scatter(post[:, j], post[:, i], s=1, alpha=0.3, color="steelblue")
+                if theta_true is not None:
+                    ax.scatter(
+                        theta_true[j], theta_true[i],
+                        s=60, marker="*", color="crimson", edgecolors="black", zorder=5,
+                    )
+
+            if i == d - 1:
+                ax.set_xlabel(labels[j])
+            else:
+                ax.set_xticklabels([])
+            if j == 0 and i != 0:
+                ax.set_ylabel(labels[i])
+            elif j != 0:
+                ax.set_yticklabels([])
+
+    if title:
+        fig.suptitle(title, fontsize=14, y=1.01)
+    fig.tight_layout()
+    return fig, axes
+
+
+# Corner plot for DA-MCMC posterior
+fig_c1, _ = corner_plot(
+    samples_adapt,
+    labels=[r"$m_0$", r"$m_1$", r"$m_2$"],
+    theta_true=theta_true,
+    burn_in=burn_in,
+    title="DA-MCMC posterior",
+)
+fig_c1.savefig("plot_corner_da_mcmc.png", dpi=150, bbox_inches="tight")
+plt.show()
+
+# Corner plot for single-posterior MCMC (optional comparison)
+fig_c2, _ = corner_plot(
+    samples_single,
+    labels=[r"$m_0$", r"$m_1$", r"$m_2$"],
+    theta_true=theta_true,
+    burn_in=burn_in,
+    title="Single posterior MCMC",
+)
+fig_c2.savefig("plot_corner_single.png", dpi=150, bbox_inches="tight")
 plt.show()
