@@ -102,22 +102,26 @@ signal_scale = float(np.max(np.abs(y_ref)))
 sigma_obs = 0.02 * signal_scale          # 2 % relative noise
 
 # Surrogate configuration
-n_init = 200
+n_init = 50
 gp_kernel = "matern52"
 gp_ard = True
 
-# Active coupling: trigger HF when avg LF std exceeds 10x observation noise
-gamma_threshold = 100.0 * sigma_obs
+# Active coupling thresholds
+# Single posterior: keep high so coarse always uses LF (consistent likelihood)
+# DA-MCMC: lower so surrogate gets corrected more often via fine level
+gamma_threshold_single = 3.0 * sigma_obs
+gamma_threshold_da = 20.0 * sigma_obs
 
 # MCMC budget
-n_coarse_evals = 20000
+n_coarse_evals = 5000
 n_coarse_evals_da = 5000
 burn_in = 2000
-chunk_size = 500
+chunk_size = 1000
 
-print(f"signal_scale    = {signal_scale:.3e}")
-print(f"sigma_obs       = {sigma_obs:.3e}")
-print(f"gamma_threshold = {gamma_threshold:.3e}")
+print(f"signal_scale             = {signal_scale:.3e}")
+print(f"sigma_obs                = {sigma_obs:.3e}")
+print(f"gamma_threshold (single) = {gamma_threshold_single:.3e}")
+print(f"gamma_threshold (DA)     = {gamma_threshold_da:.3e}")
 
 
 # %% [markdown]
@@ -167,23 +171,25 @@ lf_surrogate_adapt = DirectGPSurrogate(gp=copy.deepcopy(gp))
 model_single = ActiveMCMCModel(
     lf_model=lf_surrogate_single,
     hf_model=hf_forward,
-    gamma_threshold=gamma_threshold,
+    gamma_threshold=gamma_threshold_single,
 )
 
 adaptive_policy = AdaptiveSubchain(
-    state=AdaptiveSubchainState(subchain_length=50),
+    state=AdaptiveSubchainState(subchain_length=25),
     control=AdaptiveSubchainControl(
-        update_every=5,
-        target_error=sigma_obs,
+        update_every=10,
+        target_error=0.05,
         min_subchain=10,
-        max_subchain=50,
+        max_subchain=500,
+        grow_factor=2,
+        shrink_factor=0.5,
     ),
 )
 
 model_adapt = ActiveMCMCModel(
     lf_model=lf_surrogate_adapt,
     hf_model=hf_forward,
-    gamma_threshold=gamma_threshold,
+    gamma_threshold=gamma_threshold_da,
     adaptive=adaptive_policy,
 )
 
