@@ -1,9 +1,14 @@
 # %% [markdown]
-# # Backward beam: Bayesian inversion with Active-MCMC
+# # Backward tritium: Bayesian inversion with Active-MCMC
 #
-# Same workflow as ``run_backward_toy.py``, applied to the cantilever beam inverse
-# problem.  Uses the library's inference machinery (``ActiveMCMCModel``,
-# ``ActiveGPLogLike``, ``AdaptiveSubchain``, samplers, diagnostics).
+# Same workflow as ``run_backward_toy.py``, applied to the Achlys tritium diffusion
+# benchmark.  The HF model runs via UM-Bridge (Docker container).
+#
+# **Before running**, start the Docker server:
+#
+# ```bash
+# docker run -it -p 4243:4243 linusseelinger/benchmark-achlys:latest
+# ```
 #
 # Two inference modes:
 #
@@ -17,10 +22,18 @@ import copy
 
 import numpy as np
 import tinyDA as tda
-from scipy.stats import multivariate_normal
-
-from beam import make_spatial_grid, make_forward_model, make_observation
 import matplotlib.pyplot as plt
+from scipy.stats import gaussian_kde, uniform
+
+from tritium import (
+    make_forward_model,
+    make_observation,
+    make_time_grid,
+    sample_prior,
+    PARAM_NAMES,
+    PRIOR_BOUNDS,
+    N_OUTPUT,
+)
 from gp_active_mcmc.diagnostics import (
     plot_chain_2d,
     plot_cumulative_hf_fraction,
@@ -38,85 +51,108 @@ from gp_active_mcmc.inference import (
     sample_active_chain,
     sample_adaptive_active_chain,
 )
-from gp_active_mcmc.surrogates import MultiOutputGP
+from gp_active_mcmc.surrogates import POD, MultiOutputGP, PODGPSurrogate
 from gp_active_mcmc.utils.rng import set_seed
-
-
-# =====================================================================
-#  Direct GP surrogate (no POD -- observation space is low-dimensional)
-# =====================================================================
-
-class DirectGPSurrogate:
-    """GP surrogate mapping theta -> observed beam displacements directly.
-
-    Satisfies the ActiveSurrogate protocol (predict / update).
-    """
-
-    def __init__(self, gp: MultiOutputGP):
-        self.gp = gp
-
-    def predict(self, theta: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
-        theta = np.asarray(theta, dtype=float).reshape(1, -1)
-        y_mean, y_var = self.gp.predict(theta)
-        return y_mean[0], np.maximum(y_var[0], 0.0)
-
-    def update(self, theta: np.ndarray, y_hf: np.ndarray) -> None:
-        theta_1d = np.asarray(theta, dtype=float).ravel()
-        y_1d = np.asarray(y_hf, dtype=float).ravel()
-        self.gp.update(theta_1d, y_1d)
 
 
 # =====================================================================
 #  Configuration
 # =====================================================================
 
+import os
+import time
+
 rng = set_seed(2)
 
-# Spatial grid and observation locations
-x = make_spatial_grid(n_pts=31, length=1.0)
-obs_idx = np.array([2, 5, 8, 11, 14, 17, 20, 23, 26, 29])
-x_obs = x[obs_idx]
+# Time grid (for plotting)
+t = make_time_grid(n_pts=N_OUTPUT)
 
-# Custom distributed load
-loads = np.array([
-    13.944211, 14.107554, 14.168484, 14.127543, 14.080133, 14.031762, 14.037079,
-    13.940349, 13.887439, 13.994669, 14.138576, 14.341531, 14.501729, 14.681951,
-    14.879436, 15.143519, 15.300596, 15.375463, 15.359368, 15.278929, 15.114428,
-    14.966691, 14.792335, 14.662425, 14.541461, 14.426502, 14.309434, 14.195700,
-    14.127510, 13.982456, 13.863596,
-])
+# HF forward model via UM-Bridge
+hf_forward = make_forward_model(url="http://localhost:4243", model_name="forward")
 
-# HF forward model: theta -> y_obs (observed displacements only)
-hf_forward = make_forward_model(
-    x=x, obs_idx=obs_idx, load=-loads, return_full_state=False,
-)
+# Timed wrapper to track HF cost
+_hf_count = 0
+_hf_time = 0.0
 
-# Prior over theta = [m1, m2, m3]  (log-stiffness on three sub-intervals)
-prior_mean = np.array([10.0, 10.0, 10.0])
-prior_cov = np.diag([2.0**2, 2.0**2, 2.0**2])
-prior = multivariate_normal(mean=prior_mean, cov=prior_cov)
+def hf_forward_timed(theta):
+    global _hf_count, _hf_time
+    t0 = time.perf_counter()
+    y = hf_forward(theta)
+    dt = time.perf_counter() - t0
+    _hf_count += 1
+    _hf_time += dt
+    if _hf_count % 10 == 0:
+        print(f"  [HF] {_hf_count} calls, total {_hf_time:.1f}s, last {dt:.1f}s")
+    return y
 
-# Observation noise -- auto-scaled from a reference forward evaluation
-y_ref = hf_forward(prior_mean)
+# ---- Prior ----
+# tinyDA expects a scipy-style prior with .rvs() and .logpdf().
+# We build an independent uniform prior from the benchmark bounds.
+lo = PRIOR_BOUNDS[:, 0]
+hi = PRIOR_BOUNDS[:, 1]
+
+
+class UniformBoxPrior:
+    """Independent uniform prior matching tinyDA's interface."""
+
+    def __init__(self, lo: np.ndarray, hi: np.ndarray):
+        self.lo = np.asarray(lo, dtype=float)
+        self.hi = np.asarray(hi, dtype=float)
+        self.d = len(lo)
+        self._marginals = [
+            uniform(loc=lo[i], scale=hi[i] - lo[i]) for i in range(self.d)
+        ]
+
+    def rvs(self, size: int = 1, random_state=None) -> np.ndarray:
+        gen = np.random.default_rng(random_state) if not isinstance(
+            random_state, np.random.Generator
+        ) else random_state
+        samples = gen.uniform(self.lo, self.hi, size=(size, self.d))
+        return samples[0] if size == 1 else samples
+
+    def logpdf(self, x: np.ndarray) -> float:
+        x = np.asarray(x, dtype=float).ravel()
+        if np.any(x < self.lo) or np.any(x > self.hi):
+            return -np.inf
+        return float(-np.sum(np.log(self.hi - self.lo)))
+
+
+prior = UniformBoxPrior(lo, hi)
+
+# ---- Observation noise ----
+# Use cached reference eval to avoid an extra HF call
+REF_CACHE = os.path.join(os.path.dirname(__file__) or ".", "ref_eval.npz")
+theta_centre = 0.5 * (lo + hi)
+if os.path.exists(REF_CACHE):
+    _ref = np.load(REF_CACHE)
+    y_ref = _ref["y_ref"]
+    print("Loaded cached reference evaluation")
+else:
+    y_ref = hf_forward(theta_centre)
+    np.savez(REF_CACHE, y_ref=y_ref, theta_centre=theta_centre)
+    print("Computed and cached reference evaluation")
 signal_scale = float(np.max(np.abs(y_ref)))
-sigma_obs = 0.04 * signal_scale       # 2 % relative noise
+sigma_obs = 0.02 * signal_scale          # 2% relative noise
 
-# Surrogate configuration
-n_init = 10
+# ---- Surrogate configuration ----
+n_init = 200
+pod_rank = 20
 gp_kernel = "matern52"
 gp_ard = True
+noise_variance_gp = 1e-6
 
-# Active coupling thresholds
-# Single posterior: keep high so coarse always uses LF (consistent likelihood)
-# DA-MCMC: lower so surrogate gets corrected more often via fine level
-gamma_threshold_single = 0.1 * sigma_obs
-gamma_threshold_da = 0.1 * sigma_obs
+# ---- Active coupling thresholds ----
+# With a slow HF model, keep thresholds high to minimize HF calls.
+# The surrogato does most of the work; HF fires only when really needed.
+gamma_threshold_single = 200.0 * sigma_obs
+gamma_threshold_da = 100.0 * sigma_obs
 
-# MCMC budget
-n_coarse_evals = 5000
-n_coarse_evals_da = 5000
-burn_in = 2000
-chunk_size = 1000
+# ---- MCMC budget ----
+# Reduced budgets for a slow HF model
+n_coarse_evals = 5_000
+n_coarse_evals_da = 3_000
+burn_in = 500
+chunk_size = 500
 
 print(f"signal_scale             = {signal_scale:.3e}")
 print(f"sigma_obs                = {sigma_obs:.3e}")
@@ -128,41 +164,64 @@ print(f"gamma_threshold (DA)     = {gamma_threshold_da:.3e}")
 # ## Synthetic observation
 
 # %%
-theta_true = np.array([9.3, 9.3, 9.2])
-# theta_true = prior.rvs(random_state=rng)
-y_obs = make_observation(rng, theta_true, x, sigma_obs, obs_idx, load=-loads)
+OBS_CACHE = os.path.join(os.path.dirname(__file__) or ".", "observation.npz")
+if os.path.exists(OBS_CACHE):
+    _obs = np.load(OBS_CACHE)
+    theta_true, y_obs = _obs["theta_true"], _obs["y_obs"]
+    print("Loaded cached observation")
+else:
+    theta_true = sample_prior(rng, n=1)
+    y_obs = make_observation(rng, theta_true, hf_forward, sigma_obs)
+    np.savez(OBS_CACHE, theta_true=theta_true, y_obs=y_obs)
+    print("Computed and cached observation")
 
 print(f"theta_true = {theta_true}")
-print(f"y_obs      = {y_obs}")
+print(f"y_obs shape = {y_obs.shape}")
 
 
 # %% [markdown]
 # ## Initial surrogate training set
 
 # %%
-theta_train = np.asarray(
-    [prior.rvs(random_state=rng) for _ in range(n_init)], dtype=float,
-)
-y_train = np.asarray([hf_forward(th) for th in theta_train], dtype=float)
+TRAIN_CACHE = os.path.join(os.path.dirname(__file__) or ".", "train_data.npz")
+if os.path.exists(TRAIN_CACHE):
+    _tr = np.load(TRAIN_CACHE)
+    theta_train, y_train = _tr["theta_train"], _tr["y_train"]
+    print(f"Loaded cached training data ({theta_train.shape[0]} samples)")
+else:
+    theta_train = sample_prior(rng, n=n_init)
+    y_train_list = []
+    for i, th in enumerate(theta_train):
+        t0 = time.perf_counter()
+        print(f"  Training snapshot {i+1}/{n_init} ...", end=" ", flush=True)
+        y = hf_forward(th)
+        y_train_list.append(y)
+        print(f"done in {time.perf_counter()-t0:.1f}s")
+    y_train = np.asarray(y_train_list, dtype=float)
+    np.savez(TRAIN_CACHE, theta_train=theta_train, y_train=y_train)
+    print(f"Saved training data to {TRAIN_CACHE}")
 
 
 # %% [markdown]
-# ## Fit a direct GP surrogate on observed outputs
+# ## Fit a POD-GP surrogate
 
 # %%
+pod = POD(rank=pod_rank).fit(y_train)
+coeffs = pod.transform(y_train)[:, :pod_rank]
+
 gp = MultiOutputGP(
     X_train=theta_train,
-    Y_train=y_train,
+    Y_train=coeffs,
     kernel=gp_kernel,
     ard=gp_ard,
-    noise_variance=1e-6,
-    update_every=50,
-    n_retrain_max=2,
+    noise_variance=noise_variance_gp,
+    update_every=200,
+    n_retrain_max=0,
 )
 
 # Two independent copies -- one per inference mode
-lf_surrogate_single = DirectGPSurrogate(gp=copy.deepcopy(gp))
-lf_surrogate_adapt = DirectGPSurrogate(gp=copy.deepcopy(gp))
+lf_surrogate_single = PODGPSurrogate(pod=copy.deepcopy(pod), gp=copy.deepcopy(gp))
+lf_surrogate_adapt = PODGPSurrogate(pod=copy.deepcopy(pod), gp=copy.deepcopy(gp))
 
 
 # %% [markdown]
@@ -171,7 +230,7 @@ lf_surrogate_adapt = DirectGPSurrogate(gp=copy.deepcopy(gp))
 # %%
 model_single = ActiveMCMCModel(
     lf_model=lf_surrogate_single,
-    hf_model=hf_forward,
+    hf_model=hf_forward_timed,
     gamma_threshold=gamma_threshold_single,
 )
 
@@ -179,17 +238,17 @@ adaptive_policy = AdaptiveSubchain(
     state=AdaptiveSubchainState(subchain_length=25),
     control=AdaptiveSubchainControl(
         update_every=10,
-        target_error=0.05,
-        min_subchain=10,
-        max_subchain=500,
-        grow_factor=2,
-        shrink_factor=0.5,
+        target_error=sigma_obs,
+        min_subchain=5,
+        max_subchain=100,
+        grow_factor=1.5,
+        shrink_factor=0.7,
     ),
 )
 
 model_adapt = ActiveMCMCModel(
     lf_model=lf_surrogate_adapt,
-    hf_model=hf_forward,
+    hf_model=hf_forward_timed,
     gamma_threshold=gamma_threshold_da,
     adaptive=adaptive_policy,
 )
@@ -218,10 +277,14 @@ posterior_adapt = [
 # ## Proposal
 
 # %%
-theta0 = prior_mean.copy()
+theta0 = theta_centre.copy()
+
+# Scale initial covariance from prior range
+prior_range = hi - lo
+C0 = 0.001 * np.diag(prior_range**2)
 
 proposal = AdaptiveMetropolisShared(
-    C0=0.001 * prior_cov,
+    C0=C0,
     period=100,
     share_across_deepcopy=True,
     adaptive=True,
@@ -236,7 +299,7 @@ proposal = AdaptiveMetropolisShared(
 plot_prediction_at_theta(
     model=lf_surrogate_single,
     theta=theta_true,
-    t=x_obs,
+    t=t,
     y_obs=y_obs,
     y_true=hf_forward(theta_true),
     title="Surrogate prediction (before sampling)",
@@ -245,7 +308,7 @@ plot_prediction_at_theta(
 
 
 # %% [markdown]
-# # Part 1 -- MCMC-guided active learning (single posterior)
+# # Part 1 — MCMC-guided active learning (single posterior)
 
 # %%
 result_single = sample_active_chain(
@@ -269,27 +332,27 @@ fig1, ax1 = plot_chain_2d(
     samples_single[:, :2],
     used_hf=used_hf_single,
     theta_true=theta_true[:2],
-    title="Single posterior: samples (m1 vs m2)",
+    title="Single posterior: samples (E1 vs E2)",
     show=True,
 )
-fig1.savefig("plot_single_chain2d.png", dpi=150, bbox_inches="tight")
+fig1.savefig("plot_tritium_single_chain2d.png", dpi=150, bbox_inches="tight")
 
 fig2, ax2 = plot_cumulative_hf_fraction(
     used_hf_single,
     title="Single posterior: cumulative HF fraction",
     show=True,
 )
-fig2.savefig("plot_single_hf_fraction.png", dpi=150, bbox_inches="tight")
+fig2.savefig("plot_tritium_single_hf_fraction.png", dpi=150, bbox_inches="tight")
 
 
 # %% [markdown]
-# # Part 2 -- DA-MCMC guided active learning with adaptive subchain
+# # Part 2 — DA-MCMC guided active learning with adaptive subchain
 
 # %%
-theta0 = prior_mean.copy()
+theta0 = theta_centre.copy()
 
 proposal = AdaptiveMetropolisShared(
-    C0=0.001 * prior_cov,
+    C0=C0,
     period=100,
     share_across_deepcopy=True,
     adaptive=True,
@@ -319,23 +382,23 @@ fig3, ax3 = plot_chain_2d(
     samples_adapt[:, :2],
     used_hf=used_hf_adapt,
     theta_true=theta_true[:2],
-    title="Adaptive DA-MCMC: samples (m1 vs m2)",
+    title="Adaptive DA-MCMC: samples (E1 vs E2)",
     show=True,
 )
-fig3.savefig("plot_adapt_chain2d.png", dpi=150, bbox_inches="tight")
+fig3.savefig("plot_tritium_adapt_chain2d.png", dpi=150, bbox_inches="tight")
 
 fig4, ax4 = plot_cumulative_hf_fraction(
     used_hf_adapt,
     title="Adaptive DA-MCMC: cumulative HF fraction",
     show=True,
 )
-fig4.savefig("plot_adapt_hf_fraction.png", dpi=150, bbox_inches="tight")
+fig4.savefig("plot_tritium_adapt_hf_fraction.png", dpi=150, bbox_inches="tight")
 
 if chain_adapt.extras.subchain_length is not None:
     fig5, ax5 = plot_subchain_length_history(
         chain_adapt.extras.subchain_length, show=True,
     )
-    fig5.savefig("plot_adapt_subchain.png", dpi=150, bbox_inches="tight")
+    fig5.savefig("plot_tritium_adapt_subchain.png", dpi=150, bbox_inches="tight")
 
 
 # %% [markdown]
@@ -345,7 +408,7 @@ if chain_adapt.extras.subchain_length is not None:
 plot_prediction_at_theta(
     model=lf_surrogate_adapt,
     theta=theta_true,
-    t=x_obs,
+    t=t,
     y_obs=y_obs,
     y_true=hf_forward(theta_true),
     title="Surrogate prediction (after DA-MCMC sampling)",
@@ -357,9 +420,6 @@ plot_prediction_at_theta(
 # ## Corner plot of the posterior
 
 # %%
-from scipy.stats import gaussian_kde
-
-
 def corner_plot(
     samples: np.ndarray,
     labels: list[str],
@@ -382,7 +442,6 @@ def corner_plot(
                 continue
 
             if i == j:
-                # Marginal KDE on the diagonal
                 vals = post[:, i]
                 kde = gaussian_kde(vals)
                 xs = np.linspace(vals.min(), vals.max(), 300)
@@ -391,7 +450,6 @@ def corner_plot(
                 if theta_true is not None:
                     ax.axvline(theta_true[i], color="crimson", ls="--", lw=1.2)
             else:
-                # 2D scatter on the off-diagonal
                 ax.scatter(post[:, j], post[:, i], s=1, alpha=0.3, color="steelblue")
                 if theta_true is not None:
                     ax.scatter(
@@ -414,24 +472,25 @@ def corner_plot(
     return fig, axes
 
 
-# Corner plot for DA-MCMC posterior
+# %%
+labels = [r"$E_1$", r"$E_2$", r"$E_3$", r"$n_1$", r"$n_2$"]
+
 fig_c1, _ = corner_plot(
     samples_adapt,
-    labels=[r"$m_0$", r"$m_1$", r"$m_2$"],
+    labels=labels,
     theta_true=theta_true,
     burn_in=burn_in,
-    title="DA-MCMC posterior",
+    title="DA-MCMC posterior (Tritium)",
 )
-fig_c1.savefig("plot_corner_da_mcmc.png", dpi=150, bbox_inches="tight")
+fig_c1.savefig("plot_tritium_corner_da_mcmc.png", dpi=150, bbox_inches="tight")
 plt.show()
 
-# Corner plot for single-posterior MCMC (optional comparison)
 fig_c2, _ = corner_plot(
     samples_single,
-    labels=[r"$m_0$", r"$m_1$", r"$m_2$"],
+    labels=labels,
     theta_true=theta_true,
     burn_in=burn_in,
-    title="Single posterior MCMC",
+    title="Single posterior MCMC (Tritium)",
 )
-fig_c2.savefig("plot_corner_single.png", dpi=150, bbox_inches="tight")
+fig_c2.savefig("plot_tritium_corner_single.png", dpi=150, bbox_inches="tight")
 plt.show()
