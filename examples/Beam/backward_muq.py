@@ -1,10 +1,7 @@
 # %% [markdown]
-# # Backward beam: Bayesian inversion using the MUQ-compatible model
+# # Backward beam: Bayesian inversion with active learning
 #
-# Uses the beam physics from ``model/BeamModel.py`` (including moment of inertia
-# and the correct FD stencil) and observations from ``model/ProblemDefinition.h5``.
-#
-# The forward model is reimplemented in pure NumPy so MUQ is **not** required.
+# Uses the modular forward model from ``prova.py`` (pure NumPy, no MUQ/h5).
 #
 # Inference parameters: theta = [m1, m2, m3] (piecewise-constant log-stiffness
 # on three equal sub-intervals).  Two inference modes:
@@ -16,9 +13,7 @@
 from __future__ import annotations
 
 import copy
-from pathlib import Path
 
-import h5py
 import numpy as np
 import tinyDA as tda
 from scipy.stats import multivariate_normal, gaussian_kde
@@ -44,96 +39,17 @@ from gp_active_mcmc.inference import (
 from gp_active_mcmc.surrogates import MultiOutputGP
 from gp_active_mcmc.utils.rng import set_seed
 
-
-# =====================================================================
-#  Forward model (pure NumPy, matches model/BeamModel.py)
-# =====================================================================
-
-def _build_stiffness_matrix(modulus: np.ndarray, dx: float) -> np.ndarray:
-    """Build the beam stiffness matrix using the same FD stencil as BeamModel.py.
-
-    This discretises  (E·u'')''  with cantilever BCs:
-        u(0) = 0,  u'(0) = 0   (fixed left end)
-        u''(L) = 0, u'''(L) = 0 (free right end)
-    """
-    n = len(modulus)
-    E = modulus
-    K = np.zeros((n, n))
-
-    # Interior rows  (i = 2 … n-3)
-    for i in range(2, n - 2):
-        K[i, i + 2] = E[i]
-        K[i, i + 1] = E[i + 1] - 6.0 * E[i] + E[i - 1]
-        K[i, i]     = -2.0 * E[i + 1] + 10.0 * E[i] - 2.0 * E[i - 1]
-        K[i, i - 1] = E[i + 1] - 6.0 * E[i] + E[i - 1]
-        K[i, i - 2] = E[i]
-
-    # Row i = 1  (u'(0) = 0 absorbed)
-    K[1, 3] = E[1]
-    K[1, 2] = E[2] - 6.0 * E[1] + E[0]
-    K[1, 1] = -2.0 * E[2] + 11.0 * E[1] - 2.0 * E[0]
-
-    # Row i = n-2
-    K[n - 2, n - 1] = E[n - 1] - 4.0 * E[n - 2] + E[n - 3]
-    K[n - 2, n - 2] = -2.0 * E[n - 1] + 9.0 * E[n - 2] - 2.0 * E[n - 3]
-    K[n - 2, n - 3] = E[n - 1] - 6.0 * E[n - 2] + E[n - 3]
-    K[n - 2, n - 4] = E[n - 2]
-
-    # Row i = n-1  (free-end BCs)
-    K[n - 1, n - 1] =  2.0 * E[n - 1]
-    K[n - 1, n - 2] = -4.0 * E[n - 1]
-    K[n - 1, n - 3] =  2.0 * E[n - 1]
-
-    # Dirichlet BC:  u(0) = 0
-    K[0, :] = 0.0
-    K[:, 0] = 0.0
-    K[0, 0] = 1.0
-
-    return K / dx**4
-
-
-def beam_forward_muq(
-    theta: np.ndarray,
-    x: np.ndarray,
-    loads: np.ndarray,
-    radius: float,
-) -> np.ndarray:
-    """Beam forward model matching model/BeamModel.py.
-
-    Parameters
-    ----------
-    theta : (3,) log-stiffness on 3 equal sub-intervals
-    x     : (n_pts,) spatial grid
-    loads : (n_pts,) distributed load
-    radius: beam radius (for moment of inertia I = π/4 · r⁴)
-
-    Returns
-    -------
-    u : (n_pts,) displacement
-    """
-    n = len(x)
-    length = float(x[-1] - x[0])
-    dx = length / (n - 1)
-    I = np.pi / 4.0 * radius**4
-
-    # Piecewise-constant log-stiffness → nodal modulus
-    # Build A matrix matching benchmark (boundary nodes in both intervals)
-    n_intervals = 3
-    endPts = np.linspace(0, length, n_intervals + 1)
-    A_pw = np.zeros((n, n_intervals))
-    for i in range(n_intervals):
-        A_pw[(x >= endPts[i]) & (x <= endPts[i + 1]), i] = 1.0
-    E = A_pw @ np.exp(theta)
-
-    K = _build_stiffness_matrix(E, dx)
-    rhs = loads / I
-    rhs[0] = 0.0  # Dirichlet BC
-
-    return np.linalg.solve(K, rhs)
+from prova import (
+    make_spatial_grid,
+    build_modulus_from_theta,
+    make_forward_model,
+    make_observation,
+    beam_forward,
+)
 
 
 # =====================================================================
-#  Direct GP surrogate (same as backward.py)
+#  Direct GP surrogate
 # =====================================================================
 
 class DirectGPSurrogate:
@@ -155,58 +71,43 @@ class DirectGPSurrogate:
 
 
 # =====================================================================
-#  Load data from model/ProblemDefinition.h5
-# =====================================================================
-
-h5_path = Path(__file__).with_name("model") / "ProblemDefinition.h5"
-with h5py.File(h5_path, "r") as f:
-    x = np.array(f["/ForwardModel/NodeLocations"]).ravel()
-    loads = np.array(f["/ForwardModel/Loads"])
-    modulus_true = np.array(f["/ForwardModel/Modulus"])
-    u_true_full = np.array(f["/ForwardModel/TrueDisplacement"])
-    beam_length = float(f["/ForwardModel"].attrs["BeamLength"])
-    beam_radius = float(f["/ForwardModel"].attrs["BeamRadius"])
-
-    B_obs = np.array(f["/Observations/ObservationMatrix"])
-    y_obs_clean = np.array(f["/Observations/ObservationData"])
-
-n_pts = len(x)
-obs_idx = np.sort(np.where(B_obs == 1.0)[1])  # sorted observation indices
-n_obs = len(obs_idx)
-x_obs = x[obs_idx]
-
-# Rebuild B in sorted order for consistency
-B = np.zeros((n_obs, n_pts))
-for j, i in enumerate(obs_idx):
-    B[j, i] = 1.0
-
-
-# =====================================================================
 #  Configuration
 # =====================================================================
 
 rng = set_seed(2)
 
-# HF forward model: theta -> y_obs (observed displacements)
-def hf_forward(theta: np.ndarray) -> np.ndarray:
-    u = beam_forward_muq(theta, x, loads, beam_radius)
-    return B @ u
+# Spatial grid and observation locations
+x = make_spatial_grid(n_pts=31, length=1.0)
+obs_idx = np.array([2, 5, 8, 11, 14, 17, 20, 23, 26, 29])
+n_obs = len(obs_idx)
+x_obs = x[obs_idx]
+
+# Custom distributed load
+loads = np.array([
+    13.944211, 14.107554, 14.168484, 14.127543, 14.080133, 14.031762, 14.037079,
+    13.940349, 13.887439, 13.994669, 14.138576, 14.341531, 14.501729, 14.681951,
+    14.879436, 15.143519, 15.300596, 15.375463, 15.359368, 15.278929, 15.114428,
+    14.966691, 14.792335, 14.662425, 14.541461, 14.426502, 14.309434, 14.195700,
+    14.127510, 13.982456, 13.863596,
+])
+
+# Radius chosen so that I = pi/4 * r^4 = 1  (matches beam.py convention)
+_radius = (4.0 / np.pi) ** 0.25
+
+# HF forward model: theta -> y_obs (observed displacements only)
+hf_forward = make_forward_model(
+    x=x, obs_idx=obs_idx, load=-loads, radius=_radius, return_full_state=False,
+)
 
 # Prior over theta = [m1, m2, m3]
-# UM-Bridge benchmark: m_i ~ N(10, 4)  i.e. mean=10, cov=4*I (sigma=2)
 prior_mean = np.array([10.0, 10.0, 10.0])
-prior_cov = 4.0 * np.eye(3)  # variance = 4, sigma = 2
+prior_cov = np.diag([2.0**2, 2.0**2, 2.0**2])
 prior = multivariate_normal(mean=prior_mean, cov=prior_cov)
 
-# Observation noise: benchmark uses noiseVar = 1e-4 (sigma = 0.01)
-sigma_obs = 0.01
+# Observation noise -- auto-scaled from a reference forward evaluation
 y_ref = hf_forward(prior_mean)
 signal_scale = float(np.max(np.abs(y_ref)))
-
-# Observations: extract from true displacement using the *sorted* observation matrix B
-# (y_obs_clean from HDF5 uses the original unsorted row order of B_obs, which does not
-# match our sorted obs_idx / B.  Recomputing avoids the permutation mismatch.)
-y_obs = B @ u_true_full
+sigma_obs = 0.04 * signal_scale       # 4 % relative noise
 
 # Surrogate configuration
 n_init = 200
@@ -218,10 +119,14 @@ gamma_threshold_single = 0.1 * sigma_obs
 gamma_threshold_da = 0.1 * sigma_obs
 
 # MCMC budget
-n_coarse_evals = 2000
-n_coarse_evals_da = 2000
-burn_in = 500
-chunk_size = 500
+n_coarse_evals = 5000
+n_coarse_evals_da = 5000
+burn_in = 2000
+chunk_size = 1000
+
+# Synthetic observation
+theta_true = np.array([9.3, 9.3, 9.2])
+y_obs = make_observation(rng, theta_true, x, sigma_obs, obs_idx, load=-loads, radius=_radius)
 
 print(f"n_obs                    = {n_obs}")
 print(f"obs_idx                  = {obs_idx}")
@@ -229,16 +134,7 @@ print(f"signal_scale             = {signal_scale:.3e}")
 print(f"sigma_obs                = {sigma_obs:.3e}")
 print(f"gamma_threshold (single) = {gamma_threshold_single:.3e}")
 print(f"gamma_threshold (DA)     = {gamma_threshold_da:.3e}")
-
-# "True" piecewise-constant approximation of log(modulus_true)
-# (average log-modulus per sub-interval, for reference only)
-xi = x / beam_length
-theta_ref = np.array([
-    np.mean(np.log(modulus_true)[(xi >= 0.0) & (xi <= 1.0 / 3.0)]),
-    np.mean(np.log(modulus_true)[(xi > 1.0 / 3.0) & (xi <= 2.0 / 3.0)]),
-    np.mean(np.log(modulus_true)[(xi > 2.0 / 3.0) & (xi <= 1.0)]),
-])
-print(f"\ntheta_ref (mean log-modulus per interval) = {theta_ref}")
+print(f"theta_true               = {theta_true}")
 print(f"y_obs range = [{y_obs.min():.4f}, {y_obs.max():.4f}]")
 
 
@@ -246,13 +142,8 @@ print(f"y_obs range = [{y_obs.min():.4f}, {y_obs.max():.4f}]")
 # ## Initial surrogate training set
 
 # %%
-# Sample initial training points from a TIGHTER distribution than the prior.
-# With prior N(10,4) (sigma=2), exp(theta) spans 5 orders of magnitude, which
-# makes the GP ill-conditioned.  A tighter training range keeps outputs in a
-# manageable range; the active-learning loop will add points outside as needed.
-train_dist = multivariate_normal(mean=prior_mean, cov=0.5 * np.eye(3))  # sigma≈0.7
 theta_train = np.asarray(
-    [train_dist.rvs(random_state=rng) for _ in range(n_init)], dtype=float,
+    [prior.rvs(random_state=rng) for _ in range(n_init)], dtype=float,
 )
 y_train = np.asarray([hf_forward(th) for th in theta_train], dtype=float)
 
@@ -342,17 +233,39 @@ proposal = AdaptiveMetropolisShared(
 
 # %%
 # Plot the full beam displacement (HF model) and the observations
-u_full_ref = beam_forward_muq(theta_ref, x, loads, beam_radius)
+hf_full = make_forward_model(
+    x=x, load=-loads, radius=_radius, return_full_state=True,
+)
+u_true = hf_full(theta_true)
+u_prior = hf_full(prior_mean)
 
-fig_beam, ax_beam = plt.subplots(figsize=(9, 4))
-ax_beam.plot(x, u_full_ref, "b-", lw=2, label="HF displacement (piecewise $\\theta_{ref}$)")
-ax_beam.plot(x, u_true_full, "g--", lw=1.5, label="HF displacement (true modulus)")
-ax_beam.plot(x_obs, y_obs, "ro", ms=5, label="Noisy observations")
-ax_beam.set_xlabel("x")
-ax_beam.set_ylabel("Displacement u(x)")
-ax_beam.set_title("Beam deformation: HF model vs observations")
-ax_beam.legend()
-ax_beam.grid(True, alpha=0.3)
+fig_beam, axes_beam = plt.subplots(3, 1, figsize=(10, 9), sharex=True)
+
+axes_beam[0].plot(x, u_true, "k-", lw=2, label=r"$u(\theta_{\rm true})$")
+axes_beam[0].plot(x, u_prior, "b--", lw=1.5, label=r"$u(\theta_{\rm prior})$")
+axes_beam[0].scatter(x_obs, y_obs, color="crimson", marker="o", s=40,
+                     zorder=5, label="noisy obs")
+axes_beam[0].set_ylabel("Displacement  $u(x)$")
+axes_beam[0].legend(fontsize=9)
+axes_beam[0].set_title("Beam displacement", fontsize=13)
+axes_beam[0].grid(True, ls=":", alpha=0.5)
+
+axes_beam[1].plot(x, loads, "g-", lw=2, label="load $q(x)$")
+axes_beam[1].set_ylabel("Load")
+axes_beam[1].legend(fontsize=9)
+axes_beam[1].set_title("Distributed load along beam", fontsize=13)
+axes_beam[1].grid(True, ls=":", alpha=0.5)
+
+E_true = build_modulus_from_theta(theta_true, x)
+E_prior = build_modulus_from_theta(prior_mean, x)
+axes_beam[2].plot(x, E_true, "k-", lw=2, label=r"$E(\theta_{\rm true})$")
+axes_beam[2].plot(x, E_prior, "b--", lw=1.5, label=r"$E(\theta_{\rm prior})$")
+axes_beam[2].set_ylabel("Modulus  $E(x)$")
+axes_beam[2].set_xlabel("$x$")
+axes_beam[2].legend(fontsize=9)
+axes_beam[2].set_title("Stiffness field (piecewise-constant)", fontsize=13)
+axes_beam[2].grid(True, ls=":", alpha=0.5)
+
 fig_beam.tight_layout()
 fig_beam.savefig("plot_muq_beam_deformation.png", dpi=150, bbox_inches="tight")
 plt.show()
@@ -363,11 +276,11 @@ plt.show()
 # %%
 plot_prediction_at_theta(
     model=lf_surrogate_single,
-    theta=theta_ref,
+    theta=theta_true,
     t=x_obs,
     y_obs=y_obs,
-    y_true=hf_forward(theta_ref),
-    title="Surrogate prediction at theta_ref (before sampling)",
+    y_true=hf_forward(theta_true),
+    title="Surrogate prediction at theta_true (before sampling)",
     show=True,
 )
 
@@ -387,7 +300,7 @@ result_single = sample_active_chain(
 )
 
 chain_single = result_single.chain
-chain_single.summary(theta_true=theta_ref, burn_in=burn_in)
+chain_single.summary(theta_true=theta_true, burn_in=burn_in)
 
 # %%
 samples_single = chain_single.samples
@@ -396,8 +309,8 @@ used_hf_single = chain_single.extras.used_hf
 fig1, ax1 = plot_chain_2d(
     samples_single[:, :2],
     used_hf=used_hf_single,
-    theta_true=theta_ref[:2],
-    title="Single posterior: samples (m1 vs m2)",
+    theta_true=theta_true[:2],
+    title="Single posterior: samples (m0 vs m1)",
     show=True,
 )
 fig1.savefig("plot_muq_single_chain2d.png", dpi=150, bbox_inches="tight")
@@ -436,7 +349,7 @@ result_adapt = sample_adaptive_active_chain(
 )
 
 chain_adapt = result_adapt.chain
-chain_adapt.summary(theta_true=theta_ref, burn_in=burn_in)
+chain_adapt.summary(theta_true=theta_true, burn_in=burn_in)
 
 # %%
 samples_adapt = chain_adapt.samples
@@ -445,8 +358,8 @@ used_hf_adapt = chain_adapt.extras.used_hf
 fig3, ax3 = plot_chain_2d(
     samples_adapt[:, :2],
     used_hf=used_hf_adapt,
-    theta_true=theta_ref[:2],
-    title="Adaptive DA-MCMC: samples (m1 vs m2)",
+    theta_true=theta_true[:2],
+    title="Adaptive DA-MCMC: samples (m0 vs m1)",
     show=True,
 )
 fig3.savefig("plot_muq_adapt_chain2d.png", dpi=150, bbox_inches="tight")
@@ -466,16 +379,16 @@ if chain_adapt.extras.subchain_length is not None:
 
 
 # %% [markdown]
-# ## Post-sampling: surrogate prediction at theta_ref
+# ## Post-sampling: surrogate prediction at theta_true
 
 # %%
 plot_prediction_at_theta(
     model=lf_surrogate_adapt,
-    theta=theta_ref,
+    theta=theta_true,
     t=x_obs,
     y_obs=y_obs,
-    y_true=hf_forward(theta_ref),
-    title="Surrogate prediction at theta_ref (after DA-MCMC)",
+    y_true=hf_forward(theta_true),
+    title="Surrogate prediction at theta_true (after DA-MCMC)",
     show=True,
 )
 
@@ -541,9 +454,9 @@ labels = [r"$m_0$", r"$m_1$", r"$m_2$"]
 fig_c1, _ = corner_plot(
     samples_adapt,
     labels=labels,
-    theta_true=theta_ref,
+    theta_true=theta_true,
     burn_in=burn_in,
-    title="DA-MCMC posterior (MUQ-compatible model)",
+    title="DA-MCMC posterior",
 )
 fig_c1.savefig("plot_muq_corner_da_mcmc.png", dpi=150, bbox_inches="tight")
 plt.show()
@@ -551,9 +464,9 @@ plt.show()
 fig_c2, _ = corner_plot(
     samples_single,
     labels=labels,
-    theta_true=theta_ref,
+    theta_true=theta_true,
     burn_in=burn_in,
-    title="Single posterior MCMC (MUQ-compatible model)",
+    title="Single posterior MCMC",
 )
 fig_c2.savefig("plot_muq_corner_single.png", dpi=150, bbox_inches="tight")
 plt.show()
