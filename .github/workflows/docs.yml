@@ -32,7 +32,7 @@ jobs:
       - name: Build mkdocs
         run: mkdocs build --strict
 
-      - uses: actions/upload-pages-artifact@v4
+      - uses: actions/upload-pages-artifact@v5
         with:
           path: site
 
@@ -44,4 +44,4 @@ jobs:
     needs: build
     steps:
       - id: deployment
-        uses: actions/deploy-pages@v4
+        uses: actions/deploy-pages@v5
