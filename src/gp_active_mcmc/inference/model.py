@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import copy
 from dataclasses import dataclass, field
 from typing import Protocol
 
@@ -222,13 +223,23 @@ class ActiveMCMCModel:
         High-fidelity forward model callable as `hf_model(theta) -> y` where `y` has shape `(n_obs,)`.
     gamma_threshold
         Uncertainty threshold used by [`coarse`][gp_active_mcmc.inference.model.ActiveMCMCModel.coarse].
-        A coarse call triggers HF if `mean(y_var) > gamma_threshold**2`.
+        A coarse call triggers HF if `mean(y_var) > gamma_threshold**2`. Ignored when `frozen=True`.
     log
         Evaluation log used to record HF usage aligned with coarse evaluations.
         See [`EvaluationLog`][gp_active_mcmc.inference.model.EvaluationLog].
     adaptive
         Optional adaptive hook (e.g., adaptive subchain logic). When provided, the hook is notified
         during coarse and fine evaluations. See [`AdaptiveHook`][gp_active_mcmc.inference.model.AdaptiveHook].
+        Should be `None` when `frozen=True`: a frozen model is no longer adapting anything, so
+        there is nothing for the hook to observe.
+    frozen
+        If True, the model no longer learns from HF evaluations: `coarse` always returns the
+        surrogate prediction (the `gamma_threshold` fallback is disabled) and neither `coarse`
+        nor `fine` call `lf_model.update(...)`. This turns the pair `(coarse, fine)` into a
+        genuine fixed-kernel delayed-acceptance model — `fine` still evaluates the HF model for
+        the DA correction step, it just stops teaching the surrogate. Use
+        [`freeze`][gp_active_mcmc.inference.model.ActiveMCMCModel.freeze] to obtain a frozen
+        copy of an adapted model rather than setting this by hand.
 
     Returns and types
     -----------------
@@ -255,10 +266,36 @@ class ActiveMCMCModel:
     gamma_threshold: float
     log: EvaluationLog = field(default_factory=EvaluationLog)
     adaptive: AdaptiveHook | None = None
+    frozen: bool = False
 
     def __post_init__(self) -> None:
         if self.gamma_threshold < 0.0:
             raise ValueError("gamma_threshold must be non-negative.")
+
+    def freeze(self) -> ActiveMCMCModel:
+        """Return a frozen copy of this model, snapshotting the current surrogate state.
+
+        The returned model shares the same `hf_model` and `gamma_threshold`, but:
+
+        - `lf_model` is a deep copy of the current surrogate, so further training of `self`
+          (e.g. if sampling continues) does not affect the frozen copy;
+        - `frozen=True`, so neither `coarse` nor `fine` update the surrogate, and `coarse`
+          never falls back to HF;
+        - `adaptive=None` and `log` is a fresh `EvaluationLog`, since a frozen model has
+          nothing left to adapt and its HF usage should be tracked independently of the
+          adaptive phase that produced it.
+
+        This is the mechanism used to transition from the adaptive online stage to the
+        fixed-kernel production stage: run adaptively until convergence, call `freeze()`,
+        then sample with the frozen model and a fixed subsampling rate using
+        [`sample_active_chain`][gp_active_mcmc.inference.sampling.sample_active_chain].
+        """
+        return ActiveMCMCModel(
+            lf_model=copy.deepcopy(self.lf_model),
+            hf_model=self.hf_model,
+            gamma_threshold=self.gamma_threshold,
+            frozen=True,
+        )
 
     def coarse(self, theta: ArrayLike) -> FloatArray | CoarseOutput:
         """Evaluate the coupled model in LF-first (coarse) mode.
@@ -266,7 +303,8 @@ class ActiveMCMCModel:
         Workflow
         --------
         1. Compute LF predictive mean and variance at `theta`.
-        2. If LF uncertainty is large (`mean(var) > gamma_threshold**2`), evaluate HF.
+        2. If `frozen`, always return the surrogate prediction (steps 3-4 below are skipped).
+           Otherwise, if LF uncertainty is large (`mean(var) > gamma_threshold**2`), evaluate HF.
         3. If HF was used, update the LF surrogate with `(theta, y_hf)`.
         4. Record HF usage in `log.used_hf`.
 
@@ -307,6 +345,10 @@ class ActiveMCMCModel:
                 f"Surrogate returned mean/var with different shapes: {mean.shape} vs {var.shape}."
             )
 
+        if self.frozen:
+            self.log.append(False)
+            return CoarseOutput(mean, var)
+
         avg_var = float(np.mean(var))
         if avg_var > self.gamma_threshold**2:
             y_hf = _as_1d_float(self.hf_model(th), name="y_hf")
@@ -320,9 +362,12 @@ class ActiveMCMCModel:
     def fine(self, theta: ArrayLike, *, replace_last: bool = True) -> FloatArray:
         """Evaluate the coupled model in HF (fine) mode and update the surrogate.
 
-        This method always evaluates the HF model and then updates the LF surrogate.
-        It is typically used as the *fine* level in DA-MCMC, either periodically or
-        according to an adaptive subchain policy.
+        This method always evaluates the HF model, then updates the LF surrogate unless
+        `frozen=True`. It is typically used as the *fine* level in DA-MCMC, either
+        periodically or according to an adaptive subchain policy. When `frozen=True`, this
+        becomes the HF correction step of a standard (non-learning) delayed-acceptance
+        chain: the surrogate no longer changes, but HF is still evaluated for the
+        acceptance ratio.
 
         Parameters
         ----------
@@ -353,7 +398,8 @@ class ActiveMCMCModel:
             lf_mean = _as_1d_float(lf_mean, name="lf_mean_before_update")
             self.adaptive.on_fine_call(y_hf=y_hf, y_lf=lf_mean)
 
-        self.lf_model.update(th, y_hf)
+        if not self.frozen:
+            self.lf_model.update(th, y_hf)
 
         if replace_last:
             self.log.replace_last(True)

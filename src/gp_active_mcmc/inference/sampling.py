@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import copy
+from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Any
 
@@ -12,6 +13,7 @@ from gp_active_mcmc.inference.chain import MCMCChain, SamplingResult
 from gp_active_mcmc.utils.mcmc import extract_samples
 
 FloatArray = NDArray[np.float64]
+IntArray = NDArray[np.int_]
 
 
 @dataclass(frozen=True, slots=True)
@@ -242,6 +244,7 @@ def sample_adaptive_active_chain(
     n_chains: int = 1,
     force_sequential: bool = True,
     store_coarse_chain: bool = True,
+    stop_check: Callable[[], bool] | None = None,
 ) -> SamplingResult:
     """Run adaptive DA-MCMC guided active learning using chunked sampling.
 
@@ -293,6 +296,13 @@ def sample_adaptive_active_chain(
         If True, force sequential execution.
     store_coarse_chain
         If True, store the coarse chain.
+    stop_check
+        Optional zero-argument callable checked after every chunk. If it returns True, the
+        loop stops early even though `n_coarse_evals` has not been reached, and
+        `metadata["stopped_early"]` is set to True. Intended to carry a bound method such as
+        `model.adaptive.has_converged`, so that the adaptive phase can be terminated as soon
+        as the surrogate has converged rather than running for a fixed budget. See
+        [`AdaptiveSubchain.has_converged`][gp_active_mcmc.inference.adaptive_subchain.AdaptiveSubchain.has_converged].
 
     Returns
     -------
@@ -301,7 +311,9 @@ def sample_adaptive_active_chain(
 
         - concatenated samples across chunks,
         - aligned HF usage flags,
-        - optional subchain-length history (if available).
+        - optional subchain-length history (if available),
+        - `metadata["coarse_evals_used"]`: the actual number of coarse evaluations consumed
+          (equal to `n_coarse_evals` unless `stop_check` triggered early termination).
 
     Raises
     ------
@@ -372,6 +384,9 @@ def sample_adaptive_active_chain(
         theta_current = theta_block[-1]
         coarse_done += int(iterations) * int(subsampling_rate)
 
+        if stop_check is not None and stop_check():
+            break
+
     samples = np.vstack(blocks) if blocks else np.zeros((0, 0), dtype=float)
     used_hf = (
         np.concatenate(used_hf_blocks)
@@ -386,8 +401,228 @@ def sample_adaptive_active_chain(
         metadata={
             "chain_key": chain_key,
             "n_coarse_evals": int(n_coarse_evals),
+            "coarse_evals_used": int(coarse_done),
+            "stopped_early": bool(coarse_done < n_coarse_evals),
             "chunk_size": int(config.chunk_size),
             "n_chains": 1,
             "store_coarse_chain": bool(store_coarse_chain),
         },
     )
+
+
+def sample_adaptive_then_frozen_chain(
+    *,
+    model: Any,
+    posterior_factory: Callable[[Any], tda.Posterior | list[tda.Posterior]],
+    proposal: tda.Proposal,
+    n_coarse_evals: int,
+    initial_parameters: ArrayLike,
+    chain_key: str,
+    config: ChunkedMCMCConfig,
+    max_adapt_coarse_evals: int | None = None,
+    n_chains: int = 1,
+    force_sequential: bool = True,
+    store_coarse_chain: bool = True,
+) -> SamplingResult:
+    """Run the full adapt -> freeze -> production workflow (paper Algorithm 3).
+
+    This is the entrypoint that gives the "fixed-kernel online stage" guarantee its
+    meaning: it runs [`sample_adaptive_active_chain`][gp_active_mcmc.inference.sampling.sample_adaptive_active_chain]
+    until the surrogate has converged (or a budget is exhausted), then calls
+    [`ActiveMCMCModel.freeze`][gp_active_mcmc.inference.model.ActiveMCMCModel.freeze] and
+    spends the remaining budget with [`sample_active_chain`][gp_active_mcmc.inference.sampling.sample_active_chain]
+    using a fixed subsampling rate and a surrogate that no longer learns. Only samples
+    from the frozen production phase carry the DA-MCMC stationarity guarantee; the
+    adaptive-phase samples are informative for diagnostics but should generally be
+    discarded (like burn-in) for posterior inference.
+
+    Convergence
+    -----------
+    The adaptive phase stops as soon as `model.adaptive.has_converged()` returns True
+    (see [`AdaptiveSubchain.has_converged`][gp_active_mcmc.inference.adaptive_subchain.AdaptiveSubchain.has_converged],
+    controlled by `AdaptiveSubchainControl.patience` and `target_error`), or once
+    `max_adapt_coarse_evals` coarse evaluations have been spent, whichever comes first.
+    If `max_adapt_coarse_evals` is None, the entire `n_coarse_evals` budget is available
+    to the adaptive phase, and the production phase may end up empty (see
+    `metadata["phase"] == "adapt_only"`).
+
+    Parameters
+    ----------
+    model
+        Active model with an adaptive policy (`model.adaptive` must be an
+        [`AdaptiveSubchain`][gp_active_mcmc.inference.adaptive_subchain.AdaptiveSubchain]
+        or otherwise expose `has_converged()`). Passed by reference to the adaptive phase
+        and mutated in place (its surrogate is trained online); the production phase runs
+        on a separate frozen copy obtained via `model.freeze()`.
+    posterior_factory
+        Callable that builds the `[coarse, fine]` posterior list (or a single posterior)
+        for a given active model. Called once with `model` for the adaptive phase and once
+        with the frozen copy for the production phase, so that both phases use posteriors
+        bound to the correct `coarse`/`fine` callables. Typical usage:
+
+        ```python
+        def posterior_factory(m):
+            return [
+                tda.Posterior(prior, loglike_coarse, m.coarse),
+                tda.Posterior(prior, loglike_fine, m.fine),
+            ]
+        ```
+    proposal
+        Proposal passed to both phases. Use an
+        [`AdaptiveMetropolisShared`][gp_active_mcmc.inference.proposal.AdaptiveMetropolisShared]
+        with `share_across_deepcopy=True` if proposal adaptation should carry over from the
+        adaptive phase into production.
+    n_coarse_evals
+        Total budget in coarse evaluation units, shared between the adaptive and
+        production phases.
+    initial_parameters
+        Initial parameter vector for the adaptive phase. The production phase is
+        initialized from the last adaptive-phase sample.
+    chain_key
+        Chain key used to locate samples inside the object returned by `tinyDA`. Used for
+        both phases.
+    config
+        Chunking configuration for the adaptive phase.
+    max_adapt_coarse_evals
+        Optional hard cap on the adaptive phase's budget (the paper's `N_adapt`,
+        expressed in coarse evaluation units here). If None, defaults to `n_coarse_evals`.
+    n_chains, force_sequential, store_coarse_chain
+        Passed through to both phases.
+
+    Returns
+    -------
+    result
+        [`SamplingResult`][gp_active_mcmc.inference.chain.SamplingResult] whose chain
+        concatenates the adaptive-phase and production-phase samples (production last),
+        and whose `metadata` records:
+
+        - `converged`: whether `has_converged()` triggered the switch to production,
+        - `n_adapt_samples` / `n_production_samples`: sizes of each phase, so callers can
+          slice `chain.samples[n_adapt_samples:]` to get only the theoretically-justified
+          production samples,
+        - `frozen_subsampling_rate`: the subchain length frozen at the moment of switching,
+        - `adapt_metadata` / `production_metadata`: the metadata dicts of each sub-call.
+
+    Raises
+    ------
+    ValueError
+        If `n_coarse_evals`, `max_adapt_coarse_evals` are non-positive, or if
+        `model.adaptive` does not expose `has_converged()`.
+
+    See Also
+    --------
+    [`ActiveMCMCModel.freeze`][gp_active_mcmc.inference.model.ActiveMCMCModel.freeze]
+        Produces the frozen model used for the production phase.
+    [`AdaptiveSubchain.has_converged`][gp_active_mcmc.inference.adaptive_subchain.AdaptiveSubchain.has_converged]
+        Convergence criterion used to end the adaptive phase.
+    """
+    if n_coarse_evals <= 0:
+        raise ValueError("n_coarse_evals must be positive.")
+
+    adaptive = getattr(model, "adaptive", None)
+    if adaptive is None or not hasattr(adaptive, "has_converged"):
+        raise ValueError(
+            "model.adaptive must expose has_converged() to use "
+            "sample_adaptive_then_frozen_chain (e.g. an AdaptiveSubchain instance)."
+        )
+
+    adapt_budget = int(
+        n_coarse_evals if max_adapt_coarse_evals is None else min(max_adapt_coarse_evals, n_coarse_evals)
+    )
+    if adapt_budget <= 0:
+        raise ValueError("max_adapt_coarse_evals must be positive.")
+
+    adapt_result = sample_adaptive_active_chain(
+        model=model,
+        posterior=posterior_factory(model),
+        proposal=proposal,
+        n_coarse_evals=adapt_budget,
+        initial_parameters=initial_parameters,
+        chain_key=chain_key,
+        config=config,
+        n_chains=n_chains,
+        force_sequential=force_sequential,
+        store_coarse_chain=store_coarse_chain,
+        stop_check=adaptive.has_converged,
+    )
+
+    converged = bool(adaptive.has_converged())
+    coarse_used = int(adapt_result.metadata["coarse_evals_used"])
+    remaining = int(n_coarse_evals) - coarse_used
+
+    frozen_model = model.freeze()
+
+    if remaining <= 0:
+        metadata = {
+            "phase": "adapt_only",
+            "converged": converged,
+            "n_coarse_evals": int(n_coarse_evals),
+            "n_adapt_samples": int(adapt_result.chain.n_steps),
+            "n_production_samples": 0,
+            "adapt_metadata": adapt_result.metadata,
+        }
+        return SamplingResult(chain=adapt_result.chain, metadata=metadata)
+
+    subsampling_rate = int(adaptive.state.subchain_length)
+    iterations = remaining // subsampling_rate
+    if iterations == 0:
+        iterations = 1
+        subsampling_rate = remaining
+
+    theta_last = adapt_result.chain.samples[-1]
+
+    production_result = sample_active_chain(
+        model=frozen_model,
+        posterior=posterior_factory(frozen_model),
+        proposal=proposal,
+        iterations=int(iterations),
+        initial_parameters=theta_last,
+        subsampling_rate=int(subsampling_rate),
+        chain_key=chain_key,
+        n_chains=n_chains,
+        force_sequential=force_sequential,
+        store_coarse_chain=store_coarse_chain,
+    )
+
+    adapt_chain = adapt_result.chain
+    prod_chain = production_result.chain
+
+    samples = np.vstack([adapt_chain.samples, prod_chain.samples])
+
+    adapt_used_hf = (
+        adapt_chain.extras.used_hf
+        if adapt_chain.extras.used_hf is not None
+        else np.zeros(adapt_chain.n_steps, dtype=bool)
+    )
+    prod_used_hf = (
+        prod_chain.extras.used_hf
+        if prod_chain.extras.used_hf is not None
+        else np.zeros(prod_chain.n_steps, dtype=bool)
+    )
+    used_hf = np.concatenate([adapt_used_hf, prod_used_hf])
+
+    if adapt_chain.extras.subchain_length is not None:
+        subchain_length: IntArray | None = np.concatenate(
+            [
+                adapt_chain.extras.subchain_length,
+                np.full(prod_chain.n_steps, subsampling_rate, dtype=int),
+            ]
+        )
+    else:
+        subchain_length = None
+
+    chain = MCMCChain.from_arrays(samples=samples, used_hf=used_hf, subchain_length=subchain_length)
+
+    metadata = {
+        "phase": "adapt_then_production",
+        "chain_key": chain_key,
+        "n_coarse_evals": int(n_coarse_evals),
+        "adapt_coarse_evals_used": coarse_used,
+        "converged": converged,
+        "n_adapt_samples": int(adapt_chain.n_steps),
+        "n_production_samples": int(prod_chain.n_steps),
+        "frozen_subsampling_rate": int(subsampling_rate),
+        "adapt_metadata": adapt_result.metadata,
+        "production_metadata": production_result.metadata,
+    }
+    return SamplingResult(chain=chain, metadata=metadata)

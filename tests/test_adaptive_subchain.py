@@ -81,6 +81,44 @@ def test_update_subchain_grows_when_error_low() -> None:
     assert state._hf_since_update == 0
 
 
+def test_update_subchain_tracks_stable_streak_and_resets_on_miss() -> None:
+    control = AdaptiveSubchainControl(update_every=1, target_error=0.1, patience=3)
+    state = AdaptiveSubchainState(subchain_length=10)
+
+    for err in (0.05, 0.05):  # below target: streak grows
+        state.hf_errors.append(err)
+        state.step()
+        state.update_subchain(control)
+    assert state.stable_streak == 2
+    assert state.n_updates == 2
+    assert not state.has_converged(control)
+
+    state.hf_errors.append(1.0)  # above target: streak resets
+    state.step()
+    state.update_subchain(control)
+    assert state.stable_streak == 0
+    assert state.n_updates == 3
+    assert not state.has_converged(control)
+
+
+def test_has_converged_true_once_patience_reached() -> None:
+    control = AdaptiveSubchainControl(update_every=1, target_error=0.1, patience=3)
+    state = AdaptiveSubchainState(subchain_length=10)
+
+    for _ in range(3):
+        state.hf_errors.append(0.01)  # below target
+        state.step()
+        state.update_subchain(control)
+
+    assert state.stable_streak == 3
+    assert state.has_converged(control)
+
+
+def test_patience_must_be_positive() -> None:
+    with pytest.raises(ValueError, match="patience must be positive"):
+        AdaptiveSubchainControl(patience=0)
+
+
 def test_update_subchain_respects_bounds() -> None:
     control = AdaptiveSubchainControl(
         update_every=1,

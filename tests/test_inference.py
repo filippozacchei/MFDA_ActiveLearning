@@ -229,6 +229,65 @@ def test_fine_appends_flag_when_replace_last_false() -> None:
     assert len(lf.update_calls) == 1
 
 
+def test_adaptive_subchain_has_converged_delegates_to_state() -> None:
+    state = AdaptiveSubchainState(subchain_length=10)
+    control = AdaptiveSubchainControl(update_every=1, target_error=0.1, patience=2)
+    hook = AdaptiveSubchain(state=state, control=control)
+
+    assert hook.has_converged() is False
+
+    for _ in range(2):
+        state.hf_errors.append(0.01)
+        state.step()
+        state.update_subchain(control)
+
+    assert hook.has_converged() is True
+
+
+def test_frozen_coarse_never_escalates_to_hf() -> None:
+    lf = DummySurrogate(var_scale=1.0)  # would normally escalate
+    hf = DummyHF()
+    model = ActiveMCMCModel(lf_model=lf, hf_model=hf, gamma_threshold=0.1, frozen=True)
+
+    out = model.coarse(np.array([1.0, 2.0]))
+    assert isinstance(out, CoarseOutput)
+    assert model.log.used_hf == [False]
+    assert len(lf.update_calls) == 0
+
+
+def test_frozen_fine_evaluates_hf_but_does_not_update_surrogate() -> None:
+    lf = DummySurrogate(var_scale=1e-6)
+    hf = DummyHF()
+    model = ActiveMCMCModel(lf_model=lf, hf_model=hf, gamma_threshold=0.1, frozen=True)
+
+    y = model.fine(np.array([1.0, 2.0]))
+    np.testing.assert_allclose(y, np.array([6.0, 7.0]))  # HF still evaluated
+    assert model.log.used_hf == [True]
+    assert len(lf.update_calls) == 0  # but surrogate untouched
+
+
+def test_freeze_returns_independent_frozen_copy() -> None:
+    lf = DummySurrogate(var_scale=1.0)
+    hf = DummyHF()
+    state = AdaptiveSubchainState(subchain_length=10)
+    control = AdaptiveSubchainControl(update_every=1, target_error=0.01)
+    hook = AdaptiveSubchain(state=state, control=control)
+
+    model = ActiveMCMCModel(lf_model=lf, hf_model=hf, gamma_threshold=0.1, adaptive=hook)
+
+    frozen = model.freeze()
+
+    assert frozen.frozen is True
+    assert frozen.adaptive is None
+    assert frozen.lf_model is not model.lf_model  # deep-copied, not shared
+
+    # Sampling with the frozen copy must not touch the original surrogate or its log.
+    _ = frozen.coarse(np.array([1.0, 2.0]))
+    assert len(lf.update_calls) == 0
+    assert model.log.used_hf == []
+    assert frozen.log.used_hf == [False]
+
+
 def test_adaptive_hook_updates_state_on_coarse_and_fine() -> None:
     lf = DummySurrogate(var_scale=1e-6)
     hf = DummyHF()
