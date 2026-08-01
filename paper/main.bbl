@@ -1,0 +1,128 @@
+\begin{thebibliography}{10}
+\expandafter\ifx\csname url\endcsname\relax
+  \def\url#1{\texttt{#1}}\fi
+\expandafter\ifx\csname urlprefix\endcsname\relax\def\urlprefix{URL }\fi
+\expandafter\ifx\csname href\endcsname\relax
+  \def\href#1#2{#2} \def\path#1{#1}\fi
+
+\bibitem{BK19}
+S.~L. Brunton, J.~N. Kutz, Data-Driven Science and Engineering: Machine Learning, Dynamical Systems, and Control, Cambridge University Press, 2019.
+
+\bibitem{CDRS09}
+S.~L. Cotter, M.~Dashti, J.~C. Robinson, A.~M. Stuart, \href{https://doi.org/10.1088/0266-5611/25/11/115008}{Bayesian inverse problems for functions and applications to fluid mechanics}, Inverse Problems 25~(11) (2009) 115008.
+\newblock \href {https://doi.org/10.1088/0266-5611/25/11/115008} {\path{doi:10.1088/0266-5611/25/11/115008}}.
+\newline\urlprefix\url{https://doi.org/10.1088/0266-5611/25/11/115008}
+
+\bibitem{SLST17}
+T.~Schneider, S.~Lan, A.~Stuart, J.~Teixeira, \href{https://agupubs.onlinelibrary.wiley.com/doi/abs/10.1002/2017GL076101}{Earth system modeling 2.0: A blueprint for models that learn from observations and targeted high-resolution simulations}, Geophysical Research Letters 44~(24) (2017) 12,396--12,417.
+\newblock \href {http://arxiv.org/abs/https://agupubs.onlinelibrary.wiley.com/doi/pdf/10.1002/2017GL076101} {\path{arXiv:https://agupubs.onlinelibrary.wiley.com/doi/pdf/10.1002/2017GL076101}}, \href {https://doi.org/https://doi.org/10.1002/2017GL076101} {\path{doi:https://doi.org/10.1002/2017GL076101}}.
+\newline\urlprefix\url{https://agupubs.onlinelibrary.wiley.com/doi/abs/10.1002/2017GL076101}
+
+\bibitem{GR22}
+A.~Gallet, S.~Rigby, T.~N. Tallman, X.~Kong, I.~Hajirasouliha, A.~Liew, D.~Liu, L.~Chen, A.~Hauptmann, D.~Smyl, \href{https://doi.org/10.1098/rspa.2021.0526}{Structural engineering from an inverse problems perspective}, Proceedings of the Royal Society A: Mathematical, Physical and Engineering Sciences 478~(2257) (2022) 20210526.
+\newblock \href {http://arxiv.org/abs/https://royalsocietypublishing.org/rspa/article-pdf/doi/10.1098/rspa.2021.0526/355952/rspa.2021.0526.pdf} {\path{arXiv:https://royalsocietypublishing.org/rspa/article-pdf/doi/10.1098/rspa.2021.0526/355952/rspa.2021.0526.pdf}}, \href {https://doi.org/10.1098/rspa.2021.0526} {\path{doi:10.1098/rspa.2021.0526}}.
+\newline\urlprefix\url{https://doi.org/10.1098/rspa.2021.0526}
+
+\bibitem{ZRGFM24}
+F.~Zacchei, F.~Rizzini, G.~Gattere, A.~Frangi, A.~Manzoni, \href{https://www.sciencedirect.com/science/article/pii/S0020746224002671}{Neural networks based surrogate modeling for efficient uncertainty quantification and calibration of mems accelerometers}, International Journal of Non-Linear Mechanics 167 (2024) 104902.
+\newblock \href {https://doi.org/https://doi.org/10.1016/j.ijnonlinmec.2024.104902} {\path{doi:https://doi.org/10.1016/j.ijnonlinmec.2024.104902}}.
+\newline\urlprefix\url{https://www.sciencedirect.com/science/article/pii/S0020746224002671}
+
+\bibitem{S15}
+T.~J. Sullivan, Introduction to uncertainty quantification, Vol.~63, Springer, 2015.
+
+\bibitem{S10}
+A.~M. Stuart, Inverse problems: A bayesian perspective, Acta Numerica 19 (2010) 451–559.
+\newblock \href {https://doi.org/10.1017/S0962492910000061} {\path{doi:10.1017/S0962492910000061}}.
+
+\bibitem{T05}
+A.~Tarantola, Inverse problem theory and methods for model parameter estimation, SIAM, 2005.
+
+\bibitem{KS05}
+J.~P. Kaipio, E.~Somersalo, Statistical and computational inverse problems, Springer, 2005.
+
+\bibitem{S24}
+R.~C. Smith, Uncertainty quantification: theory, implementation, and applications, SIAM, 2024.
+
+\bibitem{RC04}
+C.~P. Robert, G.~Casella, G.~Casella, Monte Carlo statistical methods, Vol.~2, Springer, 2004.
+
+\bibitem{SSW20}
+C.~Schillings, B.~Sprungk, P.~Wacker, \href{https://doi.org/10.1007/s00211-020-01131-1}{On the convergence of the laplace approximation and noise-level-robustness of laplace-based monte carlo methods for bayesian inverse problems}, Numerische Mathematik 145~(4) (2020) 915--971.
+\newblock \href {https://doi.org/10.1007/s00211-020-01131-1} {\path{doi:10.1007/s00211-020-01131-1}}.
+\newline\urlprefix\url{https://doi.org/10.1007/s00211-020-01131-1}
+
+\bibitem{HK22}
+T.~Helin, R.~Kretschmann, \href{https://doi.org/10.1007/s00211-021-01266-9}{Non-asymptotic error estimates for the laplace approximation in bayesian inverse problems}, Numerische Mathematik 150~(2) (2022) 521--549.
+\newblock \href {https://doi.org/10.1007/s00211-021-01266-9} {\path{doi:10.1007/s00211-021-01266-9}}.
+\newline\urlprefix\url{https://doi.org/10.1007/s00211-021-01266-9}
+
+\bibitem{PKFGG22}
+J.~Povala, I.~Kazlauskaite, E.~Febrianto, F.~Cirak, M.~Girolami, \href{https://www.sciencedirect.com/science/article/pii/S0045782522000822}{Variational bayesian approximation of inverse problems using sparse precision matrices}, Computer Methods in Applied Mechanics and Engineering 393 (2022) 114712.
+\newblock \href {https://doi.org/https://doi.org/10.1016/j.cma.2022.114712} {\path{doi:https://doi.org/10.1016/j.cma.2022.114712}}.
+\newline\urlprefix\url{https://www.sciencedirect.com/science/article/pii/S0045782522000822}
+
+\bibitem{JZXML21}
+J.~Jia, Q.~Zhao, Z.~Xu, D.~Meng, Y.~Leung, \href{https://doi.org/10.1137/19M130409X}{Variational bayes' method for functions with applications to some inverse problems}, SIAM Journal on Scientific Computing 43~(1) (2021) A355--A383.
+\newblock \href {http://arxiv.org/abs/https://doi.org/10.1137/19M130409X} {\path{arXiv:https://doi.org/10.1137/19M130409X}}, \href {https://doi.org/10.1137/19M130409X} {\path{doi:10.1137/19M130409X}}.
+\newline\urlprefix\url{https://doi.org/10.1137/19M130409X}
+
+\bibitem{BJ15}
+A.~Beskos, A.~Jasra, E.~A. Muzaffer, A.~M. Stuart, \href{https://doi.org/10.1007/s11222-015-9556-7}{Sequential monte carlo methods for bayesian elliptic inverse problems}, Statistics and Computing 25~(4) (2015) 727--737.
+\newblock \href {https://doi.org/10.1007/s11222-015-9556-7} {\path{doi:10.1007/s11222-015-9556-7}}.
+\newline\urlprefix\url{https://doi.org/10.1007/s11222-015-9556-7}
+
+\bibitem{KB14}
+N.~Kantas, A.~Beskos, A.~Jasra, Sequential monte carlo methods for high-dimensional inverse problems: A case study for the navier--stokes equations, SIAM/ASA Journal on Uncertainty Quantification 2~(1) (2014) 464--489.
+\newblock \href {https://doi.org/10.1137/130930364} {\path{doi:10.1137/130930364}}.
+
+\bibitem{WZ11}
+J.~Wan, N.~Zabaras, \href{https://doi.org/10.1088/0266-5611/27/10/105004}{A bayesian approach to multiscale inverse problems using the sequential monte carlo method}, Inverse Problems 27~(10) (2011) 105004.
+\newblock \href {https://doi.org/10.1088/0266-5611/27/10/105004} {\path{doi:10.1088/0266-5611/27/10/105004}}.
+\newline\urlprefix\url{https://doi.org/10.1088/0266-5611/27/10/105004}
+
+\bibitem{ILS13}
+M.~A. Iglesias, K.~J.~H. Law, A.~M. Stuart, Ensemble kalman methods for inverse problems, Inverse Problems 29~(4) (2013) 045001.
+\newblock \href {https://doi.org/10.1088/0266-5611/29/4/045001} {\path{doi:10.1088/0266-5611/29/4/045001}}.
+
+\bibitem{I16}
+M.~A. Iglesias, A regularizing iterative ensemble kalman method for pde-constrained inverse problems, Inverse Problems 32~(2) (2016) 025002.
+\newblock \href {https://doi.org/10.1088/0266-5611/32/2/025002} {\path{doi:10.1088/0266-5611/32/2/025002}}.
+
+\bibitem{CF05}
+J.~A. Christen, C.~Fox, Markov chain monte carlo using an approximation, Journal of Computational and Graphical Statistics 14~(4) (2005) 795--810.
+\newblock \href {https://doi.org/10.1198/106186005X76983} {\path{doi:10.1198/106186005X76983}}.
+
+\bibitem{Banterle2019}
+M.~Banterle, C.~Grazian, A.~Lee, C.~P. Robert, Accelerating metropolis--hastings algorithms by delayed acceptance, Foundations of Data Science 1~(2) (2019) 103--128.
+\newblock \href {https://doi.org/10.3934/fods.2019005} {\path{doi:10.3934/fods.2019005}}.
+
+\bibitem{Peherstorfer2018}
+B.~Peherstorfer, K.~Willcox, M.~Gunzburger, Survey of multifidelity methods in uncertainty propagation, inference, and optimization, SIAM Review 60~(3) (2018) 550--591.
+\newblock \href {https://doi.org/10.1137/16M1082469} {\path{doi:10.1137/16M1082469}}.
+
+\bibitem{LiMarzouk2014}
+J.~Li, Y.~M. Marzouk, Adaptive construction of surrogates for the bayesian solution of inverse problems, SIAM Journal on Scientific Computing 36~(3) (2014) A1163--A1186.
+\newblock \href {https://doi.org/10.1137/130938189} {\path{doi:10.1137/130938189}}.
+
+\bibitem{Conrad2016}
+P.~R. Conrad, Y.~M. Marzouk, N.~S. Pillai, A.~Smith, Accelerating asymptotically exact {MCMC} for computationally intensive models via local approximations, Journal of the American Statistical Association 111~(516) (2016) 1591--1607.
+\newblock \href {https://doi.org/10.1080/01621459.2015.1096787} {\path{doi:10.1080/01621459.2015.1096787}}.
+
+\bibitem{RobertsRosenthal2007}
+G.~O. Roberts, J.~S. Rosenthal, Coupling and ergodicity of adaptive markov chain monte carlo algorithms, Journal of Applied Probability 44~(2) (2007) 458--475.
+\newblock \href {https://doi.org/10.1239/jap/1183667414} {\path{doi:10.1239/jap/1183667414}}.
+
+\bibitem{AndrieuThoms2008}
+C.~Andrieu, J.~Thoms, A tutorial on adaptive {MCMC}, Statistics and Computing 18~(4) (2008) 343--373.
+\newblock \href {https://doi.org/10.1007/s11222-008-9110-y} {\path{doi:10.1007/s11222-008-9110-y}}.
+
+\bibitem{CotterDashtiStuart2010}
+S.~L. Cotter, M.~Dashti, A.~M. Stuart, Approximation of bayesian inverse problems for pdes, SIAM Journal on Numerical Analysis 48~(1) (2010) 322--345.
+\newblock \href {https://doi.org/10.1137/090770734} {\path{doi:10.1137/090770734}}.
+
+\bibitem{lykkegaard23}
+M.~B. Lykkegaard, T.~J. Dodwell, C.~Fox, G.~Mingas, R.~Scheichl, Multilevel delayed acceptance mcmc, SIAM/ASA Journal on Uncertainty Quantification 11~(1) (2023) 1--30.
+\newblock \href {https://doi.org/10.1137/22M1476770} {\path{doi:10.1137/22M1476770}}.
+
+\end{thebibliography}

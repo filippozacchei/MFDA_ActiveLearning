@@ -1,0 +1,92 @@
+\relax 
+\citation{BK19}
+\citation{CDRS09}
+\citation{SLST17}
+\citation{GR22}
+\citation{ZRGFM24}
+\citation{S15,S10}
+\citation{T05,KS05,S24}
+\citation{RC04}
+\Newlabel{polimi-mox}{a}
+\Newlabel{polimi-dica}{b}
+\Newlabel{pasteur}{c}
+\@writefile{toc}{\contentsline {section}{\numberline {1}Introduction}{1}{}\protected@file@percent }
+\citation{SSW20,HK22}
+\citation{PKFGG22,JZXML21}
+\citation{BJ15,KB14,WZ11}
+\citation{ILS13,I16}
+\citation{CF05,Banterle2019}
+\citation{DKST19,LD23,PM19,Peherstorfer2018}
+\citation{LiMarzouk2014,Conrad2016}
+\citation{RobertsRosenthal2007,AndrieuThoms2008}
+\@writefile{lof}{\contentsline {figure}{\numberline {1}{\ignorespaces Placeholder: Simplified schematic of the proposed adaptive Surrogate Transition framework. The uncertainty-aware POD–GP surrogate is used to construct an approximate likelihood for inexpensive first-stage acceptance decisions. During the adaptive phase, posterior-guided acquisition identifies new high-fidelity evaluations to enrich the surrogate, while the Surrogate Transition subchain length is adjusted according to the estimated surrogate error. Once the surrogate satisfies the prescribed accuracy criterion, adaptation is terminated and the surrogate transition sampler proceeds with a fixed surrogate and transition kernel to generate posterior samples.}}{3}{}\protected@file@percent }
+\newlabel{fig:MCMC}{{1}{3}{}{}{}}
+\@writefile{toc}{\contentsline {section}{\numberline {2}Background and Motivation}{3}{}\protected@file@percent }
+\newlabel{sec:background}{{2}{3}{}{}{}}
+\@writefile{toc}{\contentsline {subsection}{\numberline {2.1}Bayesian inverse problem}{3}{}\protected@file@percent }
+\newlabel{sec:bayesian-background}{{2.1}{3}{}{}{}}
+\newlabel{eq:hf}{{1}{3}{}{}{}}
+\citation{LiMarzouk2014}
+\citation{CotterDashtiStuart2010}
+\newlabel{eq:bayes}{{2}{4}{}{}{}}
+\newlabel{eq:marginal}{{3}{4}{}{}{}}
+\newlabel{eq:hf-like-general}{{4}{4}{}{}{}}
+\newlabel{eq:hf-like-gaussian}{{5}{4}{}{}{}}
+\newlabel{eq:mh-acceptance}{{6}{4}{}{}{}}
+\@writefile{toc}{\contentsline {subsection}{\numberline {2.2}Delayed-acceptance MCMC}{4}{}\protected@file@percent }
+\newlabel{sec:da-background}{{2.2}{4}{}{}{}}
+\newlabel{eq:lf-like-general}{{7}{4}{}{}{}}
+\@writefile{loa}{\contentsline {algorithm}{\numberline {1}{\ignorespaces Metropolis--Hastings (MH)}}{5}{}\protected@file@percent }
+\newlabel{alg:mh}{{1}{5}{}{}{}}
+\@writefile{loa}{\contentsline {algorithm}{\numberline {2}{\ignorespaces Delayed-acceptance MCMC (DA)}}{5}{}\protected@file@percent }
+\newlabel{alg:da}{{2}{5}{}{}{}}
+\newlabel{eq:lf-posterior}{{2.2}{5}{}{}{}}
+\newlabel{eq:da-acceptance}{{8}{5}{}{}{}}
+\citation{lykkegaard23}
+\@writefile{toc}{\contentsline {section}{\numberline {3}Methodology}{6}{}\protected@file@percent }
+\newlabel{sec:methodology}{{3}{6}{}{}{}}
+\@writefile{toc}{\contentsline {subsection}{\numberline {3.1}Surrogate definition and approximate likelihood}{7}{}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsubsection}{\numberline {3.1.1}Proper Orthogonal Decomposition}{7}{}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsubsection}{\numberline {3.1.2}Gaussian Process Regression}{7}{}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {3.2}Adaptive sampling scheme}{8}{}\protected@file@percent }
+\@writefile{lof}{\contentsline {figure}{\numberline {2}{\ignorespaces GPT-Place holder. Simplified schematic of the LF model used to construct the approximate likelihood. The surrogate combines POD for dimensionality reduction with GP regression to predict the reduced coefficients. The GP predictive uncertainty is first estimated in the reduced space and then propagated to the full observation space, and is then incorporated into the approximate likelihood.}}{9}{}\protected@file@percent }
+\newlabel{fig:surr}{{2}{9}{}{}{}}
+\bibstyle{elsarticle-num}
+\bibdata{references}
+\bibcite{BK19}{{1}{}{{}}{{}}}
+\bibcite{CDRS09}{{2}{}{{}}{{}}}
+\@writefile{loa}{\contentsline {algorithm}{\numberline {3}{\ignorespaces Adaptive delayed-acceptance sampling scheme}}{10}{}\protected@file@percent }
+\newlabel{alg:adaptive_da}{{3}{10}{}{}{}}
+\@writefile{toc}{\contentsline {section}{\numberline {4}Results}{10}{}\protected@file@percent }
+\newlabel{sec:numerics}{{4}{10}{}{}{}}
+\@writefile{toc}{\contentsline {section}{\numberline {5}Conclusion}{10}{}\protected@file@percent }
+\newlabel{sec:conclusion}{{5}{10}{}{}{}}
+\bibcite{SLST17}{{3}{}{{}}{{}}}
+\bibcite{GR22}{{4}{}{{}}{{}}}
+\bibcite{ZRGFM24}{{5}{}{{}}{{}}}
+\bibcite{S15}{{6}{}{{}}{{}}}
+\bibcite{S10}{{7}{}{{}}{{}}}
+\bibcite{T05}{{8}{}{{}}{{}}}
+\bibcite{KS05}{{9}{}{{}}{{}}}
+\bibcite{S24}{{10}{}{{}}{{}}}
+\bibcite{RC04}{{11}{}{{}}{{}}}
+\bibcite{SSW20}{{12}{}{{}}{{}}}
+\bibcite{HK22}{{13}{}{{}}{{}}}
+\bibcite{PKFGG22}{{14}{}{{}}{{}}}
+\bibcite{JZXML21}{{15}{}{{}}{{}}}
+\bibcite{BJ15}{{16}{}{{}}{{}}}
+\bibcite{KB14}{{17}{}{{}}{{}}}
+\bibcite{WZ11}{{18}{}{{}}{{}}}
+\bibcite{ILS13}{{19}{}{{}}{{}}}
+\bibcite{I16}{{20}{}{{}}{{}}}
+\bibcite{CF05}{{21}{}{{}}{{}}}
+\bibcite{Banterle2019}{{22}{}{{}}{{}}}
+\bibcite{Peherstorfer2018}{{23}{}{{}}{{}}}
+\bibcite{LiMarzouk2014}{{24}{}{{}}{{}}}
+\bibcite{Conrad2016}{{25}{}{{}}{{}}}
+\bibcite{RobertsRosenthal2007}{{26}{}{{}}{{}}}
+\bibcite{AndrieuThoms2008}{{27}{}{{}}{{}}}
+\bibcite{CotterDashtiStuart2010}{{28}{}{{}}{{}}}
+\bibcite{lykkegaard23}{{29}{}{{}}{{}}}
+\providecommand\NAT@force@numbers{}\NAT@force@numbers
+\gdef \@abspage@last{12}

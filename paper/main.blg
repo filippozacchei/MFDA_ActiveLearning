@@ -1,0 +1,50 @@
+This is BibTeX, Version 0.99d (TeX Live 2024)
+Capacity: max_strings=200000, hash_size=200000, hash_prime=170003
+The top-level auxiliary file: main.aux
+The style file: elsarticle-num.bst
+Database file #1: references.bib
+Warning--I didn't find a database entry for "DKST19"
+Warning--I didn't find a database entry for "LD23"
+Warning--I didn't find a database entry for "PM19"
+You've used 29 entries,
+            2952 wiz_defined-function locations,
+            914 strings with 11380 characters,
+and the built_in function-call counts, 9470 in all, are:
+= -- 915
+> -- 296
+< -- 2
++ -- 118
+- -- 89
+* -- 843
+:= -- 1287
+add.period$ -- 52
+call.type$ -- 29
+change.case$ -- 23
+chr.to.int$ -- 0
+cite$ -- 29
+duplicate$ -- 247
+empty$ -- 1063
+format.name$ -- 113
+if$ -- 2422
+int.to.chr$ -- 0
+int.to.str$ -- 29
+missing$ -- 35
+newline$ -- 128
+num.names$ -- 29
+pop$ -- 164
+preamble$ -- 1
+purify$ -- 0
+quote$ -- 0
+skip$ -- 553
+stack$ -- 0
+substring$ -- 531
+swap$ -- 87
+text.length$ -- 2
+text.prefix$ -- 0
+top$ -- 0
+type$ -- 0
+warning$ -- 0
+while$ -- 58
+width$ -- 31
+write$ -- 294
+(There were 3 warnings)

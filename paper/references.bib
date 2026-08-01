@@ -1,0 +1,412 @@
+@book{BK19, 
+place={Cambridge}, 
+title={Data-Driven Science and Engineering: Machine Learning, Dynamical Systems, and Control}, 
+publisher={Cambridge University Press},
+author={Brunton, Steven L. and Kutz, J. Nathan}, 
+year={2019}
+}
+
+@book{S15,
+  title={Introduction to uncertainty quantification},
+  author={Sullivan, Timothy John},
+  volume={63},
+  year={2015},
+  publisher={Springer}
+}
+
+@book{T05,
+  title={Inverse problem theory and methods for model parameter estimation},
+  author={Tarantola, Albert},
+  year={2005},
+  publisher={SIAM}
+}
+
+@book{KS05,
+  title={Statistical and computational inverse problems},
+  author={Kaipio, Jari P and Somersalo, Erkki},
+  year={2005},
+  publisher={Springer}
+}
+
+@book{S24,
+  title={Uncertainty quantification: theory, implementation, and applications},
+  author={Smith, Ralph C},
+  year={2024},
+  publisher={SIAM}
+}
+
+@book{RC04,
+  title={Monte Carlo statistical methods},
+  author={Robert, Christian P and Casella, George and Casella, George},
+  volume={2},
+  year={2004},
+  publisher={Springer}
+}
+%%%% ARTICLES
+
+@article{CDRS09,
+doi = {10.1088/0266-5611/25/11/115008},
+url = {https://doi.org/10.1088/0266-5611/25/11/115008},
+year = {2009},
+month = {oct},
+publisher = {},
+volume = {25},
+number = {11},
+pages = {115008},
+author = {Cotter, S L and Dashti, M and Robinson, J C and Stuart, A M},
+title = {Bayesian inverse problems for functions and applications to fluid mechanics},
+journal = {Inverse Problems},
+abstract = {In this paper we establish a mathematical framework for a range of inverse problems for functions, given a finite set of noisy observations. The problems are hence underdetermined and are often ill-posed. We study these problems from the viewpoint of Bayesian statistics, with the resulting posterior probability measure being defined on a space of functions. We develop an abstract framework for such problems which facilitates application of an infinite-dimensional version of Bayes theorem, leads to a well-posedness result for the posterior measure (continuity in a suitable probability metric with respect to changes in data), and also leads to a theory for the existence of maximizing the posterior probability (MAP) estimators for such Bayesian inverse problems on function space. A central idea underlying these results is that continuity properties and bounds on the forward model guide the choice of the prior measure for the inverse problem, leading to the desired results on well-posedness and MAP estimators; the PDE analysis and probability theory required are thus clearly dileneated, allowing a straightforward derivation of results. We show that the abstract theory applies to some concrete applications of interest by studying problems arising from data assimilation in fluid mechanics. The objective is to make inference about the underlying velocity field, on the basis of either Eulerian or Lagrangian observations. We study problems without model error, in which case the inference is on the initial condition, and problems with model error in which case the inference is on the initial condition and on the driving noise process or, equivalently, on the entire time-dependent velocity field. In order to undertake a relatively uncluttered mathematical analysis we consider the two-dimensional Navier–Stokes equation on a torus. The case of Eulerian observations—direct observations of the velocity field itself—is then a model for weather forecasting. The case of Lagrangian observations—observations of passive tracers advected by the flow—is then a model for data arising in oceanography. The methodology which we describe herein may be applied to many other inverse problems in which it is of interest to find, given observations, an infinite-dimensional object, such as the initial condition for a PDE. A similar approach might be adopted, for example, to determine an appropriate mathematical setting for the inverse problem of determining an unknown tensor arising in a constitutive law for a PDE, given observations of the solution. The paper is structured so that the abstract theory can be read independently of the particular problems in fluid mechanics which are subsequently studied by application of the theory.}
+}
+
+@article{SLST17,
+author = {Schneider, Tapio and Lan, Shiwei and Stuart, Andrew and Teixeira, João},
+title = {Earth System Modeling 2.0: A Blueprint for Models That Learn From Observations and Targeted High-Resolution Simulations},
+journal = {Geophysical Research Letters},
+volume = {44},
+number = {24},
+pages = {12,396-12,417},
+keywords = {Earth system models, parameterizations, data assimilation, machine learning, Kalman inversion, Markov chain Monte Carlo},
+doi = {https://doi.org/10.1002/2017GL076101},
+url = {https://agupubs.onlinelibrary.wiley.com/doi/abs/10.1002/2017GL076101},
+eprint = {https://agupubs.onlinelibrary.wiley.com/doi/pdf/10.1002/2017GL076101},
+abstract = {Abstract Climate projections continue to be marred by large uncertainties, which originate in processes that need to be parameterized, such as clouds, convection, and ecosystems. But rapid progress is now within reach. New computational tools and methods from data assimilation and machine learning make it possible to integrate global observations and local high-resolution simulations in an Earth system model (ESM) that systematically learns from both and quantifies uncertainties. Here we propose a blueprint for such an ESM. We outline how parameterization schemes can learn from global observations and targeted high-resolution simulations, for example, of clouds and convection, through matching low-order statistics between ESMs, observations, and high-resolution simulations. We illustrate learning algorithms for ESMs with a simple dynamical system that shares characteristics of the climate system; and we discuss the opportunities the proposed framework presents and the challenges that remain to realize it.},
+year = {2017}
+}
+
+@article{GR22,
+    author = {Gallet, A. and Rigby, S. and Tallman, T. N. and Kong, X. and Hajirasouliha, I. and Liew, A. and Liu, D. and Chen, L. and Hauptmann, A. and Smyl, D.},
+    title = {Structural engineering from an inverse problems perspective},
+    journal = {Proceedings of the Royal Society A: Mathematical, Physical and Engineering Sciences},
+    volume = {478},
+    number = {2257},
+    pages = {20210526},
+    year = {2022},
+    month = {01},
+    abstract = {The field of structural engineering is vast, spanning areas from the design of new infrastructure to the assessment of existing infrastructure. From the onset, traditional entry-level university courses teach students to analyse structural responses given data including external forces, geometry, member sizes, restraint, etc.—characterizing a forward problem (structural causalities → structural response). Shortly thereafter, junior engineers are introduced to structural design where they aim to, for example, select an appropriate structural form for members based on design criteria, which is the inverse of what they previously learned. Similar inverse realizations also hold true in structural health monitoring and a number of structural engineering sub-fields (response → structural causalities). In this light, we aim to demonstrate that many structural engineering sub-fields may be fundamentally or partially viewed as inverse problems and thus benefit via the rich and established methodologies from the inverse problems community. To this end, we conclude that the future of inverse problems in structural engineering is inexorably linked to engineering education and machine learning developments.},
+    issn = {1364-5021},
+    doi = {10.1098/rspa.2021.0526},
+    url = {https://doi.org/10.1098/rspa.2021.0526},
+    eprint = {https://royalsocietypublishing.org/rspa/article-pdf/doi/10.1098/rspa.2021.0526/355952/rspa.2021.0526.pdf},
+}
+
+@article{ZRGFM24,
+title = {Neural networks based surrogate modeling for efficient uncertainty quantification and calibration of MEMS accelerometers},
+journal = {International Journal of Non-Linear Mechanics},
+volume = {167},
+pages = {104902},
+year = {2024},
+issn = {0020-7462},
+doi = {https://doi.org/10.1016/j.ijnonlinmec.2024.104902},
+url = {https://www.sciencedirect.com/science/article/pii/S0020746224002671},
+author = {Filippo Zacchei and Francesco Rizzini and Gabriele Gattere and Attilio Frangi and Andrea Manzoni},
+keywords = {Deep learning, Neural networks, Uncertainty quantification, Bayesian inverse problems, MEMS, Computational mechanics},
+abstract = {This paper addresses the computational challenges inherent in the stochastic characterization and uncertainty quantification of Micro-Electro-Mechanical Systems (MEMS) capacitive accelerometers. Traditional methods, such as Markov Chain Monte Carlo (MCMC) algorithms, are often constrained by the computational intensity required for high-fidelity (e.g., finite element) simulations. To overcome these limitations, we propose to use supervised learning-based surrogate models, specifically artificial neural networks, to effectively approximate the response of MEMS capacitive accelerometers. Our approach involves training the surrogate models with data derived from initial high-fidelity finite element analyses (FEA), providing rich datasets to be generated in an offline phase. The surrogate models replicate the FEA accuracy in predicting the behavior of the accelerometer under a wide range of fabrication parameters, thereby reducing the online computational cost without compromising accuracy. This enables extensive and efficient stochastic analyses of complex MEMS devices, offering a flexible framework for their characterization. A key application of our framework is demonstrated in estimating the sensitivity of an accelerometer, accounting for unknown mechanical offsets, over-etching, and thickness variations. We employ an MCMC approach to estimate the posterior distribution of the device’s unknown fabrication parameters, informed by its response to transient voltage signals. The integration of surrogate models for mapping fabrication parameters to device responses, and subsequently to sensitivity measures, greatly enhances both backward and forward uncertainty quantification, yielding accurate results while significantly improving the efficiency and effectiveness of the characterization process. This process allows for the reconstruction of device sensitivity using only voltage signals, without the need for direct mechanical acceleration stimuli.}
+}
+
+@article{S10, 
+title={Inverse problems: A Bayesian perspective}, 
+volume={19}, 
+DOI={10.1017/S0962492910000061}, 
+journal={Acta Numerica}, 
+author={Stuart, A. M.}, 
+year={2010}, 
+pages={451–559}
+} 
+
+@article{SSW20,
+author={Schillings, Claudia
+and Sprungk, Bj{\"o}rn
+and Wacker, Philipp},
+title={On the convergence of the Laplace approximation and noise-level-robustness of Laplace-based Monte Carlo methods for Bayesian inverse problems},
+journal={Numerische Mathematik},
+year={2020},
+month={Aug},
+day={01},
+volume={145},
+number={4},
+pages={915-971},
+abstract={The Bayesian approach to inverse problems provides a rigorous framework for the incorporation and quantification of uncertainties in measurements, parameters and models. We are interested in designing numerical methods which are robust w.r.t. the size of the observational noise, i.e., methods which behave well in case of concentrated posterior measures. The concentration of the posterior is a highly desirable situation in practice, since it relates to informative or large data. However, it can pose a computational challenge for numerical methods based on the prior measure. We propose to employ the Laplace approximation of the posterior as the base measure for numerical integration in this context. The Laplace approximation is a Gaussian measure centered at the maximum a-posteriori estimate and with covariance matrix depending on the logposterior density. We discuss convergence results of the Laplace approximation in terms of the Hellinger distance and analyze the efficiency of Monte Carlo methods based on it. In particular, we show that Laplace-based importance sampling and Laplace-based quasi-Monte-Carlo methods are robust w.r.t. the concentration of the posterior for large classes of posterior distributions and integrands whereas prior-based importance sampling and plain quasi-Monte Carlo are not. Numerical experiments are presented to illustrate the theoretical findings.},
+issn={0945-3245},
+doi={10.1007/s00211-020-01131-1},
+url={https://doi.org/10.1007/s00211-020-01131-1}
+}
+
+@article{HK22,
+author={Helin, Tapio
+and Kretschmann, Remo},
+title={Non-asymptotic error estimates for the Laplace approximation in Bayesian inverse problems},
+journal={Numerische Mathematik},
+year={2022},
+month={Feb},
+day={01},
+volume={150},
+number={2},
+pages={521-549},
+abstract={In this paper we study properties of the Laplace approximation of the posterior distribution arising in nonlinear Bayesian inverse problems. Our work is motivated by Schillings et al. (Numer Math 145:915--971, 2020. https://doi.org/10.1007/s00211-020-01131-1), where it is shown that in such a setting the Laplace approximation error in Hellinger distance converges to zero in the order of the noise level. Here, we prove novel error estimates for a given noise level that also quantify the effect due to the nonlinearity of the forward mapping and the dimension of the problem. In particular, we are interested in settings in which a linear forward mapping is perturbed by a small nonlinear mapping. Our results indicate that in this case, the Laplace approximation error is of the size of the perturbation. The paper provides insight into Bayesian inference in nonlinear inverse problems, where linearization of the forward mapping has suitable approximation properties.},
+issn={0945-3245},
+doi={10.1007/s00211-021-01266-9},
+url={https://doi.org/10.1007/s00211-021-01266-9}
+}
+
+@article{PKFGG22,
+title = {Variational Bayesian approximation of inverse problems using sparse precision matrices},
+journal = {Computer Methods in Applied Mechanics and Engineering},
+volume = {393},
+pages = {114712},
+year = {2022},
+issn = {0045-7825},
+doi = {https://doi.org/10.1016/j.cma.2022.114712},
+url = {https://www.sciencedirect.com/science/article/pii/S0045782522000822},
+author = {Jan Povala and Ieva Kazlauskaite and Eky Febrianto and Fehmi Cirak and Mark Girolami},
+keywords = {Inverse problems, Bayesian inference, Variational Bayes, Precision matrix, Uncertainty quantification},
+abstract = {Inverse problems involving partial differential equations (PDEs) are widely used in science and engineering. Although such problems are generally ill-posed, different regularisation approaches have been developed to ameliorate this problem. Among them is the Bayesian formulation, where a prior probability measure is placed on the quantity of interest. The resulting posterior probability measure is usually analytically intractable. The Markov Chain Monte Carlo (MCMC) method has been the go-to method for sampling from those posterior measures. MCMC is computationally infeasible for large-scale problems that arise in engineering practice. Lately, Variational Bayes (VB) has been recognised as a more computationally tractable method for Bayesian inference, approximating a Bayesian posterior distribution with a simpler trial distribution by solving an optimisation problem. In this work, we argue, through an empirical assessment, that VB methods are a flexible and efficient alternative to MCMC for this class of problems. We propose a natural choice of a family of Gaussian trial distributions parametrised by precision matrices, thus taking advantage of the inherent sparsity of the inverse problem encoded in its finite element discretisation. We utilise stochastic optimisation to efficiently estimate the variational objective and assess not only the error in the solution mean but also the ability to quantify the uncertainty of the estimate. We test this on PDEs based on the Poisson equation in 1D and 2D. A Tensorflow implementation is made publicly available on GitHub.}
+}
+
+
+
+
+
+
+
+@article{JZXML21,
+author = {Jia, Junxiong and Zhao, Qian and Xu, Zongben and Meng, Deyu and Leung, Yee},
+title = {Variational Bayes' Method for Functions with Applications to Some Inverse Problems},
+journal = {SIAM Journal on Scientific Computing},
+volume = {43},
+number = {1},
+pages = {A355-A383},
+year = {2021},
+doi = {10.1137/19M130409X},
+URL = {        https://doi.org/10.1137/19M130409X
+},
+eprint = {https://doi.org/10.1137/19M130409X},
+    abstract = { The Bayesian approach, a useful tool for quantifying uncertainties, has been extensively employed to solve the inverse problems of partial differential equations (PDEs). One of the main difficulties in employing the Bayesian approach to such problems is how to extract information from the posterior probability measure. Compared with conventional sampling-type methods, the variational Bayes method (VBM) has been intensively examined in the field of machine learning attributed to its ability in extracting approximately the posterior information with lower computational cost. In this paper, we generalize the conventional finite-dimensional VBM to the infinite-dimensional space to rigorously solve the inverse problems of PDEs. We further establish a general infinite-dimensional mean-field approximate theory and apply it to the linear inverse problems under the Gaussian and Laplace noise assumptions at the abstract level. The results of some numerical experiments substantiate the effectiveness of the proposed approach. }
+}
+
+
+
+@article{BJ15,
+author={Beskos, Alexandros
+and Jasra, Ajay
+and Muzaffer, Ege A.
+and Stuart, Andrew M.},
+title={Sequential Monte Carlo methods for Bayesian elliptic inverse problems},
+journal={Statistics and Computing},
+year={2015},
+month={Jul},
+day={01},
+volume={25},
+number={4},
+pages={727-737},
+abstract={In this article, we consider a Bayesian inverse problem associated to elliptic partial differential equations in two and three dimensions. This class of inverse problems is important in applications such as hydrology, but the complexity of the link function between unknown field and measurements can make it difficult to draw inference from the associated posterior. We prove that for this inverse problem a basic sequential Monte Carlo (SMC) method has a Monte Carlo rate of convergence with constants which are independent of the dimension of the discretization of the problem; indeed convergence of the SMC method is established in a function space setting. We also develop an enhancement of the SMC methods for inverse problems which were introduced in Kantas et al. (SIAM/ASA J Uncertain Quantif 2:464--489, 2014); the enhancement is designed to deal with the additional complexity of this elliptic inverse problem. The efficacy of the methodology and its desirable theoretical properties, are demonstrated for numerical examples in both two and three dimensions.},
+issn={1573-1375},
+doi={10.1007/s11222-015-9556-7},
+url={https://doi.org/10.1007/s11222-015-9556-7}
+}
+
+
+
+
+
+
+
+@article{KB14,
+author = {Kantas, Nikolas and Beskos, Alexandros and Jasra, Ajay},
+title = {Sequential Monte Carlo Methods for High-Dimensional Inverse Problems: A Case Study for the Navier--Stokes Equations},
+journal = {SIAM/ASA Journal on Uncertainty Quantification},
+volume = {2},
+number = {1},
+pages = {464-489},
+year = {2014},
+doi = {10.1137/130930364},
+    abstract = { We consider the inverse problem of estimating the initial condition of a partial differential equation, which is observed only through noisy measurements at discrete time intervals. In particular, we focus on the case where Eulerian measurements are obtained from the time and space evolving vector field, whose evolution obeys the two-dimensional Navier--Stokes equations defined on a torus. This context is particularly relevant to the area of numerical weather forecasting and data assimilation. We will adopt a Bayesian formulation resulting from a particular regularization that ensures the problem is well posed. In the context of Monte Carlo--based inference, it is a challenging task to obtain samples from the resulting high-dimensional posterior on the initial condition. In real data assimilation applications it is common for computational methods to invoke the use of heuristics and Gaussian approximations. As a result, the resulting inferences are biased and not well justified in the presence of nonlinear dynamics and observations. On the other hand, Monte Carlo methods can be used to assimilate data in a principled manner, but they are often perceived as inefficient in this context due to the high dimensionality of the problem. In this work we will propose a generic sequential Monte Carlo (SMC) sampling approach for high-dimensional inverse problems that overcomes these difficulties. The method builds upon “state of the art” Markov chain Monte Carlo (MCMC) techniques, which are currently considered as benchmarks for evaluating data assimilation algorithms used in practice. SMC samplers can improve in terms of efficiency, as they possess greater flexibility and one can include steps like sequential tempering, adaptation, and parallelization with a relatively low number of extra computations. We will illustrate this using numerical examples, where our proposed SMC approach can achieve the same accuracy as MCMC but in a much more efficient manner. }
+}
+
+@article{WZ11,
+doi = {10.1088/0266-5611/27/10/105004},
+url = {https://doi.org/10.1088/0266-5611/27/10/105004},
+year = {2011},
+month = {sep},
+publisher = {},
+volume = {27},
+number = {10},
+pages = {105004},
+author = {Wan, Jiang and Zabaras, Nicholas},
+title = {A Bayesian approach to multiscale inverse problems using the sequential Monte Carlo method},
+journal = {Inverse Problems},
+abstract = {A new Bayesian computational approach is developed to estimate spatially varying parameters. The sparse grid collocation method is adopted to parameterize the spatial field. Based on a hierarchically structured sparse grid, a multiscale representation of the spatial field is constructed. An adaptive refinement strategy is then used for computing the spatially varying parameter. A sequential Monte Carlo (SMC) sampler is used to explore the posterior distributions defined on multiple scales. The SMC sampling is directly parallelizable and is superior to conventional Markov chain Monte Carlo methods for multi-modal target distributions. The samples obtained at coarser levels of resolution are used to provide prior information for the estimation at finer levels. This Bayesian computational approach is rather general and applicable to various spatially varying parameter estimation problems. The method is demonstrated with the estimation of permeability in flows through porous media.}
+}
+
+
+
+@article{ILS13,
+  author  = {Iglesias, Marco A. and Law, Kody J. H. and Stuart, Andrew M.},
+  title   = {Ensemble Kalman methods for inverse problems},
+  journal = {Inverse Problems},
+  volume  = {29},
+  number  = {4},
+  pages   = {045001},
+  year    = {2013},
+  doi     = {10.1088/0266-5611/29/4/045001}
+}
+
+@article{I16,
+  author  = {Iglesias, Marco A.},
+  title   = {A regularizing iterative ensemble Kalman method for PDE-constrained inverse problems},
+  journal = {Inverse Problems},
+  volume  = {32},
+  number  = {2},
+  pages   = {025002},
+  year    = {2016},
+  doi     = {10.1088/0266-5611/32/2/025002}
+}
+
+
+
+
+
+
+
+
+@article{CotterDashtiStuart2010,
+author = {Cotter, S. L. and Dashti, M. and Stuart, A. M.},
+title = {Approximation of Bayesian Inverse Problems for PDEs},
+journal = {SIAM Journal on Numerical Analysis},
+volume = {48},
+number = {1},
+pages = {322-345},
+year = {2010},
+doi = {10.1137/090770734},
+abstract = { Inverse problems are often ill posed, with solutions that depend sensitively on data. In any numerical approach to the solution of such problems, regularization of some form is needed to counteract the resulting instability. This paper is based on an approach to regularization, employing a Bayesian formulation of the problem, which leads to a notion of well posedness for inverse problems, at the level of probability measures. The stability which results from this well posedness may be used as the basis for quantifying the approximation, in finite dimensional spaces, of inverse problems for functions. This paper contains a theory which utilizes this stability property to estimate the distance between the true and approximate posterior distributions, in the Hellinger metric, in terms of error estimates for approximation of the underlying forward problem. This is potentially useful as it allows for the transfer of estimates from the numerical analysis of forward problems into estimates for the solution of the related inverse problem. It is noteworthy that, when the prior is a Gaussian random field model, controlling differences in the Hellinger metric leads to control on the differences between expected values of polynomially bounded functions and operators, including the mean and covariance operator. The ideas are applied to some non-Gaussian inverse problems where the goal is determination of the initial condition for the Stokes or Navier–Stokes equation from Lagrangian and Eulerian observations, respectively. }
+}
+
+
+@article{CF05,
+  author  = {Christen, J. Andr{\'e}s and Fox, Colin},
+  title   = {Markov Chain Monte Carlo Using an Approximation},
+  journal = {Journal of Computational and Graphical Statistics},
+  volume  = {14},
+  number  = {4},
+  pages   = {795--810},
+  year    = {2005},
+  doi     = {10.1198/106186005X76983}
+}
+
+@article{Banterle2019,
+  author  = {Banterle, Marco and Grazian, Clara and Lee, Anthony and Robert, Christian P.},
+  title   = {Accelerating Metropolis--Hastings Algorithms by Delayed Acceptance},
+  journal = {Foundations of Data Science},
+  volume  = {1},
+  number  = {2},
+  pages   = {103--128},
+  year    = {2019},
+  doi     = {10.3934/fods.2019005}
+}
+
+@article{Peherstorfer2018,
+  author  = {Peherstorfer, Benjamin and Willcox, Karen and Gunzburger, Max},
+  title   = {Survey of Multifidelity Methods in Uncertainty Propagation, Inference, and Optimization},
+  journal = {SIAM Review},
+  volume  = {60},
+  number  = {3},
+  pages   = {550--591},
+  year    = {2018},
+  doi     = {10.1137/16M1082469}
+}
+
+@article{Benner2015,
+  author  = {Benner, Peter and Gugercin, Serkan and Willcox, Karen},
+  title   = {A Survey of Projection-Based Model Reduction Methods for Parametric Dynamical Systems},
+  journal = {SIAM Review},
+  volume  = {57},
+  number  = {4},
+  pages   = {483--531},
+  year    = {2015},
+  doi     = {10.1137/130932715}
+}
+
+@article{Conrad2016,
+  author  = {Conrad, Patrick R. and Marzouk, Youssef M. and Pillai, Natesh S. and Smith, Aaron},
+  title   = {Accelerating Asymptotically Exact {MCMC} for Computationally Intensive Models via Local Approximations},
+  journal = {Journal of the American Statistical Association},
+  volume  = {111},
+  number  = {516},
+  pages   = {1591--1607},
+  year    = {2016},
+  doi     = {10.1080/01621459.2015.1096787}
+}
+
+@article{RobertsRosenthal2007,
+  author  = {Roberts, Gareth O. and Rosenthal, Jeffrey S.},
+  title   = {Coupling and Ergodicity of Adaptive Markov Chain Monte Carlo Algorithms},
+  journal = {Journal of Applied Probability},
+  volume  = {44},
+  number  = {2},
+  pages   = {458--475},
+  year    = {2007},
+  doi     = {10.1239/jap/1183667414}
+}
+
+@article{AndrieuThoms2008,
+  author  = {Andrieu, Christophe and Thoms, Johannes},
+  title   = {A Tutorial on Adaptive {MCMC}},
+  journal = {Statistics and Computing},
+  volume  = {18},
+  number  = {4},
+  pages   = {343--373},
+  year    = {2008},
+  doi     = {10.1007/s11222-008-9110-y}
+}
+
+@book{RasmussenWilliams2006,
+  author    = {Rasmussen, Carl Edward and Williams, Christopher K. I.},
+  title     = {Gaussian Processes for Machine Learning},
+  publisher = {MIT Press},
+  address   = {Cambridge, MA},
+  year      = {2006},
+  isbn      = {978-0-262-18253-9}
+}
+
+
+
+
+
+
+
+
+
+
+
+
+@article{lykkegaard23,
+author = {Lykkegaard, M. B. and Dodwell, T. J. and Fox, C. and Mingas, G. and Scheichl, R.},
+title = {Multilevel Delayed Acceptance MCMC},
+journal = {SIAM/ASA Journal on Uncertainty Quantification},
+volume = {11},
+number = {1},
+pages = {1-30},
+year = {2023},
+doi = {10.1137/22M1476770},
+    abstract = { Abstract. We develop a novel Markov chain Monte Carlo (MCMC) method that exploits a hierarchy of models of increasing complexity to efficiently generate samples from an unnormalized target distribution. Broadly, the method rewrites the multilevel MCMC approach of Dodwell et al. [SIAM/ASA J. Un‐certain. Quantif., 3 (2015), pp. 1075–1108] in terms of the delayed acceptance MCMC of Christen and Fox [J. Comput. Graph. Statist., 14 (2005), pp. 795–810]. In particular, delayed acceptance is extended to use a hierarchy of models of arbitrary depth and allow subchains of arbitrary length. We show that the algorithm satisfies detailed balance and hence is ergodic for the target distribution. Furthermore, multilevel variance reduction is derived that exploits the multiple levels and subchains, and an adaptive multilevel correction to coarse-level biases is developed. Three numerical examples of Bayesian inverse problems are presented that demonstrate the advantages of these novel methods. The software and examples are available in PyMC3. }
+}
+
+
+
+
+
+@article{LiMarzouk2014,
+author = {Li, Jinglai and Marzouk, Youssef M.},
+title = {Adaptive Construction of Surrogates for the Bayesian Solution of Inverse Problems},
+journal = {SIAM Journal on Scientific Computing},
+volume = {36},
+number = {3},
+pages = {A1163-A1186},
+year = {2014},
+doi = {10.1137/130938189},
+    abstract = { The Bayesian approach to inverse problems typically relies on posterior sampling approaches, such as Markov chain Monte Carlo, for which the generation of each sample requires one or more evaluations of the parameter-to-observable map or forward model. When these evaluations are computationally intensive, approximations of the forward model are essential to accelerating sample-based inference. Yet the construction of globally accurate approximations for nonlinear forward models can be computationally prohibitive and in fact unnecessary, as the posterior distribution typically concentrates on a small fraction of the support of the prior distribution. We present a new approach that uses stochastic optimization to construct polynomial approximations over a sequence of distributions adaptively determined from the data, eventually concentrating on the posterior distribution. The approach yields substantial gains in efficiency and accuracy over prior-based surrogates, as demonstrated via application to inverse problems in partial differential equations. }
+}
+
+
+
+
