@@ -29,7 +29,21 @@ The package is developed and tested with pinned versions to stay compatible with
 - Ray `2.53.0` (transitively required by `tinyDA`)
 - GPy `1.13.2`
 
-### Core install
+### Recommended: uv
+
+[`uv`](https://docs.astral.sh/uv/) resolves and installs the pinned stack (including `tinyDA`
+and `GPy`) faster and more reliably than plain `pip`, and can fetch the pinned `3.10.19`
+interpreter itself if it isn't already on your machine — no separate `pyenv`/`brew` step needed:
+
+```bash
+git clone https://github.com/filippozacchei/MFDA_ActiveLearning.git
+cd MFDA_ActiveLearning
+uv venv .venv --python 3.10.19
+source .venv/bin/activate
+uv pip install -e .
+```
+
+### Core install (pip)
 
 ```bash
 git clone https://github.com/filippozacchei/MFDA_ActiveLearning.git
@@ -40,7 +54,7 @@ python -m pip install --upgrade pip
 python -m pip install -e .
 ```
 
-### macOS install (Apple Silicon and Intel)
+### macOS install (Apple Silicon and Intel, pip)
 
 Install system prerequisites first:
 
@@ -79,7 +93,7 @@ python examples/toy_problem/run_forward_toy.py
 ### Testing
 
 ```bash
-python -m pip install -e ".[test]"
+uv pip install -e ".[test]"   # or: python -m pip install -e ".[test]"
 python -m pytest -q
 ```
 
@@ -150,7 +164,7 @@ documentation block above, then run the scripts under `examples/navier_stokes/`.
 
 ## Development workflow
 
-- Install dev extras with `pip install -e ".[dev]"`.
+- Install dev extras with `uv pip install -e ".[dev]"` (or `pip install -e ".[dev]"`).
 - Run the `nox` sessions locally (`tests`, `lint`, `typecheck`, `docs`) before opening a PR.
 - Enable pre-commit hooks via `pre-commit install`.
 - See [CONTRIBUTING.md](CONTRIBUTING.md) for detailed guidance.

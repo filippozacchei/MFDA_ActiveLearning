@@ -16,6 +16,7 @@ from gp_active_mcmc.inference.sampling import (
     ChunkedMCMCConfig,
     sample_active_chain,
     sample_adaptive_active_chain,
+    sample_adaptive_then_frozen_chain,
 )
 
 __all__ = [
@@ -34,4 +35,5 @@ __all__ = [
     "SamplingResult",
     "sample_active_chain",
     "sample_adaptive_active_chain",
+    "sample_adaptive_then_frozen_chain",
 ]

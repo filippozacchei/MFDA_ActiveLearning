@@ -42,6 +42,14 @@ class AdaptiveSubchainControl:
         Multiplicative factor used when error is below target. Must be > 1.
     shrink_factor
         Multiplicative factor used when error is above target. Must be in (0, 1).
+    patience
+        Number of *consecutive* policy updates with error at or below `target_error`
+        required before the adaptive phase is considered converged (see
+        [`AdaptiveSubchainState.has_converged`][gp_active_mcmc.inference.adaptive_subchain.AdaptiveSubchainState.has_converged]).
+        Must be positive. Because the streak only advances on policy-update events (which
+        themselves only fire after `update_every` HF evaluations), `patience` also acts as
+        an implicit warm-up: convergence cannot be declared before at least `patience`
+        updates have been observed.
 
     Notes
     -----
@@ -62,6 +70,7 @@ class AdaptiveSubchainControl:
     max_subchain: int = 10_000
     grow_factor: float = 2.0
     shrink_factor: float = 0.5
+    patience: int = 5
 
     def __post_init__(self) -> None:
         if self.update_every <= 0:
@@ -76,6 +85,8 @@ class AdaptiveSubchainControl:
             raise ValueError("grow_factor must be > 1.0.")
         if not (0.0 < self.shrink_factor < 1.0):
             raise ValueError("shrink_factor must be in (0, 1).")
+        if self.patience <= 0:
+            raise ValueError("patience must be positive.")
 
 
 @dataclass(slots=True)
@@ -99,6 +110,13 @@ class AdaptiveSubchainState:
         LF-HF error values computed at each fine evaluation.
     total_hf_steps
         Total number of HF evaluations performed.
+    stable_streak
+        Number of consecutive policy updates (see `update_subchain`) whose error was at
+        or below `target_error`. Reset to 0 on any update above target. Used by
+        [`has_converged`][gp_active_mcmc.inference.adaptive_subchain.AdaptiveSubchainState.has_converged]
+        to decide when the adaptive phase can be terminated and the surrogate frozen.
+    n_updates
+        Total number of policy-update events that have occurred.
     _hf_since_update
         Internal counter tracking HF evaluations since the last update.
 
@@ -122,6 +140,8 @@ class AdaptiveSubchainState:
     subchain_history: list[int] = field(default_factory=list)
     hf_errors: list[float] = field(default_factory=list)
     total_hf_steps: int = 0
+    stable_streak: int = 0
+    n_updates: int = 0
 
     _hf_since_update: int = 0
 
@@ -192,13 +212,35 @@ class AdaptiveSubchainState:
 
         if err > control.target_error:
             new_len = int(np.floor(self.subchain_length * control.shrink_factor))
+            self.stable_streak = 0
         else:
             new_len = int(np.ceil(self.subchain_length * control.grow_factor))
+            self.stable_streak += 1
 
         new_len = max(control.min_subchain, min(control.max_subchain, new_len))
         self.subchain_length = int(new_len)
 
+        self.n_updates += 1
         self._hf_since_update = 0
+
+    def has_converged(self, control: AdaptiveSubchainControl) -> bool:
+        """Whether the adaptive phase has converged and the surrogate can be frozen.
+
+        Convergence is declared once the LF-HF error has stayed at or below
+        `control.target_error` for `control.patience` *consecutive* policy updates
+        (see [`update_subchain`][gp_active_mcmc.inference.adaptive_subchain.AdaptiveSubchainState.update_subchain]).
+
+        Parameters
+        ----------
+        control
+            Policy hyperparameters, in particular `patience`.
+
+        Returns
+        -------
+        converged
+            True if the stable streak has reached `control.patience`.
+        """
+        return self.stable_streak >= control.patience
 
 
 @dataclass(slots=True)
@@ -261,3 +303,7 @@ class AdaptiveSubchain:
         self.state.append_error(y_lf, y_hf)
         self.state.update_subchain(self.control)
         self.state.step()
+
+    def has_converged(self) -> bool:
+        """Whether the adaptive phase has converged (see `AdaptiveSubchainState.has_converged`)."""
+        return self.state.has_converged(self.control)
