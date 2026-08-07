@@ -1,0 +1,62 @@
+{
+  "ours": {
+    "n_steps": 10000,
+    "posterior_mean": [
+      58.355891776834824,
+      2.805710645359999
+    ],
+    "posterior_std": [
+      0.16762628704931326,
+      0.02249678011984382
+    ],
+    "rmse_to_truth": 0.18001885639646723,
+    "n_offline_hf": 20,
+    "n_hf_calls_online": 118,
+    "n_hf_calls": 138,
+    "hf_call_fraction": 0.013772455089820359,
+    "mean_abs_dev_from_reference": [
+      0.020338786371070228,
+      0.0007892691218360781
+    ]
+  },
+  "pretrained": {
+    "n_steps": 10001,
+    "posterior_mean": [
+      58.54012162602323,
+      2.776282762235847
+    ],
+    "posterior_std": [
+      0.17204387164622506,
+      0.026869433226855668
+    ],
+    "rmse_to_truth": 0.3306714520480913,
+    "n_offline_hf": 20,
+    "n_hf_calls_online": 0,
+    "n_hf_calls": 20,
+    "hf_call_fraction": 0.0019958088015168147,
+    "mean_abs_dev_from_reference": [
+      0.20456863555947535,
+      0.028638614002316043
+    ]
+  },
+  "online_active": {
+    "n_steps": 10001,
+    "posterior_mean": [
+      58.40596547285913,
+      2.8367932022077555
+    ],
+    "posterior_std": [
+      0.18677925259170047,
+      0.022254671667431686
+    ],
+    "rmse_to_truth": 0.22345402720326768,
+    "n_offline_hf": 20,
+    "n_hf_calls_online": 2,
+    "n_hf_calls": 22,
+    "hf_call_fraction": 0.0021953896816684962,
+    "mean_abs_dev_from_reference": [
+      0.07041248239537623,
+      0.03187182596959248
+    ]
+  }
+}

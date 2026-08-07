@@ -1,0 +1,62 @@
+{
+  "ours": {
+    "n_steps": 10000,
+    "posterior_mean": [
+      58.35389889555913,
+      2.806379540821523
+    ],
+    "posterior_std": [
+      0.16724557677008486,
+      0.021565995512021624
+    ],
+    "rmse_to_truth": 0.1812281684292527,
+    "n_offline_hf": 40,
+    "n_hf_calls_online": 139,
+    "n_hf_calls": 179,
+    "hf_call_fraction": 0.017828685258964142,
+    "mean_abs_dev_from_reference": [
+      0.018345905095372927,
+      0.001458164583359789
+    ]
+  },
+  "pretrained": {
+    "n_steps": 10001,
+    "posterior_mean": [
+      58.28740349246561,
+      2.809804500222323
+    ],
+    "posterior_std": [
+      0.1787213653458578,
+      0.022859952875478273
+    ],
+    "rmse_to_truth": 0.15489451893106876,
+    "n_offline_hf": 40,
+    "n_hf_calls_online": 0,
+    "n_hf_calls": 40,
+    "hf_call_fraction": 0.003983666965441689,
+    "mean_abs_dev_from_reference": [
+      0.04814949799814627,
+      0.004883123984159798
+    ]
+  },
+  "online_active": {
+    "n_steps": 10001,
+    "posterior_mean": [
+      58.290001442497356,
+      2.809228291895496
+    ],
+    "posterior_std": [
+      0.18102174805979415,
+      0.024737547066176594
+    ],
+    "rmse_to_truth": 0.15905292958207626,
+    "n_offline_hf": 40,
+    "n_hf_calls_online": 3,
+    "n_hf_calls": 43,
+    "hf_call_fraction": 0.0042824419878498155,
+    "mean_abs_dev_from_reference": [
+      0.045551547966397266,
+      0.004306915657332766
+    ]
+  }
+}

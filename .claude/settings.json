@@ -1,0 +1,8 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(python3 -c ' *)",
+      "Bash(python3 -m py_compile examples/toy_problem/msd_methods.py)"
+    ]
+  }
+}

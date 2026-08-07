@@ -51,6 +51,116 @@ def test_sample_active_chain_builds_result(monkeypatch: pytest.MonkeyPatch) -> N
     assert result.metadata["subsampling_rate"] == 1
 
 
+def test_sample_active_chain_reconstructs_used_hf_for_mismatched_chain_granularity(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Regression test: when `chain_key` selects a chain at a different granularity
+    than `model.log.used_hf`'s natural alignment (e.g. tinyDA's DA "fine" chain: one
+    state per outer iteration, vs. the per-coarse-step used_hf log), this must not
+    raise a shape-mismatch error, and must not silently slice the mismatched log
+    (which would grab an unrelated tail of a differently-indexed array). Instead every
+    sample is correctly reconstructed as `True`: a fine-chain state always involves
+    exactly one HF evaluation for the DA correction step, by construction."""
+
+    def _fake_sample(**kwargs):
+        # 2 outer iterations -> 2 returned "fine" samples, but the coarse-level
+        # used_hf log has 3 entries (a different granularity, e.g. within-block
+        # low-fidelity substeps), not simply a longer version of the same sequence.
+        return {"chain_0": [_Link(np.array([0.0, 0.0])), _Link(np.array([1.0, 0.0]))]}
+
+    import gp_active_mcmc.inference.sampling as sampling_mod
+
+    monkeypatch.setattr(sampling_mod.tda, "sample", _fake_sample)
+
+    model = _Model([False, True, False])  # 3 log entries, unrelated to the 2 fine samples
+    result = sample_active_chain(
+        model=model,
+        posterior=[object(), object()],  # two-posterior (DA) case
+        proposal=object(),
+        iterations=2,
+        initial_parameters=np.array([0.0, 0.0]),
+        subsampling_rate=1,
+        chain_key="chain_0",
+    )
+
+    assert result.chain.samples.shape == (2, 2)
+    assert result.chain.extras.used_hf is not None
+    # Not a slice of [False, True, False]: every fine-chain sample used HF.
+    np.testing.assert_array_equal(result.chain.extras.used_hf, np.array([True, True]))
+
+
+def test_sample_active_chain_diagnostic_chain_key_extracts_second_chain(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """`diagnostic_chain_key` should extract a second named chain (e.g. tinyDA's
+    "coarse" chain, for the full-resolution intra-block trajectory a trace plot wants)
+    alongside the main chain, without changing the main chain or its used_hf at all."""
+
+    def _fake_sample(**kwargs):
+        return {
+            "chain_0": [_Link(np.array([0.0, 0.0])), _Link(np.array([1.0, 0.0]))],
+            "chain_coarse_0": [
+                _Link(np.array([0.0, 0.0])),
+                _Link(np.array([0.5, 0.0])),
+                _Link(np.array([1.0, 0.0])),
+            ],
+        }
+
+    import gp_active_mcmc.inference.sampling as sampling_mod
+
+    monkeypatch.setattr(sampling_mod.tda, "sample", _fake_sample)
+
+    # 3 log entries: naturally aligns with the 3-row diagnostic chain, not the 2-row
+    # main chain -- so the main chain falls into the "every sample used HF" branch
+    # while the diagnostic chain falls into the "natural alignment" branch.
+    model = _Model([False, True, False])
+    result = sample_active_chain(
+        model=model,
+        posterior=[object(), object()],
+        proposal=object(),
+        iterations=2,
+        initial_parameters=np.array([0.0, 0.0]),
+        subsampling_rate=1,
+        chain_key="chain_0",
+        diagnostic_chain_key="chain_coarse_0",
+    )
+
+    # Main chain: unaffected by the diagnostic extraction.
+    np.testing.assert_array_equal(result.chain.extras.used_hf, np.array([True, True]))
+
+    diagnostic = result.metadata["diagnostic_chain"]
+    assert isinstance(diagnostic, MCMCChain)
+    assert diagnostic.samples.shape == (3, 2)
+    assert diagnostic.extras.used_hf is not None
+    np.testing.assert_array_equal(diagnostic.extras.used_hf, np.array([False, True, False]))
+
+
+def test_sample_active_chain_without_diagnostic_chain_key_omits_metadata_entry(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Default behaviour (no `diagnostic_chain_key`) must be unchanged: no extra key."""
+
+    def _fake_sample(**kwargs):
+        return {"chain_0": [_Link(np.array([0.0, 0.0])), _Link(np.array([1.0, 0.0]))]}
+
+    import gp_active_mcmc.inference.sampling as sampling_mod
+
+    monkeypatch.setattr(sampling_mod.tda, "sample", _fake_sample)
+
+    model = _Model([False, True])
+    result = sample_active_chain(
+        model=model,
+        posterior=[],
+        proposal=object(),
+        iterations=2,
+        initial_parameters=np.array([0.0, 0.0]),
+        subsampling_rate=1,
+        chain_key="chain_0",
+    )
+
+    assert "diagnostic_chain" not in result.metadata
+
+
 class _FakeAdaptiveHook:
     """Minimal stand-in for AdaptiveSubchain: converges as soon as asked."""
 
@@ -150,6 +260,106 @@ def test_sample_adaptive_then_frozen_chain_orchestrates_and_stitches(
     assert result.metadata["frozen_subsampling_rate"] == 2
     assert result.metadata["adapt_metadata"] is adapt_metadata
     assert result.metadata["production_metadata"] is prod_metadata
+
+
+def test_sample_adaptive_then_frozen_chain_threads_production_diagnostic_chain_key(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """`production_diagnostic_chain_key` should be forwarded to the production phase's
+    `sample_active_chain` call as `diagnostic_chain_key`, and the resulting
+    `metadata["diagnostic_chain"]` surfaced at the top level as
+    `metadata["production_diagnostic_chain"]` -- the full-resolution intra-block
+    trajectory a trace plot wants, alongside (not instead of) the fine-chain posterior."""
+    import gp_active_mcmc.inference.sampling as sampling_mod
+
+    adapt_chain = MCMCChain.from_arrays(
+        samples=np.array([[0.0, 0.0], [1.0, 0.0]]), used_hf=np.array([False, True])
+    )
+    adapt_metadata = {"coarse_evals_used": 4, "stopped_early": True}
+
+    prod_chain = MCMCChain.from_arrays(samples=np.array([[2.0, 0.0]]), used_hf=np.array([True]))
+    diagnostic_chain = MCMCChain.from_arrays(
+        samples=np.array([[1.5, 0.0], [1.8, 0.0], [2.0, 0.0]]),
+        used_hf=np.array([False, False, True]),
+    )
+    prod_metadata = {"iterations": 1, "subsampling_rate": 3, "diagnostic_chain": diagnostic_chain}
+
+    def _fake_adaptive(**kwargs: Any) -> SamplingResult:
+        return SamplingResult(chain=adapt_chain, metadata=adapt_metadata)
+
+    captured: dict[str, Any] = {}
+
+    def _fake_active(**kwargs: Any) -> SamplingResult:
+        captured["active_kwargs"] = kwargs
+        return SamplingResult(chain=prod_chain, metadata=prod_metadata)
+
+    monkeypatch.setattr(sampling_mod, "sample_adaptive_active_chain", _fake_adaptive)
+    monkeypatch.setattr(sampling_mod, "sample_active_chain", _fake_active)
+
+    class _FakeModel:
+        def __init__(self) -> None:
+            self.adaptive = _FakeAdaptiveHook(subchain_length=2, converged=True)
+
+        def freeze(self) -> object:
+            return object()
+
+    result = sampling_mod.sample_adaptive_then_frozen_chain(
+        model=_FakeModel(),
+        posterior_factory=lambda m: [],
+        proposal=object(),
+        n_coarse_evals=8,
+        initial_parameters=np.array([0.0, 0.0]),
+        chain_key="chain_coarse_0",
+        production_chain_key="chain_fine_0",
+        production_diagnostic_chain_key="chain_coarse_0",
+        config=ChunkedMCMCConfig(chain_key="chain_coarse_0", chunk_size=4),
+    )
+
+    assert captured["active_kwargs"]["diagnostic_chain_key"] == "chain_coarse_0"
+    assert result.metadata["production_diagnostic_chain"] is diagnostic_chain
+
+
+def test_sample_adaptive_then_frozen_chain_omits_production_diagnostic_chain_by_default(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import gp_active_mcmc.inference.sampling as sampling_mod
+
+    adapt_chain = MCMCChain.from_arrays(
+        samples=np.array([[0.0, 0.0], [1.0, 0.0]]), used_hf=np.array([False, True])
+    )
+    prod_chain = MCMCChain.from_arrays(samples=np.array([[2.0, 0.0]]), used_hf=np.array([True]))
+
+    def _fake_adaptive(**kwargs: Any) -> SamplingResult:
+        return SamplingResult(chain=adapt_chain, metadata={"coarse_evals_used": 4, "stopped_early": True})
+
+    captured: dict[str, Any] = {}
+
+    def _fake_active(**kwargs: Any) -> SamplingResult:
+        captured["active_kwargs"] = kwargs
+        return SamplingResult(chain=prod_chain, metadata={"iterations": 1, "subsampling_rate": 3})
+
+    monkeypatch.setattr(sampling_mod, "sample_adaptive_active_chain", _fake_adaptive)
+    monkeypatch.setattr(sampling_mod, "sample_active_chain", _fake_active)
+
+    class _FakeModel:
+        def __init__(self) -> None:
+            self.adaptive = _FakeAdaptiveHook(subchain_length=2, converged=True)
+
+        def freeze(self) -> object:
+            return object()
+
+    result = sampling_mod.sample_adaptive_then_frozen_chain(
+        model=_FakeModel(),
+        posterior_factory=lambda m: [],
+        proposal=object(),
+        n_coarse_evals=8,
+        initial_parameters=np.array([0.0, 0.0]),
+        chain_key="chain_coarse_0",
+        config=ChunkedMCMCConfig(chain_key="chain_coarse_0", chunk_size=4),
+    )
+
+    assert captured["active_kwargs"]["diagnostic_chain_key"] is None
+    assert "production_diagnostic_chain" not in result.metadata
 
 
 def test_sample_adaptive_then_frozen_chain_adapt_only_when_budget_exhausted(

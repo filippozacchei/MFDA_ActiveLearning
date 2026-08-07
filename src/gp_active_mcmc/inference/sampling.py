@@ -123,6 +123,24 @@ def _extract_subchain_history(model: Any) -> FloatArray | None:
     return np.asarray(hist, dtype=int)
 
 
+def _extract_chain_with_used_hf(*, chain_obj: Any, model: Any, chain_key: str) -> MCMCChain:
+    """Extract one named chain from a `tinyDA` result, with a correctly-reconstructed
+    `used_hf` flag per row (see `sample_active_chain`'s docstring for the two cases this
+    handles: natural per-coarse-step alignment vs. the DA fine-chain's one-HF-per-row
+    case). Factored out so the same logic can be applied to a second, purely
+    diagnostic, chain extracted from the same `tinyDA` call (see `diagnostic_chain_key`).
+    """
+    samples = extract_samples(chain=chain_obj, chain_key=chain_key)
+    used_hf = _extract_used_hf(model)
+
+    if used_hf.shape[0] == samples.shape[0]:
+        pass
+    else:
+        used_hf = np.ones(samples.shape[0], dtype=bool)
+
+    return MCMCChain.from_arrays(samples=samples, used_hf=used_hf)
+
+
 def sample_active_chain(
     *,
     model: Any,
@@ -135,6 +153,7 @@ def sample_active_chain(
     n_chains: int = 1,
     force_sequential: bool = True,
     store_coarse_chain: bool = True,
+    diagnostic_chain_key: str | None = None,
 ) -> SamplingResult:
     """Run Active-(DA)-MCMC with a fixed subsampling rate (single `tinyDA` call).
 
@@ -180,6 +199,16 @@ def sample_active_chain(
         If True, force sequential execution (useful for reproducibility).
     store_coarse_chain
         If True, store the coarse chain (when supported by `tinyDA`).
+    diagnostic_chain_key
+        Optional second chain key to *also* extract from the same `tinyDA` call, purely
+        for diagnostics/plotting -- it has no effect on `chain` (the one used for
+        inference) or on any budget accounting. The intended use is requesting tinyDA's
+        DA "coarse" chain (`"chain_coarse_0"`) alongside a `chain_key` of `"chain_fine_0"`:
+        the fine chain is the theoretically-valid posterior (one state per outer DA
+        block), but it discards the intra-block low-fidelity trajectory, which is
+        useful to see in a trace plot (e.g. colored by `used_hf`) even though those
+        intermediate states don't individually carry the DA guarantee. If given, the
+        result is available at `metadata["diagnostic_chain"]` as an `MCMCChain`.
 
     Returns
     -------
@@ -187,7 +216,8 @@ def sample_active_chain(
         [`SamplingResult`][gp_active_mcmc.inference.chain.SamplingResult] containing:
 
         - `chain`: an immutable [`MCMCChain`][gp_active_mcmc.inference.chain.MCMCChain]
-        - `metadata`: a dict recording run configuration
+        - `metadata`: a dict recording run configuration (plus `"diagnostic_chain"` if
+          `diagnostic_chain_key` was given)
 
     Raises
     ------
@@ -216,20 +246,39 @@ def sample_active_chain(
         adaptive_error_model=None,
     )
 
-    samples = extract_samples(chain=chain_obj, chain_key=chain_key)
-    used_hf = _extract_used_hf(model)
+    # `model.log.used_hf` (appended once per `coarse()`/`fine()` call) naturally aligns
+    # 1:1 with `samples` for a single-posterior chain or the DA "coarse" chain (one
+    # entry per within-block low-fidelity substep). It does *not* align with the DA
+    # "fine" chain (`chain_fine_i`: one state per outer DA iteration) -- there, every
+    # fine-chain sample trivially "used HF" by construction of delayed acceptance
+    # (each outer iteration ends with exactly one HF correction), regardless of the
+    # model's internal per-coarse-step log (which has a different length and cannot be
+    # sliced/aligned to match; naively slicing it, as an earlier version of this
+    # function did, silently grabs the wrong tail of an unrelated array). See
+    # `_extract_chain_with_used_hf` for the shape-based dispatch between these cases.
+    #
+    # Caveat: the fine-chain case undercounts if `coarse()` can *also* opportunistically
+    # trigger extra HF evaluations within a block (the online-active-learning
+    # uncertainty trigger) while `posterior` targets the fine chain -- that path is
+    # disabled for a frozen model (`ActiveMCMCModel.frozen=True` short-circuits
+    # `coarse()` before that check), which is the only case this is currently used for
+    # (`sample_adaptive_then_frozen_chain`'s production phase). It would need
+    # revisiting for a non-frozen two-posterior run using the fine chain.
+    chain = _extract_chain_with_used_hf(chain_obj=chain_obj, model=model, chain_key=chain_key)
 
-    chain = MCMCChain.from_arrays(samples=samples, used_hf=used_hf)
-    return SamplingResult(
-        chain=chain,
-        metadata={
-            "chain_key": chain_key,
-            "iterations": int(iterations),
-            "subsampling_rate": int(subsampling_rate),
-            "n_chains": int(n_chains),
-            "store_coarse_chain": bool(store_coarse_chain),
-        },
-    )
+    metadata: dict[str, Any] = {
+        "chain_key": chain_key,
+        "iterations": int(iterations),
+        "subsampling_rate": int(subsampling_rate),
+        "n_chains": int(n_chains),
+        "store_coarse_chain": bool(store_coarse_chain),
+    }
+    if diagnostic_chain_key is not None:
+        metadata["diagnostic_chain"] = _extract_chain_with_used_hf(
+            chain_obj=chain_obj, model=model, chain_key=diagnostic_chain_key
+        )
+
+    return SamplingResult(chain=chain, metadata=metadata)
 
 
 def sample_adaptive_active_chain(
@@ -420,6 +469,8 @@ def sample_adaptive_then_frozen_chain(
     chain_key: str,
     config: ChunkedMCMCConfig,
     max_adapt_coarse_evals: int | None = None,
+    production_chain_key: str | None = None,
+    production_diagnostic_chain_key: str | None = None,
     n_chains: int = 1,
     force_sequential: bool = True,
     store_coarse_chain: bool = True,
@@ -479,13 +530,33 @@ def sample_adaptive_then_frozen_chain(
         Initial parameter vector for the adaptive phase. The production phase is
         initialized from the last adaptive-phase sample.
     chain_key
-        Chain key used to locate samples inside the object returned by `tinyDA`. Used for
-        both phases.
+        Chain key used to locate the *adaptive*-phase samples inside the object
+        returned by `tinyDA` (e.g. tinyDA's DA "coarse" chain, `"chain_coarse_0"`).
+        Only used for diagnostics and as the production phase's starting point; see
+        `production_chain_key` for the samples that actually matter for inference.
     config
         Chunking configuration for the adaptive phase.
     max_adapt_coarse_evals
         Optional hard cap on the adaptive phase's budget (the paper's `N_adapt`,
         expressed in coarse evaluation units here). If None, defaults to `n_coarse_evals`.
+    production_chain_key
+        Chain key used for the *production* phase's samples -- the ones that carry the
+        DA stationarity guarantee. For a two-posterior `[coarse, fine]` run this should
+        be tinyDA's DA "fine" chain (e.g. `"chain_fine_0"`), **not** the same coarse
+        chain used for the adaptive phase: tinyDA's coarse chain records every
+        within-block low-fidelity substep, most of which are never individually
+        checked against the true (fine/HF) likelihood, whereas the fine chain records
+        exactly one state per outer DA iteration, each backed by a genuine HF-corrected
+        accept/reject decision -- only the fine chain has `pi_HF` as its guaranteed
+        invariant distribution. If None, defaults to `chain_key` (backwards-compatible,
+        but only correct if the caller's `chain_key` already points at the fine chain).
+    production_diagnostic_chain_key
+        Optional second chain key to *also* extract during the production phase, purely
+        for diagnostics/plotting (e.g. `"chain_coarse_0"` alongside a
+        `production_chain_key` of `"chain_fine_0"`, to recover the intra-block
+        low-fidelity trajectory the fine chain discards). Has no effect on `chain` or on
+        any budget accounting; see `sample_active_chain`'s `diagnostic_chain_key`. If
+        given, available at `metadata["production_diagnostic_chain"]`.
     n_chains, force_sequential, store_coarse_chain
         Passed through to both phases.
 
@@ -570,6 +641,7 @@ def sample_adaptive_then_frozen_chain(
         subsampling_rate = remaining
 
     theta_last = adapt_result.chain.samples[-1]
+    resolved_production_chain_key = production_chain_key if production_chain_key is not None else chain_key
 
     production_result = sample_active_chain(
         model=frozen_model,
@@ -578,10 +650,11 @@ def sample_adaptive_then_frozen_chain(
         iterations=int(iterations),
         initial_parameters=theta_last,
         subsampling_rate=int(subsampling_rate),
-        chain_key=chain_key,
+        chain_key=resolved_production_chain_key,
         n_chains=n_chains,
         force_sequential=force_sequential,
         store_coarse_chain=store_coarse_chain,
+        diagnostic_chain_key=production_diagnostic_chain_key,
     )
 
     adapt_chain = adapt_result.chain
@@ -616,6 +689,7 @@ def sample_adaptive_then_frozen_chain(
     metadata = {
         "phase": "adapt_then_production",
         "chain_key": chain_key,
+        "production_chain_key": resolved_production_chain_key,
         "n_coarse_evals": int(n_coarse_evals),
         "adapt_coarse_evals_used": coarse_used,
         "converged": converged,
@@ -625,4 +699,6 @@ def sample_adaptive_then_frozen_chain(
         "adapt_metadata": adapt_result.metadata,
         "production_metadata": production_result.metadata,
     }
+    if production_diagnostic_chain_key is not None:
+        metadata["production_diagnostic_chain"] = production_result.metadata.get("diagnostic_chain")
     return SamplingResult(chain=chain, metadata=metadata)

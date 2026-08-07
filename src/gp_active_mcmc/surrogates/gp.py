@@ -152,7 +152,7 @@ class SingleOutputGP:
         ard: bool = True,
         noise_variance: float = 1e-6,
         update_every: int = 10,
-        n_retrain_max: int = 20,
+        n_retrain_max: int = 1,
     ) -> None:
         X = _as_2d_float(X_train, name="X_train")
         y = _as_2d_targets(y_train, name="y_train")
@@ -335,7 +335,7 @@ class MultiOutputGP:
         ard: bool = True,
         noise_variance: float = 1e-6,
         update_every: int = 10,
-        n_retrain_max: int = 20,
+        n_retrain_max: int = 1,
     ) -> None:
         X = _as_2d_float(X_train, name="X_train")
         Y = _as_2d_targets(Y_train, name="Y_train")
