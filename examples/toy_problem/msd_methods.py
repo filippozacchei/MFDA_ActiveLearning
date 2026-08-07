@@ -22,7 +22,9 @@ sweep driver), `check_convergence.py` (multi-chain R-hat/ESS diagnostic), and
 
 from __future__ import annotations
 
+import contextlib
 import copy
+import os
 from collections.abc import Callable
 from dataclasses import dataclass, replace
 from pathlib import Path
@@ -60,7 +62,7 @@ PARAM_NAMES = ("k", "c")
 
 KERNEL = "matern52"
 GAMMA_THRESHOLD = 0.01
-N_COARSE_EVALS = 10000
+N_COARSE_EVALS = 1000
 MAX_ADAPT_COARSE_EVALS = 400
 BURN_IN = 100
 N_REF_ITERATIONS = 3000
@@ -721,13 +723,25 @@ def find_burn_in_via_rhat(
     *,
     candidate_burn_ins: list[int] | None = None,
     rhat_threshold: float = 1.01,
+    min_ess: float | None = None,
     min_burn_in: int = 0,
     patience: int = 5,
     param_names: tuple[str, ...] = PARAM_NAMES,
 ) -> dict[str, Any]:
     """Find the smallest burn-in at which Gelman-Rubin R-hat (across `chains`) drops to
-    `rhat_threshold` and stays there for `patience` consecutive larger candidates (not
-    just the first dip below threshold, which could be a fluke).
+    `rhat_threshold` *and* bulk-ESS is at least `min_ess` (if given), holding both for
+    `patience` consecutive larger candidates (not just the first dip below threshold,
+    which could be a fluke).
+
+    R-hat alone is not a sufficient convergence check: with very few post-burn-in draws
+    per chain, R-hat is itself a noisy estimator and can cross below threshold "by
+    luck" well before the chain has genuinely mixed -- exactly the failure mode that
+    hits methods whose chain rows are each expensive relative to the sampling budget
+    (e.g. `ours`'s frozen-production rows, one per DA block rather than one per coarse
+    eval): they can rack up very few total samples yet still trip a loose R-hat check.
+    Pairing R-hat with a minimum bulk-ESS floor (Vehtari et al. 2021 recommend this
+    pairing in general; `min_ess=400` is a common choice) closes that gap: convergence
+    isn't declared on a technically-passing but essentially data-free chain.
 
     Note this deliberately does *not* require staying below threshold forever after:
     with only a handful of chains, R-hat itself is a noisy estimate (especially late in
@@ -749,9 +763,9 @@ def find_burn_in_via_rhat(
     phase must be discarded regardless of what R-hat says about it.
 
     Returns a dict with `burn_in`, `rhat`, `ess_bulk`, `converged` (whether any
-    candidate satisfied the threshold and held), and `sweep` (the full list of tried
-    `{burn_in, rhat, ess_bulk, max_rhat}`, useful for plotting R-hat vs. assumed
-    burn-in).
+    candidate satisfied both the R-hat and ESS conditions and held), and `sweep` (the
+    full list of tried `{burn_in, rhat, ess_bulk, max_rhat, min_ess_bulk}`, useful for
+    plotting R-hat/ESS vs. assumed burn-in).
     """
     n_total = min(c.n_steps for c in chains)
     if candidate_burn_ins is None:
@@ -772,13 +786,21 @@ def find_burn_in_via_rhat(
                 "rhat": diag["rhat"],
                 "ess_bulk": diag["ess_bulk"],
                 "max_rhat": max(diag["rhat"].values()),
+                "min_ess_bulk": min(diag["ess_bulk"].values()),
             }
         )
+
+    def _passes(entry: dict[str, Any]) -> bool:
+        if entry["max_rhat"] > rhat_threshold:
+            return False
+        if min_ess is not None and entry["min_ess_bulk"] < min_ess:
+            return False
+        return True
 
     chosen = None
     for i, entry in enumerate(sweep):
         window = sweep[i : i + patience]
-        if len(window) == patience and all(e["max_rhat"] <= rhat_threshold for e in window):
+        if len(window) == patience and all(_passes(e) for e in window):
             chosen = entry
             break
     if chosen is None and sweep:
@@ -791,7 +813,7 @@ def find_burn_in_via_rhat(
         "burn_in": chosen["burn_in"] if chosen else None,
         "rhat": chosen["rhat"] if chosen else None,
         "ess_bulk": chosen["ess_bulk"] if chosen else None,
-        "converged": bool(chosen and chosen["max_rhat"] <= rhat_threshold),
+        "converged": bool(chosen and _passes(chosen)),
         "sweep": sweep,
     }
 
@@ -1013,14 +1035,17 @@ def run_convergence_check(
 
 
 def print_convergence_table(results: dict[str, Any]) -> None:
-    """Prints RMSE-to-truth alongside the two reference-based distributional metrics
+    """Prints the two reference-based distributional metrics
     (`wasserstein2_to_reference`, `kl_to_reference` -- both vs. the HF-only pooled
-    posterior; absent for `hf_only` itself, shown as `--`). See `pooled_summarize`'s
-    docstring for why RMSE alone is not an adequate posterior-quality metric.
+    posterior; absent for `hf_only` itself, shown as `--`) ahead of RMSE-to-truth:
+    W2/KL are the metrics that actually reflect posterior *quality* (location AND
+    spread/shape vs. the R-hat-validated HF reference), whereas RMSE only checks the
+    mean against a single point and is kept as a secondary, more familiar number. See
+    `pooled_summarize`'s docstring for the full reasoning.
     """
     header = (
         f"{'method':<14}{'burn_in':>9}{'rhat_k':>9}{'rhat_c':>9}{'ess_k':>9}{'ess_c':>9}"
-        f"{'rmse':>10}{'w2_ref':>10}{'kl_ref':>10}"
+        f"{'w2_ref':>10}{'kl_ref':>10}{'rmse':>10}"
     )
     print(header)
     for name, r in results.items():
@@ -1035,19 +1060,22 @@ def print_convergence_table(results: dict[str, Any]) -> None:
         kl_str = f"{kl:>10.4f}" if kl is not None else f"{'--':>10}"
         print(
             f"{name:<14}{r['burn_in']:>9}{r['rhat']['k']:>9.3f}{r['rhat']['c']:>9.3f}"
-            f"{r['ess_bulk']['k']:>9.1f}{r['ess_bulk']['c']:>9.1f}{rmse:>10.4f}{w2_str}{kl_str}"
+            f"{r['ess_bulk']['k']:>9.1f}{r['ess_bulk']['c']:>9.1f}{w2_str}{kl_str}{rmse:>10.4f}"
         )
 
 
 def print_convergence_driven_table(results: dict[str, Any]) -> None:
     """Cost-to-converge table: for each method, how much budget (coarse evals, HF
-    calls) it needed to reach R-hat<=threshold (or "capped" if it never did), and the
-    resulting accuracy -- the primary comparison for the paper's efficiency claim (vs.
-    `print_convergence_table`'s fixed-budget comparison from `run_convergence_check`).
+    calls) it needed to reach R-hat<=threshold and ESS>=min_ess (or "capped" if it
+    never did), and the resulting accuracy -- the primary comparison for the paper's
+    efficiency claim (vs. `print_convergence_table`'s fixed-budget comparison from
+    `run_convergence_check`). W2/KL (posterior quality vs. the HF-only reference) lead
+    RMSE for the same reason `print_convergence_table` reorders them -- see its
+    docstring.
     """
     header = (
         f"{'method':<14}{'status':>10}{'rounds':>8}{'coarse_evals':>14}"
-        f"{'n_hf':>8}{'rmse':>10}{'w2_ref':>10}{'kl_ref':>10}"
+        f"{'n_hf':>8}{'w2_ref':>10}{'kl_ref':>10}{'rmse':>10}"
     )
     print(header)
     for name, r in results.items():
@@ -1060,7 +1088,7 @@ def print_convergence_driven_table(results: dict[str, Any]) -> None:
         status = "converged" if r["converged"] else "capped"
         print(
             f"{name:<14}{status:>10}{r['rounds_run']:>8}{r['total_coarse_evals']:>14}"
-            f"{pooled.get('n_hf_calls', 0):>8}{rmse:>10.4f}{w2_str}{kl_str}"
+            f"{pooled.get('n_hf_calls', 0):>8}{w2_str}{kl_str}{rmse:>10.4f}"
         )
 
 
@@ -1087,6 +1115,25 @@ def print_convergence_driven_table(results: dict[str, Any]) -> None:
 # so a monitor thread couldn't stop a chain any sooner than the next chunk boundary
 # anyway -- the same granularity this lock-step loop already gives for free, without
 # the added complexity of cross-process signaling.
+
+
+@contextlib.contextmanager
+def _suppress_tinyda_output():
+    """Silence tinyDA's own per-call console output for the duration of one `with`
+    block: an unconditional `print("Sampling chain i/n")` (stdout) plus a `tqdm`
+    progress bar (stderr) inside `tinyDA.sample`'s sequential path, with no verbosity
+    flag to turn either off (`force_progress_bar` only affects the parallel path,
+    which this codebase never uses -- `force_sequential=True` everywhere).
+
+    Harmless noise for a single long `tda.sample()` call; a real problem for the
+    convergence-driven orchestrator, which calls it once per chunk *per round* -- a
+    run with hundreds of rounds would otherwise print thousands of lines. Round-level
+    progress is printed separately (see `run_until_rhat_converged`), so nothing is
+    lost, just consolidated to one line per round instead of several per chunk.
+    """
+    with open(os.devnull, "w") as devnull:
+        with contextlib.redirect_stdout(devnull), contextlib.redirect_stderr(devnull):
+            yield
 
 
 @dataclass
@@ -1150,35 +1197,37 @@ def _run_chunk(state: _ChunkState, chunk_size: int) -> tuple[_ChunkState, MCMCCh
     iterations = max(1, chunk_size // state.subsampling_rate)
     coarse_evals_spent = iterations * state.subsampling_rate
 
-    if state.model is None:
-        # Pure HF-only: no ActiveMCMCModel, call tinyDA directly (mirrors run_hf_only;
-        # note it does *not* deep-copy the proposal, unlike sample_active_chain --
-        # harmless either way given AdaptiveMetropolisShared's shared state, but kept
-        # consistent with the original for a like-for-like comparison).
-        chain_obj = tda.sample(
-            posteriors=state.posterior,
-            proposal=state.proposal,
-            iterations=int(iterations),
-            n_chains=1,
-            force_sequential=True,
-            initial_parameters=state.theta_current,
-            adaptive_error_model=None,
-        )
-        samples = extract_samples(chain=chain_obj, chain_key=state.chain_key)
-        used_hf = np.ones(samples.shape[0], dtype=bool)
-        chain = MCMCChain.from_arrays(samples=samples, used_hf=used_hf)
-    else:
-        _reset_model_log(state.model)
-        result = sample_active_chain(
-            model=state.model,
-            posterior=state.posterior,
-            proposal=state.proposal,
-            iterations=int(iterations),
-            initial_parameters=state.theta_current,
-            subsampling_rate=state.subsampling_rate,
-            chain_key=state.chain_key,
-        )
-        chain = result.chain
+    with _suppress_tinyda_output():
+        if state.model is None:
+            # Pure HF-only: no ActiveMCMCModel, call tinyDA directly (mirrors
+            # run_hf_only; note it does *not* deep-copy the proposal, unlike
+            # sample_active_chain -- harmless either way given
+            # AdaptiveMetropolisShared's shared state, but kept consistent with the
+            # original for a like-for-like comparison).
+            chain_obj = tda.sample(
+                posteriors=state.posterior,
+                proposal=state.proposal,
+                iterations=int(iterations),
+                n_chains=1,
+                force_sequential=True,
+                initial_parameters=state.theta_current,
+                adaptive_error_model=None,
+            )
+            samples = extract_samples(chain=chain_obj, chain_key=state.chain_key)
+            used_hf = np.ones(samples.shape[0], dtype=bool)
+            chain = MCMCChain.from_arrays(samples=samples, used_hf=used_hf)
+        else:
+            _reset_model_log(state.model)
+            result = sample_active_chain(
+                model=state.model,
+                posterior=state.posterior,
+                proposal=state.proposal,
+                iterations=int(iterations),
+                initial_parameters=state.theta_current,
+                subsampling_rate=state.subsampling_rate,
+                chain_key=state.chain_key,
+            )
+            chain = result.chain
 
     new_state = replace(state, theta_current=chain.samples[-1])
     return new_state, chain, coarse_evals_spent
@@ -1195,7 +1244,7 @@ def _init_hf_only_state(problem: Problem, *, seed: int, theta0: np.ndarray | Non
     return _ChunkState(posterior=posterior, proposal=proposal, theta_current=theta0, model=None)
 
 
-def _init_pretrained_state(
+def _train_pretrained_surrogate(
     problem: Problem,
     *,
     seed_X: np.ndarray,
@@ -1204,27 +1253,42 @@ def _init_pretrained_state(
     pod_rank: int,
     kernel: str,
     seed: int,
-    theta0: np.ndarray | None = None,
-) -> tuple[_ChunkState, int]:
-    """Trains the offline design once (a fixed upfront cost, not part of the monitored
-    round loop), then returns a chunk-ready state for the frozen, single-posterior
-    sampling phase, plus the number of HF evaluations spent on that offline design."""
+) -> tuple[PODGPSurrogate, int]:
+    """Trains `pretrained`'s offline design once (a fixed upfront cost, not part of the
+    monitored round loop): returns the trained surrogate and the number of HF
+    evaluations spent getting it. Called exactly once per `run_convergence_driven_comparison`
+    call -- all `n_chains` replicates share this single surrogate (see
+    `_init_pretrained_state_from_surrogate`) rather than each training their own."""
     rng = set_seed(seed)
     surrogate = active_learning_offline_design(
         problem, seed_X, seed_Y, gamma_threshold=gamma_threshold, pod_rank=pod_rank, kernel=kernel, rng=rng
     )
     n_hf_spent = surrogate.gp.n_train
+    return surrogate, n_hf_spent
 
-    model = ActiveMCMCModel(lf_model=surrogate, hf_model=problem.hf_forward, gamma_threshold=0.0, frozen=True)
+
+def _init_pretrained_state_from_surrogate(
+    problem: Problem, *, surrogate: PODGPSurrogate, seed: int, theta0: np.ndarray | None = None
+) -> _ChunkState:
+    """Chunk-ready state for `pretrained`'s frozen, single-posterior sampling phase,
+    from an *already-trained* surrogate shared across every replicate (deep-copied
+    here so each replicate's `ActiveMCMCModel`/`model.log` is independent even though
+    the underlying surrogate weights are identical) -- see
+    `run_convergence_driven_comparison`'s docstring for why sharing one surrogate
+    matters (independently-retrained replicates would each target a subtly different
+    frozen posterior, breaking R-hat's same-target assumption)."""
+    model = ActiveMCMCModel(
+        lf_model=copy.deepcopy(surrogate), hf_model=problem.hf_forward, gamma_threshold=0.0, frozen=True
+    )
     cov = (problem.sigma_obs**2) * np.eye(len(problem.y_obs))
     loglike = ActiveGPLogLike(data=problem.y_obs, covariance=cov)
     posterior = tda.Posterior(problem.prior, loglike, model.coarse)
     proposal = make_proposal(problem)
 
+    rng = set_seed(seed)
     if theta0 is None:
         theta0 = np.asarray(problem.prior.rvs(random_state=rng), dtype=float)
-    state = _ChunkState(posterior=posterior, proposal=proposal, theta_current=theta0, model=model)
-    return state, n_hf_spent
+    return _ChunkState(posterior=posterior, proposal=proposal, theta_current=theta0, model=model)
 
 
 def _init_online_active_state(
@@ -1300,16 +1364,17 @@ def _init_ours_production_state(
     if theta0 is None:
         theta0 = np.asarray(problem.prior.rvs(random_state=rng), dtype=float)
 
-    adapt_result = sample_adaptive_active_chain(
-        model=model,
-        posterior=posterior_factory(model),
-        proposal=proposal,
-        n_coarse_evals=max_adapt_coarse_evals,
-        initial_parameters=theta0,
-        chain_key="chain_coarse_0",
-        config=ChunkedMCMCConfig(chain_key="chain_coarse_0", chunk_size=100),
-        stop_check=hook.has_converged,
-    )
+    with _suppress_tinyda_output():
+        adapt_result = sample_adaptive_active_chain(
+            model=model,
+            posterior=posterior_factory(model),
+            proposal=proposal,
+            n_coarse_evals=max_adapt_coarse_evals,
+            initial_parameters=theta0,
+            chain_key="chain_coarse_0",
+            config=ChunkedMCMCConfig(chain_key="chain_coarse_0", chunk_size=100),
+            stop_check=hook.has_converged,
+        )
     adapt_meta = {
         "n_adapt_samples": int(adapt_result.chain.n_steps),
         "adapt_coarse_evals_used": int(adapt_result.metadata["coarse_evals_used"]),
@@ -1329,6 +1394,41 @@ def _init_ours_production_state(
         chain_key="chain_fine_0",
     )
     return state, adapt_meta, adapt_result.chain
+
+
+def _init_ours_production_state_from_frozen(
+    problem: Problem, *, frozen_model: ActiveMCMCModel, frozen_rate: int, theta0: np.ndarray
+) -> _ChunkState:
+    """Chunk-ready production state for `ours`, from an *already-frozen* model/rate
+    shared across every replicate (deep-copied here so each replicate's `model.log` is
+    independent even though the frozen surrogate weights and `subsampling_rate` are
+    identical) -- see `run_convergence_driven_comparison`'s docstring for why sharing
+    one adaptive-phase result matters (independently-run adaptive phases would each
+    freeze a subtly different surrogate/subsampling_rate, breaking R-hat's same-target
+    assumption). `theta0` is shared too (typically the single adaptive phase's last
+    state), matching the "same start, independent randomness thereafter" convention
+    `multichain_diagnostics` relies on elsewhere in this module.
+    """
+    cov = (problem.sigma_obs**2) * np.eye(len(problem.y_obs))
+    loglike_coarse = ActiveGPLogLike(data=problem.y_obs, covariance=cov)
+    loglike_fine = tda.AdaptiveGaussianLogLike(data=problem.y_obs, covariance=cov)
+    model_copy = copy.deepcopy(frozen_model)
+
+    def posterior_factory(m: ActiveMCMCModel) -> list[tda.Posterior]:
+        return [
+            tda.Posterior(problem.prior, loglike_coarse, m.coarse),
+            tda.Posterior(problem.prior, loglike_fine, m.fine),
+        ]
+
+    proposal = make_proposal(problem)
+    return _ChunkState(
+        posterior=posterior_factory(model_copy),
+        proposal=proposal,
+        theta_current=theta0,
+        model=model_copy,
+        subsampling_rate=frozen_rate,
+        chain_key="chain_fine_0",
+    )
 
 
 def _concat_chain_blocks(blocks: list[MCMCChain]) -> MCMCChain:
@@ -1361,15 +1461,29 @@ def run_until_rhat_converged(
     chunk_size: int,
     max_total_coarse_evals: int,
     rhat_threshold: float = 1.01,
+    min_ess: float | None = None,
     patience: int = 5,
     n_jobs: int | None = None,
+    label: str | None = None,
+    verbose: bool = True,
 ) -> dict[str, Any]:
     """Run `len(init_fns)` independent replicate chains in synchronized rounds, each
     round advancing every chain by one `chunk_size`-coarse-eval chunk in parallel
     (`joblib`, one process per chain), stopping as soon as `find_burn_in_via_rhat`
     reports convergence across the accumulated chains-so-far (reused unmodified: it
     already does the right thing when called again on a longer chain) or
-    `max_total_coarse_evals` is reached, whichever comes first.
+    `max_total_coarse_evals` is reached, whichever comes first. `min_ess` (passed
+    through to `find_burn_in_via_rhat`) additionally requires bulk-ESS to clear that
+    floor before declaring convergence -- important here specifically, since methods
+    whose chunks are expensive relative to `chunk_size` (a large frozen
+    `subsampling_rate`) accumulate very few rows per round, and R-hat alone can pass
+    "by luck" on such a small sample well before real convergence.
+
+    tinyDA's own per-chunk console output (a print plus a tqdm bar per replicate, every
+    round) is suppressed (see `_suppress_tinyda_output`); if `verbose` (default True),
+    one concise progress line is printed per round instead -- `label` (e.g. a method
+    name) is prepended to identify which of several concurrent/sequential calls a line
+    belongs to, since this function is typically called once per method.
 
     Returns a dict with `chains` (the final `list[MCMCChain]`, one per replicate,
     possibly still growing/non-converged if the cap was hit), `rounds_run`,
@@ -1416,7 +1530,19 @@ def run_until_rhat_converged(
             # per round, never less, so capping on the fastest-growing chain is what
             # keeps this a genuine safety valve rather than a soft suggestion.
             total_coarse_evals = max(coarse_evals_per_chain)
-            conv = find_burn_in_via_rhat(chains_so_far, rhat_threshold=rhat_threshold, patience=patience)
+            conv = find_burn_in_via_rhat(
+                chains_so_far, rhat_threshold=rhat_threshold, min_ess=min_ess, patience=patience
+            )
+
+            if verbose:
+                prefix = f"[{label}] " if label else ""
+                rhat_str = (
+                    ", ".join(f"{k}={v:.3f}" for k, v in conv["rhat"].items()) if conv["rhat"] is not None else "n/a"
+                )
+                print(
+                    f"  {prefix}round {rounds_run}: coarse_evals={total_coarse_evals}/{max_total_coarse_evals}  "
+                    f"rhat=({rhat_str})  converged={conv['converged']}"
+                )
 
             if conv["converged"] or total_coarse_evals >= max_total_coarse_evals:
                 return {
@@ -1441,6 +1567,7 @@ def run_convergence_driven_comparison(
     chunk_size: int,
     max_total_coarse_evals: int,
     rhat_threshold: float = 1.01,
+    min_ess: float = 400.0,
     patience: int = 5,
     theta0: np.ndarray | None = None,
     seed_base: int = 0,
@@ -1448,8 +1575,10 @@ def run_convergence_driven_comparison(
 ) -> tuple[dict[str, Any], dict[str, list[MCMCChain]], dict[str, list[PODGPSurrogate]]]:
     """The convergence-driven analog of `run_convergence_check`: instead of comparing
     accuracy at a fixed, shared `n_coarse_evals` budget, runs each method until its
-    replicate chains agree (R-hat<=`rhat_threshold`, `patience`-checked) or
-    `max_total_coarse_evals` is hit, and reports the *cost* (HF calls, coarse evals) to
+    replicate chains agree (R-hat<=`rhat_threshold` *and* bulk-ESS>=`min_ess`,
+    `patience`-checked -- see `find_burn_in_via_rhat`'s docstring for why both are
+    needed, not R-hat alone) or `max_total_coarse_evals` is hit, and reports the *cost*
+    (HF calls, coarse evals) to
     get there alongside the resulting accuracy -- the comparison that actually
     demonstrates a computational-efficiency claim, and the one a reviewer will look
     for first, since it directly compares methods on the resource each is meant to
@@ -1475,6 +1604,22 @@ def run_convergence_driven_comparison(
       *initial* per-replicate state's model already has the final surrogate;
       `online_active`'s keeps learning throughout, so its surrogate is read from
       `run_until_rhat_converged`'s `final_states` instead.
+
+    `pretrained` and `ours` each build their `n_chains` replicates from a *single*
+    shared offline design / adaptive phase (one call to `active_learning_offline_design`
+    / `_init_ours_production_state`, deep-copied into each replicate's state), not one
+    independently-retrained/re-adapted run per replicate. Independently retraining
+    would make each replicate target a subtly different frozen posterior (a different
+    surrogate, or for `ours` a different frozen `subsampling_rate` too), which breaks
+    R-hat's basic assumption that all chains target the *same* distribution -- R-hat
+    could then fail to ever converge for reasons that have nothing to do with MCMC
+    mixing (permanent between-replicate target disagreement, not transient burn-in).
+    The one-time offline/adaptive cost is charged to the *first* replicate only in the
+    returned cost accounting (not once per replicate), since it is genuinely paid once,
+    not `n_chains` times. `online_active` is *not* changed this way: it has no freeze
+    point (each replicate's surrogate keeps learning online throughout, by design --
+    matching Riccius et al.'s algorithm exactly), so there's no single shared frozen
+    state to build replicates from without changing what the baseline is.
     """
     if theta0 is None:
         theta0 = np.asarray(problem.prior.rvs(random_state=set_seed(999 + n_init + seed_base)), dtype=float)
@@ -1483,10 +1628,11 @@ def run_convergence_driven_comparison(
     chains_by_method: dict[str, list[MCMCChain]] = {}
     surrogates_by_method: dict[str, list[PODGPSurrogate]] = {}
 
+    print(f"--- hf_only: {n_chains} chains ---")
     hf_run = run_until_rhat_converged(
         [lambda i=i: _init_hf_only_state(problem, seed=seed_base + 100 + i, theta0=theta0) for i in range(n_chains)],
         chunk_size=chunk_size, max_total_coarse_evals=max_total_coarse_evals,
-        rhat_threshold=rhat_threshold, patience=patience, n_jobs=n_jobs,
+        rhat_threshold=rhat_threshold, min_ess=min_ess, patience=patience, n_jobs=n_jobs, label="hf_only",
     )
     chains_by_method["hf_only"] = hf_run.pop("chains")
     hf_run.pop("final_states")  # no surrogate for HF-only; not JSON-serializable, must not leak into results
@@ -1494,36 +1640,48 @@ def run_convergence_driven_comparison(
         chains_by_method["hf_only"], problem, burn_in=hf_run["burn_in"] or 0, n_offline_hf=0
     )
     results["hf_only"] = hf_run
+    print(f"--- hf_only done: converged={hf_run['converged']}, {hf_run['rounds_run']} rounds ---")
 
     hf_reference_mean = np.asarray(hf_run["pooled"]["posterior_mean"])
     hf_reference_cov = np.asarray(hf_run["pooled"]["posterior_cov"])
 
-    # Pretrained's offline design (and its HF cost) is trained once per replicate,
-    # up front, outside the monitored round loop -- it's a fixed cost, not something
-    # the R-hat-driven stopping rule is meant to trade off against.
-    pretrained_inits = []
-    n_hf_pretrained_list = []
-    for i in range(n_chains):
-        state, n_hf = _init_pretrained_state(
-            problem, seed_X=seed_X, seed_Y=seed_Y, gamma_threshold=GAMMA_THRESHOLD, pod_rank=pod_rank,
-            kernel=KERNEL, seed=seed_base + 200 + i, theta0=theta0,
+    # Pretrained's offline design (and its HF cost) is trained *once*, up front,
+    # shared by every replicate -- not once per replicate. See this function's
+    # docstring for why: independently-retrained replicates would each target a
+    # subtly different frozen posterior, breaking R-hat's same-target assumption.
+    # The one-time cost is charged to replicate 0 only in n_hf_pretrained_list (summed
+    # into total cost downstream), since it's genuinely paid once, not n_chains times.
+    print("--- pretrained: training 1 shared offline design ---")
+    pretrained_surrogate, n_hf_pretrained_shared = _train_pretrained_surrogate(
+        problem, seed_X=seed_X, seed_Y=seed_Y, gamma_threshold=GAMMA_THRESHOLD, pod_rank=pod_rank,
+        kernel=KERNEL, seed=seed_base + 200,
+    )
+    pretrained_inits = [
+        _init_pretrained_state_from_surrogate(
+            problem, surrogate=pretrained_surrogate, seed=seed_base + 200 + i, theta0=theta0
         )
-        pretrained_inits.append(state)
-        n_hf_pretrained_list.append(n_hf)
+        for i in range(n_chains)
+    ]
+    n_hf_pretrained_list = [n_hf_pretrained_shared] + [0] * (n_chains - 1)
+    print(f"--- pretrained: offline design done (n_hf={n_hf_pretrained_shared}), starting {n_chains} chains ---")
     pre_run = run_until_rhat_converged(
         [lambda s=s: s for s in pretrained_inits],
         chunk_size=chunk_size, max_total_coarse_evals=max_total_coarse_evals,
-        rhat_threshold=rhat_threshold, patience=patience, n_jobs=n_jobs,
+        rhat_threshold=rhat_threshold, min_ess=min_ess, patience=patience, n_jobs=n_jobs, label="pretrained",
     )
     chains_by_method["pretrained"] = pre_run.pop("chains")
     pre_run.pop("final_states")  # frozen throughout: pretrained_inits already has the final surrogate
-    surrogates_by_method["pretrained"] = [s.model.lf_model for s in pretrained_inits]
+    # Single shared surrogate -> one entry, not n_chains identical copies (which would
+    # visually overstate replicate-to-replicate variability that no longer exists).
+    surrogates_by_method["pretrained"] = [pretrained_surrogate]
     pre_run["pooled"] = pooled_summarize(
         chains_by_method["pretrained"], problem, burn_in=pre_run["burn_in"] or 0, n_offline_hf=n_hf_pretrained_list,
         reference_mean=hf_reference_mean, reference_cov=hf_reference_cov,
     )
     results["pretrained"] = pre_run
+    print(f"--- pretrained done: converged={pre_run['converged']}, {pre_run['rounds_run']} rounds ---")
 
+    print(f"--- online_active: {n_chains} chains ---")
     on_run = run_until_rhat_converged(
         [
             lambda i=i: _init_online_active_state(
@@ -1533,7 +1691,7 @@ def run_convergence_driven_comparison(
             for i in range(n_chains)
         ],
         chunk_size=chunk_size, max_total_coarse_evals=max_total_coarse_evals,
-        rhat_threshold=rhat_threshold, patience=patience, n_jobs=n_jobs,
+        rhat_threshold=rhat_threshold, min_ess=min_ess, patience=patience, n_jobs=n_jobs, label="online_active",
     )
     chains_by_method["online_active"] = on_run.pop("chains")
     # Unlike pretrained/ours, online_active's surrogate keeps learning throughout the
@@ -1545,36 +1703,52 @@ def run_convergence_driven_comparison(
         reference_mean=hf_reference_mean, reference_cov=hf_reference_cov,
     )
     results["online_active"] = on_run
+    print(f"--- online_active done: converged={on_run['converged']}, {on_run['rounds_run']} rounds ---")
 
-    # ours: adaptive phase runs to each replicate's own completion first (outside the
-    # monitored loop, same reasoning as pretrained's offline design), then production
-    # is chunked and monitored exactly like the other three methods.
-    ours_inits = []
-    ours_adapt_metas = []
-    ours_adapt_chains = []
-    for i in range(n_chains):
-        state, adapt_meta, adapt_chain = _init_ours_production_state(
-            problem, surrogate=seed_surrogate, gamma_threshold=GAMMA_THRESHOLD,
-            max_adapt_coarse_evals=MAX_ADAPT_COARSE_EVALS, seed=seed_base + 400 + i, theta0=theta0,
+    # ours: the adaptive phase runs *once* (shared by every replicate), then production
+    # is chunked and monitored exactly like the other three methods. See this
+    # function's docstring for why: independently-run adaptive phases would each
+    # freeze a subtly different surrogate/subsampling_rate, breaking R-hat's
+    # same-target assumption -- exactly the confound this fixes.
+    print("--- ours: running 1 shared adaptive phase ---")
+    shared_state, shared_adapt_meta, shared_adapt_chain = _init_ours_production_state(
+        problem, surrogate=seed_surrogate, gamma_threshold=GAMMA_THRESHOLD,
+        max_adapt_coarse_evals=MAX_ADAPT_COARSE_EVALS, seed=seed_base + 400, theta0=theta0,
+    )
+    frozen_rate = shared_state.subsampling_rate
+    theta_last = shared_state.theta_current
+    print(f"--- ours: adaptive phase done (frozen_rate={frozen_rate}), starting {n_chains} production chains ---")
+    ours_inits = [
+        _init_ours_production_state_from_frozen(
+            problem, frozen_model=shared_state.model, frozen_rate=frozen_rate, theta0=theta_last
         )
-        ours_inits.append(state)
-        ours_adapt_metas.append(adapt_meta)
-        ours_adapt_chains.append(adapt_chain)
+        for _ in range(n_chains)
+    ]
+    # Every replicate shares the same adaptive-phase bookkeeping (there's only one
+    # adaptive phase now) -- repeating it n_chains times keeps prepare_multichain_traces_section5b
+    # and the cost accounting below (which zips these lists against per-chain data)
+    # working unchanged.
+    ours_adapt_metas = [shared_adapt_meta] * n_chains
+    ours_adapt_chains = [shared_adapt_chain] * n_chains
     ours_run = run_until_rhat_converged(
         [lambda s=s: s for s in ours_inits],
         chunk_size=chunk_size, max_total_coarse_evals=max_total_coarse_evals,
-        rhat_threshold=rhat_threshold, patience=patience, n_jobs=n_jobs,
+        rhat_threshold=rhat_threshold, min_ess=min_ess, patience=patience, n_jobs=n_jobs, label="ours",
     )
     chains_by_method["ours"] = ours_run.pop("chains")
-    ours_run.pop("final_states")  # frozen throughout production: ours_inits already has the final surrogate
-    surrogates_by_method["ours"] = [s.model.lf_model for s in ours_inits]
+    ours_run.pop("final_states")  # frozen throughout production: shared_state already has the final surrogate
+    # Single shared surrogate -> one entry, not n_chains identical copies (which would
+    # visually overstate replicate-to-replicate variability that no longer exists).
+    surrogates_by_method["ours"] = [shared_state.model.lf_model]
     # ours's production chains are DA blocks (subsampling_rate coarse evals each), not
     # one coarse eval per row -- `run_until_rhat_converged` already tracks each
     # replicate's true coarse-eval cost during production (coarse_evals_per_chain, for
     # exactly this reason), so only the adaptive phase's cost needs adding on top.
+    # The (now-shared) adaptive-phase cost is charged to replicate 0 only, not
+    # n_chains times: with a single adaptive phase, it's genuinely paid once.
     ours_production_coarse_evals = [
-        int(adapt_meta["adapt_coarse_evals_used"]) + production_cost
-        for adapt_meta, production_cost in zip(ours_adapt_metas, ours_run["coarse_evals_per_chain"], strict=True)
+        (int(shared_adapt_meta["adapt_coarse_evals_used"]) if i == 0 else 0) + production_cost
+        for i, production_cost in enumerate(ours_run["coarse_evals_per_chain"])
     ]
     ours_run["pooled"] = pooled_summarize(
         chains_by_method["ours"], problem, burn_in=ours_run["burn_in"] or 0, n_offline_hf=n_init,
@@ -1584,5 +1758,6 @@ def run_convergence_driven_comparison(
     ours_run["adapt_metas"] = ours_adapt_metas
     results["ours"] = ours_run
     chains_by_method["ours_adapt"] = ours_adapt_chains
+    print(f"--- ours done: converged={ours_run['converged']}, {ours_run['rounds_run']} rounds ---")
 
     return results, chains_by_method, surrogates_by_method
