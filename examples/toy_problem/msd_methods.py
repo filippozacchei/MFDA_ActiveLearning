@@ -100,7 +100,7 @@ class Problem:
     hf_forward: Any
 
 
-def build_problem(*, problem_seed: int, sigma_obs: float = 0.02) -> Problem:
+def build_problem(*, problem_seed: int, sigma_obs: float = 0.1) -> Problem:
     rng = set_seed(problem_seed)
     t = make_timeline(T=300, t_end=4.0)
     prior = make_prior()

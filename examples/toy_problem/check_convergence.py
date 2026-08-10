@@ -50,7 +50,7 @@ RHAT_THRESHOLD = 1.01
 def main() -> None:
     RESULTS_DIR.mkdir(exist_ok=True)
 
-    problem = build_problem(problem_seed=PROBLEM_SEED, sigma_obs=0.02)
+    problem = build_problem(problem_seed=PROBLEM_SEED, sigma_obs=0.1)
     print("theta_true:", dict(zip(PARAM_NAMES, problem.theta_true.tolist(), strict=True)))
     print(f"N_CHAINS={N_CHAINS}, N_COARSE_EVALS_LONG={N_COARSE_EVALS_LONG}, MAX_ADAPT_COARSE_EVALS={MAX_ADAPT_COARSE_EVALS}")
 

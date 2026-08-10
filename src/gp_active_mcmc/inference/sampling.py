@@ -125,16 +125,36 @@ def _extract_subchain_history(model: Any) -> FloatArray | None:
 
 def _extract_chain_with_used_hf(*, chain_obj: Any, model: Any, chain_key: str) -> MCMCChain:
     """Extract one named chain from a `tinyDA` result, with a correctly-reconstructed
-    `used_hf` flag per row (see `sample_active_chain`'s docstring for the two cases this
-    handles: natural per-coarse-step alignment vs. the DA fine-chain's one-HF-per-row
-    case). Factored out so the same logic can be applied to a second, purely
-    diagnostic, chain extracted from the same `tinyDA` call (see `diagnostic_chain_key`).
+    `used_hf` flag per row. Three cases (see `sample_active_chain`'s docstring for the
+    first two; the third is specific to `chain_coarse_i` in a two-posterior DA run):
+
+    1. Natural per-coarse-step alignment (`used_hf` and `samples` the same length):
+       used as-is.
+    2. `used_hf` exactly one longer than `samples`: tinyDA's `DAChain.__init__`
+       bootstraps by calling `coarse()` then immediately `fine()`-overwriting it once,
+       *before* the sampling loop starts -- one extra `model.log` entry with no
+       corresponding row in the extracted chain (confirmed empirically: this leading
+       entry is always `True`, and the remaining entries fall exactly one `True` per
+       `subsampling_rate`-sized block, matching the true `coarse()`/`fine()` call
+       pattern). Dropping that one leading entry restores 1:1 alignment. Without this,
+       `chain_coarse_i` (tinyDA's DA "coarse" chain, requested as a diagnostic
+       trajectory via `diagnostic_chain_key` for trace plots) silently fell through to
+       case 3 below and was reported as 100% HF -- every point in `ours`'s production
+       trace plot showing as an HF call, when the vast majority are cheap LF steps.
+    3. Otherwise (e.g. tinyDA's DA "fine" chain, `chain_fine_i`): every row trivially
+       used HF, by construction of delayed acceptance (each outer iteration ends with
+       exactly one HF correction).
+
+    Factored out so the same logic can be applied to a second, purely diagnostic,
+    chain extracted from the same `tinyDA` call (see `diagnostic_chain_key`).
     """
     samples = extract_samples(chain=chain_obj, chain_key=chain_key)
     used_hf = _extract_used_hf(model)
 
     if used_hf.shape[0] == samples.shape[0]:
         pass
+    elif used_hf.shape[0] == samples.shape[0] + 1:
+        used_hf = used_hf[1:]
     else:
         used_hf = np.ones(samples.shape[0], dtype=bool)
 
@@ -247,9 +267,11 @@ def sample_active_chain(
     )
 
     # `model.log.used_hf` (appended once per `coarse()`/`fine()` call) naturally aligns
-    # 1:1 with `samples` for a single-posterior chain or the DA "coarse" chain (one
-    # entry per within-block low-fidelity substep). It does *not* align with the DA
-    # "fine" chain (`chain_fine_i`: one state per outer DA iteration) -- there, every
+    # 1:1 with `samples` for a single-posterior chain. For a two-posterior (DA) run,
+    # it's off by exactly one against the DA "coarse" chain (one within-block
+    # low-fidelity substep per genuine log entry, plus one extra bootstrap entry from
+    # `tinyDA`'s `DAChain.__init__`), and unrelated in scale against the DA "fine"
+    # chain (`chain_fine_i`: one state per outer DA iteration) -- there, every
     # fine-chain sample trivially "used HF" by construction of delayed acceptance
     # (each outer iteration ends with exactly one HF correction), regardless of the
     # model's internal per-coarse-step log (which has a different length and cannot be

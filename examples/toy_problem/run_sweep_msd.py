@@ -43,7 +43,7 @@ from msd_methods import (
 
 from gp_active_mcmc.utils.rng import set_seed
 
-SIGMA_OBS = 0.02
+SIGMA_OBS = 0.1
 
 SWEEP_CSV = RESULTS_DIR / "sweep_results.csv"
 SWEEP_JSON = RESULTS_DIR / "sweep_results.jsonl"
