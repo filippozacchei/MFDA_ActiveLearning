@@ -15,9 +15,9 @@ Implements four inference strategies at a (roughly) matched high-fidelity (HF) b
 4. Proposed: adaptive delayed-acceptance MCMC with a freeze-to-production stage
    (paper Algorithm 3). See `run_ours`.
 
-This module has no `__main__`: it is imported by `run_sweep_msd.py` (the multi-seed
-sweep driver), `check_convergence.py` (multi-chain R-hat/ESS diagnostic), and
-`msd_benchmark.ipynb` (the walkthrough notebook).
+This module has no `__main__`: it is imported by `run_sweep_convergence_driven.py`
+(the multi-seed sweep driver), `check_convergence.py` (multi-chain R-hat/ESS
+diagnostic), and `msd_benchmark.ipynb` (the paper's comparison notebook).
 """
 
 from __future__ import annotations
@@ -64,67 +64,24 @@ PARAM_NAMES = ("k", "c")
 KERNEL = "matern52"
 GAMMA_THRESHOLD = 0.01
 N_COARSE_EVALS = 1000
-# 400 was too tight: a pilot check (10 seeds at n_init=60/pod_rank=7 below) found the
-# adaptive phase hitting this cap -- i.e. never satisfying its own convergence
-# criterion -- in 9/10 runs. Diagnosis: `AdaptiveSubchainControl.patience=5`
-# consecutive stable updates were needed, and the run was consistently landing at
-# `stable_streak=4` right as the budget ran out, because `subchain_length` grows
-# (`grow_factor=2.0`) faster than a fixed linear budget can afford the last update once
-# it approaches `MAX_SUBCHAIN` -- not a sign the criterion itself is miscalibrated.
-# Raising the cap to 700 and rerunning the same pilot: 8/8 converged, 0 capped. Also
-# re-validated at N_INIT=20 (see that constant's comment below for why N_INIT dropped
-# from 60 to 20 -- a sparser starting surrogate that needs *more* adaptive-phase work,
-# not less): 8/8 converged, 0 capped there too, so 700 held without needing a further
-# bump. (Measured back when MAX_SUBCHAIN was still 100 -- see that constant's comment
-# for why it dropped to 25; not re-validated at the new value yet.)
+# Budget for `ours`'s adaptive (training) phase, in coarse-evaluation units.
 MAX_ADAPT_COARSE_EVALS = 700
 # Ceiling on AdaptiveSubchain's subsampling_rate (coarse steps between HF corrections),
-# both during the adaptive phase (run_ours) and after freezing for production
-# (_init_ours_production_state) -- same value both places, via this constant, so they
-# can't drift apart. Was 100; dropped to 25 after the convergence-driven sweep showed
-# `ours` capping out at very low bulk-ESS (30-85, vs. a min_ess=400 target) in seeds
-# where the adaptive phase froze near rate=100: each production posterior sample then
-# costs `subsampling_rate` coarse-eval units in run_convergence_driven_comparison's
-# shared currency, so at rate=100 the 10_000-unit safety cap there yields only ~100 raw
-# draws/chain (500 pooled across N_CHAINS=5, already after arviz's default multi-chain
-# ESS pooling -- see multichain_diagnostics) -- structurally too few for ESS>=400
-# regardless of mixing quality. 25 leaves ~4x more raw draws per unit budget. Not yet
-# re-validated that this doesn't newly stall the adaptive phase itself (smaller
-# max_subchain means less HF-call savings once trust is high, so more frequent
-# updates) -- check the capping rate again after rerunning with this value.
+# both during the adaptive phase (`run_ours`) and after freezing for production
+# (`_init_ours_production_state`) -- referenced from both places so they can't drift
+# apart. Keeping this modest bounds how few raw posterior samples a fixed coarse-eval
+# budget buys during production (each sample costs `subsampling_rate` coarse-eval
+# units), which is what an R-hat/ESS convergence check needs to see enough of.
 MAX_SUBCHAIN = 25
 BURN_IN = 100
-N_REF_ITERATIONS = 3000
-REF_BURN_IN = 300
 
-# POD_RANK is fixed across every method (pretrained/online_active/ours): it is a
-# representational-capacity choice (how many modes the linear reduced basis keeps),
-# independent of how much training data or GP-regression uncertainty there is. Coupling
-# it to n_init (as an earlier version of this benchmark did) confounds the comparison --
-# a too-low rank makes the surrogate confidently wrong in a way GP predictive variance
-# cannot see (reconstruction bias from a truncated basis, not regression uncertainty).
-#
-# N_INIT/POD_RANK were previously swept over (10, 20, 40) x a hand-picked rank=8; both
-# are now fixed, single values instead -- but picked via two *separate* samples, not
-# one, because the two choices pull in opposite directions: POD_RANK wants a large,
-# stable sample to read the spectrum off (see `select_pod_rank_and_seed_design`'s
-# docstring: rank held at 6-7 for any n_init in [50, 100] across independent draws;
-# POD_RANK=7 is that function's direct output on one fixed one-shot draw at n_init=60,
-# not a separately hand-picked value), while N_INIT is the shared *offline seed design*
-# every method starts learning from, which needs to stay small enough that genuine
-# active learning (online or offline) is actually necessary -- reusing the n_init=60
-# rank-selection sample as the seed design (an earlier version of this benchmark did
-# exactly that) was checked and rejected: at n_init=60, `pretrained`'s own offline
-# active-learning loop (`active_learning_offline_design`) already satisfies its
-# gamma_threshold criterion with *zero* additional HF evaluations in 6/8 sampled seeds,
-# which would make the training-cost comparison read "offline pretraining is free" --
-# an artifact of the design being large enough to blanket this 2D prior at this
-# tolerance, not evidence that offline learning is actually cheaper. N_INIT=20 restores
-# a genuinely under-trained design (confirmed: needs ~100 extra HF evaluations to
-# satisfy the same criterion). POD_RANK=7 was then re-validated *at* n_init=20 (not
-# just assumed to transfer): cumulative POD energy at rank 7 was >=0.9997 across 10
-# n_init=20 draws (vs. a threshold of 0.999, and a rank of only 5-6 actually needed to
-# cross it) -- i.e. still a safe, one-mode-conservative choice at the smaller size.
+# POD_RANK is representational capacity (how many modes the reduced basis keeps),
+# fixed identically across every surrogate-based method -- independent of training-data
+# size or GP-regression uncertainty. N_INIT is the shared offline seed design every
+# method starts learning from, kept small enough that active learning (online or
+# offline) is actually necessary. The two are picked from separate samples (see
+# `select_pod_rank_and_seed_design`): POD_RANK wants a large, stable sample to read the
+# spectrum off; N_INIT needs to stay small, which pulls the other way.
 N_INIT = 20
 POD_RANK = 7
 
@@ -171,14 +128,11 @@ def build_initial_surrogate(
 
 @dataclass
 class PODRankSelection:
-    """Result of `select_pod_rank_and_seed_design`: a POD rank picked from a single,
-    plain HF sample -- deliberately *not* an active-learning or iterative-growth
-    procedure (see the function's docstring for why that was tried and rejected).
+    """Result of `select_pod_rank_and_seed_design`.
 
-    `X`/`Y` are the sample itself, reused as-is as the seed design for
-    `build_initial_surrogate`/`run_pretrained`'s `seed_X`/`seed_Y`, so nothing drawn
-    here is a sunk cost separate from the rest of the study. `n_init == X.shape[0]` by
-    construction.
+    `X`/`Y` are the HF sample itself, reused as-is as the seed design for
+    `build_initial_surrogate`/`run_pretrained`'s `seed_X`/`seed_Y`. `n_init ==
+    X.shape[0]` by construction.
     """
 
     pod_rank: int
@@ -196,20 +150,8 @@ def select_pod_rank_and_seed_design(
     energy_threshold: float = 0.999,
     r_max_cap: int = 20,
 ) -> PODRankSelection:
-    """Pick a POD rank from a single, plain HF sample of size `n_init`.
-
-    POD rank is representational capacity, fixed identically across all three
-    surrogate-based methods (pretrained / online_active / ours -- see the
-    `N_INIT`/`POD_RANK` comment above): it is orthogonal to the
-    online-vs-offline *training strategy* axis the paper actually compares, so there is
-    nothing to gain -- and a real risk of the selection procedure itself reading as a
-    hidden pretraining budget to a reviewer -- from spending an iterative,
-    stability-seeking HF budget on it. An earlier version of this function grew the
-    sample in batches until an out-of-sample reconstruction diagnostic stabilized;
-    dropped in favor of this single-draw version once a manual check confirmed the
-    rank is already stable (6-7) for any `n_init` in [50, 100] across independent
-    draws, i.e. a plain one-shot sample is already representative and the extra
-    machinery bought nothing.
+    """Pick a POD rank from a single, plain HF sample of size `n_init` -- a one-shot
+    model-selection step, not part of any method's active-learning budget.
 
     Rank is read off `pod_energy` (the cumulative-energy curve, see
     `gp_active_mcmc.surrogates.pod.pod_energy`) as the smallest rank whose cumulative
@@ -556,10 +498,14 @@ def run_training_cost_comparison(
     and the production phase is skipped entirely, not just discarded -- avoids wasting
     compute on a chain this function never uses).
 
-    Returns a JSON-serializable dict with `n_init`, `offline` (`n_hf_total`,
-    `n_hf_extra` -- HF calls beyond the shared seed design, `wall_time_s`), and `online`
-    (`n_hf_extra`, `coarse_evals_used`, `wall_time_s`, `converged`,
-    `final_subchain_length`, `subchain_length_history`).
+    Returns `(metrics, offline_surrogate)`: `metrics` is a JSON-serializable dict with
+    `n_init`, `offline` (`n_hf_total`, `n_hf_extra` -- HF calls beyond the shared seed
+    design, `wall_time_s`), and `online` (`n_hf_extra`, `coarse_evals_used`,
+    `wall_time_s`, `converged`, `final_subchain_length`, `subchain_length_history`).
+    `offline_surrogate` is the trained `PODGPSurrogate` (not JSON-serializable, kept
+    separate) -- callers that also want `ours`'s/`online_active`'s trained surrogates
+    for a plot should get them from `run_convergence_driven_comparison` instead, which
+    is what actually produced the posterior samples being compared.
     """
     n_init = int(seed_X.shape[0])
 
@@ -592,7 +538,7 @@ def run_training_cost_comparison(
     coarse_evals_used = adapt_meta.get("adapt_coarse_evals_used")
     if coarse_evals_used is None:
         coarse_evals_used = adapt_meta["adapt_metadata"]["coarse_evals_used"]
-    return {
+    metrics = {
         "n_init": n_init,
         "offline": {
             "n_hf_total": int(offline_n_hf_total),
@@ -608,6 +554,7 @@ def run_training_cost_comparison(
             "subchain_length_history": subchain_hist.tolist() if subchain_hist is not None else None,
         },
     }
+    return metrics, offline_surrogate
 
 
 # ---------------------------------------------------------------------------
