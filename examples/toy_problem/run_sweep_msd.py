@@ -1,9 +1,17 @@
-"""Multi-seed x initial-design-size sweep on the mass-spring-damper benchmark.
+"""Multi-seed sweep on the mass-spring-damper benchmark, at the fixed `N_INIT`/`POD_RANK`
+(see `msd_methods.py`'s comment on those constants for how they were chosen).
 
 For each seed, the HF-only reference chains are computed once (they do not depend on
-the offline design), then methods 2-4 are run for each `n_init` setting in
-`N_INIT_SETTINGS`. Results are appended row-by-row (one row per seed x n_init x method)
-to a CSV/JSON pair in `results/`, so a partial run is still usable if interrupted.
+the offline design), then methods 2-4 are run at `N_INIT`. Results are appended
+row-by-row (one row per seed x method) to a CSV/JSON pair in `results/`, so a partial
+run is still usable if interrupted.
+
+Note: this is the *fixed-budget* comparison (same `N_COARSE_EVALS` for every method,
+including `pretrained`'s posterior accuracy) -- superseded, for the paper's headline
+efficiency/accuracy claims, by the convergence-driven comparison (cost-to-R-hat
+rather than a shared iteration count) in `msd_benchmark.ipynb` section 5b, which also
+excludes `pretrained` from the posterior-accuracy comparison (see notebook markdown
+for why). Kept here as a lighter-weight sanity check / secondary result.
 
 Run from `examples/toy_problem/`:
     python run_sweep_msd.py --n-seeds 10
@@ -24,7 +32,7 @@ from msd_methods import (
     KERNEL,
     MAX_ADAPT_COARSE_EVALS,
     N_COARSE_EVALS,
-    N_INIT_SETTINGS,
+    N_INIT,
     N_REF_ITERATIONS,
     POD_RANK,
     REF_BURN_IN,
@@ -112,7 +120,7 @@ def run_one_seed(problem_seed: int) -> list[dict[str, Any]]:
         )
     )
 
-    for n_init in N_INIT_SETTINGS:
+    for n_init in (N_INIT,):
         seed_surrogate, seed_X, seed_Y = build_initial_surrogate(
             problem, set_seed(1_000 + problem_seed * 100 + n_init), n_init=n_init, pod_rank=POD_RANK, kernel=KERNEL
         )

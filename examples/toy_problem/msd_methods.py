@@ -25,6 +25,7 @@ from __future__ import annotations
 import contextlib
 import copy
 import os
+import time
 from collections.abc import Callable
 from dataclasses import dataclass, replace
 from pathlib import Path
@@ -48,7 +49,7 @@ from gp_active_mcmc.inference import (
     sample_adaptive_active_chain,
     sample_adaptive_then_frozen_chain,
 )
-from gp_active_mcmc.surrogates import POD, MultiOutputGP, PODGPSurrogate
+from gp_active_mcmc.surrogates import POD, MultiOutputGP, PODGPSurrogate, pod_energy
 from gp_active_mcmc.utils.mcmc import extract_samples, posterior_rmse
 from gp_active_mcmc.utils.rng import set_seed
 
@@ -63,27 +64,69 @@ PARAM_NAMES = ("k", "c")
 KERNEL = "matern52"
 GAMMA_THRESHOLD = 0.01
 N_COARSE_EVALS = 1000
-MAX_ADAPT_COARSE_EVALS = 400
+# 400 was too tight: a pilot check (10 seeds at n_init=60/pod_rank=7 below) found the
+# adaptive phase hitting this cap -- i.e. never satisfying its own convergence
+# criterion -- in 9/10 runs. Diagnosis: `AdaptiveSubchainControl.patience=5`
+# consecutive stable updates were needed, and the run was consistently landing at
+# `stable_streak=4` right as the budget ran out, because `subchain_length` grows
+# (`grow_factor=2.0`) faster than a fixed linear budget can afford the last update once
+# it approaches `MAX_SUBCHAIN` -- not a sign the criterion itself is miscalibrated.
+# Raising the cap to 700 and rerunning the same pilot: 8/8 converged, 0 capped. Also
+# re-validated at N_INIT=20 (see that constant's comment below for why N_INIT dropped
+# from 60 to 20 -- a sparser starting surrogate that needs *more* adaptive-phase work,
+# not less): 8/8 converged, 0 capped there too, so 700 held without needing a further
+# bump. (Measured back when MAX_SUBCHAIN was still 100 -- see that constant's comment
+# for why it dropped to 25; not re-validated at the new value yet.)
+MAX_ADAPT_COARSE_EVALS = 700
+# Ceiling on AdaptiveSubchain's subsampling_rate (coarse steps between HF corrections),
+# both during the adaptive phase (run_ours) and after freezing for production
+# (_init_ours_production_state) -- same value both places, via this constant, so they
+# can't drift apart. Was 100; dropped to 25 after the convergence-driven sweep showed
+# `ours` capping out at very low bulk-ESS (30-85, vs. a min_ess=400 target) in seeds
+# where the adaptive phase froze near rate=100: each production posterior sample then
+# costs `subsampling_rate` coarse-eval units in run_convergence_driven_comparison's
+# shared currency, so at rate=100 the 10_000-unit safety cap there yields only ~100 raw
+# draws/chain (500 pooled across N_CHAINS=5, already after arviz's default multi-chain
+# ESS pooling -- see multichain_diagnostics) -- structurally too few for ESS>=400
+# regardless of mixing quality. 25 leaves ~4x more raw draws per unit budget. Not yet
+# re-validated that this doesn't newly stall the adaptive phase itself (smaller
+# max_subchain means less HF-call savings once trust is high, so more frequent
+# updates) -- check the capping rate again after rerunning with this value.
+MAX_SUBCHAIN = 25
 BURN_IN = 100
 N_REF_ITERATIONS = 3000
 REF_BURN_IN = 300
 
-# Deliberately under-trained offline designs + tight uncertainty trigger, under a wide
-# prior: with a narrow prior or a large offline design, a naive surrogate already
-# covers the plausible region densely enough that no method (including ones with no
-# correction mechanism at all) ever needs to learn online, which defeats the point of
-# comparing them. n_init sweep used for the sensitivity study.
-#
-# POD_RANK is fixed across every n_init setting and every method: it is a
+# POD_RANK is fixed across every method (pretrained/online_active/ours): it is a
 # representational-capacity choice (how many modes the linear reduced basis keeps),
 # independent of how much training data or GP-regression uncertainty there is. Coupling
 # it to n_init (as an earlier version of this benchmark did) confounds the comparison --
 # a too-low rank makes the surrogate confidently wrong in a way GP predictive variance
-# cannot see (reconstruction bias from a truncated basis, not regression uncertainty),
-# which previously caused e.g. `pretrained` at small n_init to "converge" to its
-# stopping criterion almost immediately while being catastrophically biased.
-N_INIT_SETTINGS = (10, 20, 40)
-POD_RANK = 8
+# cannot see (reconstruction bias from a truncated basis, not regression uncertainty).
+#
+# N_INIT/POD_RANK were previously swept over (10, 20, 40) x a hand-picked rank=8; both
+# are now fixed, single values instead -- but picked via two *separate* samples, not
+# one, because the two choices pull in opposite directions: POD_RANK wants a large,
+# stable sample to read the spectrum off (see `select_pod_rank_and_seed_design`'s
+# docstring: rank held at 6-7 for any n_init in [50, 100] across independent draws;
+# POD_RANK=7 is that function's direct output on one fixed one-shot draw at n_init=60,
+# not a separately hand-picked value), while N_INIT is the shared *offline seed design*
+# every method starts learning from, which needs to stay small enough that genuine
+# active learning (online or offline) is actually necessary -- reusing the n_init=60
+# rank-selection sample as the seed design (an earlier version of this benchmark did
+# exactly that) was checked and rejected: at n_init=60, `pretrained`'s own offline
+# active-learning loop (`active_learning_offline_design`) already satisfies its
+# gamma_threshold criterion with *zero* additional HF evaluations in 6/8 sampled seeds,
+# which would make the training-cost comparison read "offline pretraining is free" --
+# an artifact of the design being large enough to blanket this 2D prior at this
+# tolerance, not evidence that offline learning is actually cheaper. N_INIT=20 restores
+# a genuinely under-trained design (confirmed: needs ~100 extra HF evaluations to
+# satisfy the same criterion). POD_RANK=7 was then re-validated *at* n_init=20 (not
+# just assumed to transfer): cumulative POD energy at rank 7 was >=0.9997 across 10
+# n_init=20 draws (vs. a threshold of 0.999, and a rank of only 5-6 actually needed to
+# cross it) -- i.e. still a safe, one-mode-conservative choice at the smaller size.
+N_INIT = 20
+POD_RANK = 7
 
 # ---------------------------------------------------------------------------
 # Problem setup (shared across all methods and seeds)
@@ -124,6 +167,67 @@ def build_initial_surrogate(
     gp = MultiOutputGP(X_train=X, Y_train=A, kernel=kernel, ard=True, noise_variance=1e-6)
     surrogate = PODGPSurrogate(pod=pod, gp=gp)
     return surrogate, X, Y
+
+
+@dataclass
+class PODRankSelection:
+    """Result of `select_pod_rank_and_seed_design`: a POD rank picked from a single,
+    plain HF sample -- deliberately *not* an active-learning or iterative-growth
+    procedure (see the function's docstring for why that was tried and rejected).
+
+    `X`/`Y` are the sample itself, reused as-is as the seed design for
+    `build_initial_surrogate`/`run_pretrained`'s `seed_X`/`seed_Y`, so nothing drawn
+    here is a sunk cost separate from the rest of the study. `n_init == X.shape[0]` by
+    construction.
+    """
+
+    pod_rank: int
+    n_init: int
+    X: np.ndarray
+    Y: np.ndarray
+    energy_curve: np.ndarray  # cumulative explained energy; index r-1 corresponds to rank r
+
+
+def select_pod_rank_and_seed_design(
+    problem: Problem,
+    rng: np.random.Generator,
+    *,
+    n_init: int = 60,
+    energy_threshold: float = 0.999,
+    r_max_cap: int = 20,
+) -> PODRankSelection:
+    """Pick a POD rank from a single, plain HF sample of size `n_init`.
+
+    POD rank is representational capacity, fixed identically across all three
+    surrogate-based methods (pretrained / online_active / ours -- see the
+    `N_INIT`/`POD_RANK` comment above): it is orthogonal to the
+    online-vs-offline *training strategy* axis the paper actually compares, so there is
+    nothing to gain -- and a real risk of the selection procedure itself reading as a
+    hidden pretraining budget to a reviewer -- from spending an iterative,
+    stability-seeking HF budget on it. An earlier version of this function grew the
+    sample in batches until an out-of-sample reconstruction diagnostic stabilized;
+    dropped in favor of this single-draw version once a manual check confirmed the
+    rank is already stable (6-7) for any `n_init` in [50, 100] across independent
+    draws, i.e. a plain one-shot sample is already representative and the extra
+    machinery bought nothing.
+
+    Rank is read off `pod_energy` (the cumulative-energy curve, see
+    `gp_active_mcmc.surrogates.pod.pod_energy`) as the smallest rank whose cumulative
+    explained energy reaches `energy_threshold`. The sample doubles as the seed design
+    (`seed_X`/`seed_Y`) passed to every method.
+    """
+    if not 0 < energy_threshold < 1:
+        raise ValueError("energy_threshold must be in (0, 1).")
+
+    X = np.asarray([problem.prior.rvs(random_state=rng) for _ in range(n_init)], dtype=float)
+    Y = np.asarray([problem.hf_forward(theta) for theta in X], dtype=float)
+
+    r_max = max(1, min(r_max_cap, n_init - 1, Y.shape[1]))
+    energy_curve = pod_energy(Y, r_max=r_max)
+    pod_rank = int(np.searchsorted(energy_curve, energy_threshold) + 1)
+    pod_rank = min(pod_rank, r_max)
+
+    return PODRankSelection(pod_rank=pod_rank, n_init=n_init, X=X, Y=Y, energy_curve=energy_curve)
 
 
 def make_proposal(problem: Problem, *, scale: float = 0.05) -> AdaptiveMetropolisShared:
@@ -364,7 +468,7 @@ def run_ours(
         update_every=5,
         target_error=problem.sigma_obs,
         min_subchain=1,
-        max_subchain=100,
+        max_subchain=MAX_SUBCHAIN,  # see that constant's comment for why 25, not 100
         grow_factor=2.0,
         shrink_factor=0.5,
         patience=5,
@@ -409,6 +513,101 @@ def run_ours(
         config=ChunkedMCMCConfig(chain_key="chain_coarse_0", chunk_size=100),
     )
     return result.chain, result.metadata, model.lf_model
+
+
+# ---------------------------------------------------------------------------
+# Training-cost comparison: online (posterior-guided, ours) vs. offline (global,
+# greedy-max-variance, pretrained-style) active learning.
+# ---------------------------------------------------------------------------
+#
+# This is deliberately *not* a posterior-accuracy comparison (see
+# `run_convergence_driven_comparison`/the notebook's section 5b markdown for that):
+# once a surrogate is frozen and corrected via delayed acceptance, it targets the true
+# posterior regardless of how it was trained -- DA removes surrogate bias, so pitting a
+# DA-corrected chain against an uncorrected frozen-surrogate posterior would just
+# demonstrate DA works, not that the *training strategy* differs. What legitimately
+# differs between `ours` and `pretrained` is how much HF budget each spends to reach a
+# locally-trustworthy surrogate in the first place: `ours` learns online, guided by the
+# MCMC path (so it only needs to be accurate where the posterior actually lives),
+# `pretrained` learns offline via global greedy max-variance acquisition (needs to be
+# accurate everywhere the prior has support). This function isolates exactly that,
+# training only -- no downstream MCMC production phase is run on either side.
+
+
+def run_training_cost_comparison(
+    problem: Problem,
+    *,
+    seed_X: np.ndarray,
+    seed_Y: np.ndarray,
+    seed_surrogate: PODGPSurrogate,
+    gamma_threshold: float,
+    pod_rank: int,
+    max_adapt_coarse_evals: int,
+    seed_base: int,
+) -> dict[str, Any]:
+    """Training-cost comparison for one problem instance: offline greedy active
+    learning (`active_learning_offline_design`, via `_train_pretrained_surrogate`) vs.
+    `ours`'s online adaptive phase, both starting from the same shared `seed_X`/`seed_Y`
+    design and run *only* to their own convergence criterion -- no downstream MCMC
+    production phase on either side, so the reported cost is training cost alone.
+
+    `ours`'s adaptive phase is obtained via `run_ours` with `n_coarse_evals` capped at
+    `max_adapt_coarse_evals` (so `remaining <= 0` in `sample_adaptive_then_frozen_chain`
+    and the production phase is skipped entirely, not just discarded -- avoids wasting
+    compute on a chain this function never uses).
+
+    Returns a JSON-serializable dict with `n_init`, `offline` (`n_hf_total`,
+    `n_hf_extra` -- HF calls beyond the shared seed design, `wall_time_s`), and `online`
+    (`n_hf_extra`, `coarse_evals_used`, `wall_time_s`, `converged`,
+    `final_subchain_length`, `subchain_length_history`).
+    """
+    n_init = int(seed_X.shape[0])
+
+    t0 = time.time()
+    offline_surrogate, offline_n_hf_total = _train_pretrained_surrogate(
+        problem, seed_X=seed_X, seed_Y=seed_Y, gamma_threshold=gamma_threshold, pod_rank=pod_rank,
+        kernel=KERNEL, seed=seed_base + 500,
+    )
+    offline_wall_time = time.time() - t0
+
+    t0 = time.time()
+    adapt_chain, adapt_meta, _adapt_surrogate = run_ours(
+        problem, surrogate=seed_surrogate, gamma_threshold=gamma_threshold,
+        n_coarse_evals=max_adapt_coarse_evals, max_adapt_coarse_evals=max_adapt_coarse_evals,
+        seed=seed_base + 600,
+    )
+    online_wall_time = time.time() - t0
+
+    online_used_hf = (
+        adapt_chain.extras.used_hf if adapt_chain.extras.used_hf is not None
+        else np.zeros(adapt_chain.n_steps, dtype=bool)
+    )
+    subchain_hist = adapt_chain.extras.subchain_length
+    # `sample_adaptive_then_frozen_chain`'s metadata is only `"adapt_then_production"`
+    # shaped (with a top-level `adapt_coarse_evals_used`) if a production phase
+    # actually ran. With `n_coarse_evals == max_adapt_coarse_evals` here, it never
+    # does -- metadata is `"adapt_only"` shaped instead, so the coarse-eval count comes
+    # from the nested `adapt_metadata` (i.e. `sample_adaptive_active_chain`'s own
+    # metadata) rather than a top-level key.
+    coarse_evals_used = adapt_meta.get("adapt_coarse_evals_used")
+    if coarse_evals_used is None:
+        coarse_evals_used = adapt_meta["adapt_metadata"]["coarse_evals_used"]
+    return {
+        "n_init": n_init,
+        "offline": {
+            "n_hf_total": int(offline_n_hf_total),
+            "n_hf_extra": int(offline_n_hf_total) - n_init,
+            "wall_time_s": offline_wall_time,
+        },
+        "online": {
+            "n_hf_extra": int(np.sum(online_used_hf)),
+            "coarse_evals_used": int(coarse_evals_used),
+            "wall_time_s": online_wall_time,
+            "converged": bool(adapt_meta["converged"]),
+            "final_subchain_length": int(subchain_hist[-1]) if subchain_hist is not None else None,
+            "subchain_length_history": subchain_hist.tolist() if subchain_hist is not None else None,
+        },
+    }
 
 
 # ---------------------------------------------------------------------------
@@ -1339,7 +1538,7 @@ def _init_ours_production_state(
         update_every=5,
         target_error=problem.sigma_obs,
         min_subchain=1,
-        max_subchain=100,
+        max_subchain=MAX_SUBCHAIN,  # see that constant's comment for why 25, not 100
         grow_factor=2.0,
         shrink_factor=0.5,
         patience=5,
@@ -1460,6 +1659,7 @@ def run_until_rhat_converged(
     *,
     chunk_size: int,
     max_total_coarse_evals: int,
+    max_hf_evals: int | None = None,
     rhat_threshold: float = 1.01,
     min_ess: float | None = None,
     patience: int = 5,
@@ -1471,13 +1671,24 @@ def run_until_rhat_converged(
     round advancing every chain by one `chunk_size`-coarse-eval chunk in parallel
     (`joblib`, one process per chain), stopping as soon as `find_burn_in_via_rhat`
     reports convergence across the accumulated chains-so-far (reused unmodified: it
-    already does the right thing when called again on a longer chain) or
-    `max_total_coarse_evals` is reached, whichever comes first. `min_ess` (passed
-    through to `find_burn_in_via_rhat`) additionally requires bulk-ESS to clear that
-    floor before declaring convergence -- important here specifically, since methods
-    whose chunks are expensive relative to `chunk_size` (a large frozen
-    `subsampling_rate`) accumulate very few rows per round, and R-hat alone can pass
-    "by luck" on such a small sample well before real convergence.
+    already does the right thing when called again on a longer chain), or
+    `max_total_coarse_evals` is reached, or `max_hf_evals` is reached, whichever comes
+    first. `min_ess` (passed through to `find_burn_in_via_rhat`) additionally requires
+    bulk-ESS to clear that floor before declaring convergence -- important here
+    specifically, since methods whose chunks are expensive relative to `chunk_size` (a
+    large frozen `subsampling_rate`) accumulate very few rows per round, and R-hat
+    alone can pass "by luck" on such a small sample well before real convergence.
+
+    `max_hf_evals` (default `None`, i.e. no separate cap) bounds cumulative *HF-call*
+    count directly rather than the coarse-eval-unit currency `max_total_coarse_evals`
+    uses -- for methods whose coarse-eval-to-HF-call ratio isn't fixed (`online_active`
+    keeps calling HF at its own uncertainty-triggered rate throughout, unlike the
+    frozen methods), this is the only way to bound *actual HF budget spent* directly,
+    independent of how many cheap coarse steps happen to accompany it. Used by
+    `run_convergence_driven_comparison`'s `online_active` call, capped at
+    `MAX_ADAPT_COARSE_EVALS` -- the same ceiling `ours`'s adaptive/training phase is
+    held to -- so the two methods' *online-learning* HF budgets are directly
+    comparable, not just their coarse-eval-unit budgets.
 
     tinyDA's own per-chunk console output (a print plus a tqdm bar per replicate, every
     round) is suppressed (see `_suppress_tinyda_output`); if `verbose` (default True),
@@ -1486,11 +1697,13 @@ def run_until_rhat_converged(
     belongs to, since this function is typically called once per method.
 
     Returns a dict with `chains` (the final `list[MCMCChain]`, one per replicate,
-    possibly still growing/non-converged if the cap was hit), `rounds_run`,
+    possibly still growing/non-converged if a cap was hit), `rounds_run`,
     `coarse_evals_per_chain` (each replicate's own true coarse-eval cost so far --
     *not* `chain.n_steps`; see `_run_chunk`'s docstring for why those differ whenever
     `subsampling_rate > 1`), `total_coarse_evals` (`max(coarse_evals_per_chain)`, used
-    for the cap check and as a single summary number), `final_states` (each
+    for the coarse-eval cap check and as a single summary number), `hf_evals_per_chain`/
+    `total_hf_evals` (the same shape, for the HF-call cap check), `stop_reason`
+    (`"converged"` / `"max_coarse_evals"` / `"max_hf_evals"`), `final_states` (each
     replicate's final `_ChunkState`, so callers can recover e.g. the final surrogate
     for methods where it keeps learning during this loop -- `online_active`; frozen
     methods' surrogates don't change here, so their initial state's model already has
@@ -1501,11 +1714,14 @@ def run_until_rhat_converged(
         raise ValueError("chunk_size must be positive.")
     if max_total_coarse_evals <= 0:
         raise ValueError("max_total_coarse_evals must be positive.")
+    if max_hf_evals is not None and max_hf_evals <= 0:
+        raise ValueError("max_hf_evals must be positive when given.")
 
     states = [f() for f in init_fns]
     n_chains = len(states)
     blocks: list[list[MCMCChain]] = [[] for _ in range(n_chains)]
     coarse_evals_per_chain = [0] * n_chains
+    hf_evals_per_chain = [0] * n_chains
     rounds_run = 0
 
     # A bare `joblib.Parallel(...)( ... )` call spins up a fresh worker pool (process
@@ -1521,15 +1737,19 @@ def run_until_rhat_converged(
                 states[i] = new_state
                 blocks[i].append(block)
                 coarse_evals_per_chain[i] += coarse_evals_spent
+                used_hf = block.extras.used_hf
+                hf_evals_per_chain[i] += int(np.sum(used_hf)) if used_hf is not None else 0
             rounds_run += 1
 
             chains_so_far = [_concat_chain_blocks(b) for b in blocks]
-            # Using max() (not min()) for the cap check is deliberate: it's the
+            # Using max() (not min()) for both cap checks is deliberate: it's the
             # comparison that actually bounds worst-case cost. A chain with a larger
-            # subsampling_rate than its siblings can only overshoot chunk_size *more*
-            # per round, never less, so capping on the fastest-growing chain is what
-            # keeps this a genuine safety valve rather than a soft suggestion.
+            # subsampling_rate (or a higher HF-trigger rate) than its siblings can only
+            # overshoot chunk_size *more* per round, never less, so capping on the
+            # fastest-growing chain is what keeps this a genuine safety valve rather
+            # than a soft suggestion.
             total_coarse_evals = max(coarse_evals_per_chain)
+            total_hf_evals = max(hf_evals_per_chain)
             conv = find_burn_in_via_rhat(
                 chains_so_far, rhat_threshold=rhat_threshold, min_ess=min_ess, patience=patience
             )
@@ -1539,17 +1759,27 @@ def run_until_rhat_converged(
                 rhat_str = (
                     ", ".join(f"{k}={v:.3f}" for k, v in conv["rhat"].items()) if conv["rhat"] is not None else "n/a"
                 )
+                hf_str = f"  hf_evals={total_hf_evals}/{max_hf_evals}" if max_hf_evals is not None else ""
                 print(
-                    f"  {prefix}round {rounds_run}: coarse_evals={total_coarse_evals}/{max_total_coarse_evals}  "
-                    f"rhat=({rhat_str})  converged={conv['converged']}"
+                    f"  {prefix}round {rounds_run}: coarse_evals={total_coarse_evals}/{max_total_coarse_evals}"
+                    f"{hf_str}  rhat=({rhat_str})  converged={conv['converged']}"
                 )
 
-            if conv["converged"] or total_coarse_evals >= max_total_coarse_evals:
+            hf_cap_hit = max_hf_evals is not None and total_hf_evals >= max_hf_evals
+            if conv["converged"] or total_coarse_evals >= max_total_coarse_evals or hf_cap_hit:
+                stop_reason = (
+                    "converged" if conv["converged"]
+                    else "max_hf_evals" if hf_cap_hit
+                    else "max_coarse_evals"
+                )
                 return {
                     "chains": chains_so_far,
                     "rounds_run": rounds_run,
                     "coarse_evals_per_chain": coarse_evals_per_chain,
                     "total_coarse_evals": total_coarse_evals,
+                    "hf_evals_per_chain": hf_evals_per_chain,
+                    "total_hf_evals": total_hf_evals,
+                    "stop_reason": stop_reason,
                     "final_states": states,
                     **conv,
                 }
@@ -1572,6 +1802,7 @@ def run_convergence_driven_comparison(
     theta0: np.ndarray | None = None,
     seed_base: int = 0,
     n_jobs: int | None = None,
+    methods: tuple[str, ...] = ("hf_only", "pretrained", "online_active", "ours"),
 ) -> tuple[dict[str, Any], dict[str, list[MCMCChain]], dict[str, list[PODGPSurrogate]]]:
     """The convergence-driven analog of `run_convergence_check`: instead of comparing
     accuracy at a fixed, shared `n_coarse_evals` budget, runs each method until its
@@ -1604,6 +1835,15 @@ def run_convergence_driven_comparison(
       *initial* per-replicate state's model already has the final surrogate;
       `online_active`'s keeps learning throughout, so its surrogate is read from
       `run_until_rhat_converged`'s `final_states` instead.
+
+    `methods` restricts which surrogate-based methods (`"pretrained"`/`"online_active"`/
+    `"ours"`) actually run their (expensive) `n_chains`-replicate monitored loop --
+    `"hf_only"` always runs regardless, since it supplies `hf_reference_mean`/`_cov`
+    for the others' W2/KL-to-reference. Use this to skip `pretrained` entirely for a
+    posterior-*accuracy* comparison (see this module's `run_training_cost_comparison`
+    and the notebook's section 5b markdown for why comparing pretrained's frozen,
+    uncorrected posterior against DA-corrected chains isn't the comparison that
+    isolates training strategy) without paying for its replicate loop at all.
 
     `pretrained` and `ours` each build their `n_chains` replicates from a *single*
     shared offline design / adaptive phase (one call to `active_learning_offline_design`
@@ -1645,65 +1885,78 @@ def run_convergence_driven_comparison(
     hf_reference_mean = np.asarray(hf_run["pooled"]["posterior_mean"])
     hf_reference_cov = np.asarray(hf_run["pooled"]["posterior_cov"])
 
-    # Pretrained's offline design (and its HF cost) is trained *once*, up front,
-    # shared by every replicate -- not once per replicate. See this function's
-    # docstring for why: independently-retrained replicates would each target a
-    # subtly different frozen posterior, breaking R-hat's same-target assumption.
-    # The one-time cost is charged to replicate 0 only in n_hf_pretrained_list (summed
-    # into total cost downstream), since it's genuinely paid once, not n_chains times.
-    print("--- pretrained: training 1 shared offline design ---")
-    pretrained_surrogate, n_hf_pretrained_shared = _train_pretrained_surrogate(
-        problem, seed_X=seed_X, seed_Y=seed_Y, gamma_threshold=GAMMA_THRESHOLD, pod_rank=pod_rank,
-        kernel=KERNEL, seed=seed_base + 200,
-    )
-    pretrained_inits = [
-        _init_pretrained_state_from_surrogate(
-            problem, surrogate=pretrained_surrogate, seed=seed_base + 200 + i, theta0=theta0
+    if "pretrained" in methods:
+        # Pretrained's offline design (and its HF cost) is trained *once*, up front,
+        # shared by every replicate -- not once per replicate. See this function's
+        # docstring for why: independently-retrained replicates would each target a
+        # subtly different frozen posterior, breaking R-hat's same-target assumption.
+        # The one-time cost is charged to replicate 0 only in n_hf_pretrained_list
+        # (summed into total cost downstream), since it's genuinely paid once, not
+        # n_chains times.
+        print("--- pretrained: training 1 shared offline design ---")
+        pretrained_surrogate, n_hf_pretrained_shared = _train_pretrained_surrogate(
+            problem, seed_X=seed_X, seed_Y=seed_Y, gamma_threshold=GAMMA_THRESHOLD, pod_rank=pod_rank,
+            kernel=KERNEL, seed=seed_base + 200,
         )
-        for i in range(n_chains)
-    ]
-    n_hf_pretrained_list = [n_hf_pretrained_shared] + [0] * (n_chains - 1)
-    print(f"--- pretrained: offline design done (n_hf={n_hf_pretrained_shared}), starting {n_chains} chains ---")
-    pre_run = run_until_rhat_converged(
-        [lambda s=s: s for s in pretrained_inits],
-        chunk_size=chunk_size, max_total_coarse_evals=max_total_coarse_evals,
-        rhat_threshold=rhat_threshold, min_ess=min_ess, patience=patience, n_jobs=n_jobs, label="pretrained",
-    )
-    chains_by_method["pretrained"] = pre_run.pop("chains")
-    pre_run.pop("final_states")  # frozen throughout: pretrained_inits already has the final surrogate
-    # Single shared surrogate -> one entry, not n_chains identical copies (which would
-    # visually overstate replicate-to-replicate variability that no longer exists).
-    surrogates_by_method["pretrained"] = [pretrained_surrogate]
-    pre_run["pooled"] = pooled_summarize(
-        chains_by_method["pretrained"], problem, burn_in=pre_run["burn_in"] or 0, n_offline_hf=n_hf_pretrained_list,
-        reference_mean=hf_reference_mean, reference_cov=hf_reference_cov,
-    )
-    results["pretrained"] = pre_run
-    print(f"--- pretrained done: converged={pre_run['converged']}, {pre_run['rounds_run']} rounds ---")
-
-    print(f"--- online_active: {n_chains} chains ---")
-    on_run = run_until_rhat_converged(
-        [
-            lambda i=i: _init_online_active_state(
-                problem, surrogate=seed_surrogate, gamma_threshold=GAMMA_THRESHOLD,
-                seed=seed_base + 300 + i, theta0=theta0,
+        pretrained_inits = [
+            _init_pretrained_state_from_surrogate(
+                problem, surrogate=pretrained_surrogate, seed=seed_base + 200 + i, theta0=theta0
             )
             for i in range(n_chains)
-        ],
-        chunk_size=chunk_size, max_total_coarse_evals=max_total_coarse_evals,
-        rhat_threshold=rhat_threshold, min_ess=min_ess, patience=patience, n_jobs=n_jobs, label="online_active",
-    )
-    chains_by_method["online_active"] = on_run.pop("chains")
-    # Unlike pretrained/ours, online_active's surrogate keeps learning throughout the
-    # monitored loop -- its *final* state (not the initial one) has the surrogate that
-    # actually produced the returned chains.
-    surrogates_by_method["online_active"] = [s.model.lf_model for s in on_run.pop("final_states")]
-    on_run["pooled"] = pooled_summarize(
-        chains_by_method["online_active"], problem, burn_in=on_run["burn_in"] or 0, n_offline_hf=n_init,
-        reference_mean=hf_reference_mean, reference_cov=hf_reference_cov,
-    )
-    results["online_active"] = on_run
-    print(f"--- online_active done: converged={on_run['converged']}, {on_run['rounds_run']} rounds ---")
+        ]
+        n_hf_pretrained_list = [n_hf_pretrained_shared] + [0] * (n_chains - 1)
+        print(f"--- pretrained: offline design done (n_hf={n_hf_pretrained_shared}), starting {n_chains} chains ---")
+        pre_run = run_until_rhat_converged(
+            [lambda s=s: s for s in pretrained_inits],
+            chunk_size=chunk_size, max_total_coarse_evals=max_total_coarse_evals,
+            rhat_threshold=rhat_threshold, min_ess=min_ess, patience=patience, n_jobs=n_jobs, label="pretrained",
+        )
+        chains_by_method["pretrained"] = pre_run.pop("chains")
+        pre_run.pop("final_states")  # frozen throughout: pretrained_inits already has the final surrogate
+        # Single shared surrogate -> one entry, not n_chains identical copies (which
+        # would visually overstate replicate-to-replicate variability that no longer
+        # exists).
+        surrogates_by_method["pretrained"] = [pretrained_surrogate]
+        pre_run["pooled"] = pooled_summarize(
+            chains_by_method["pretrained"], problem, burn_in=pre_run["burn_in"] or 0,
+            n_offline_hf=n_hf_pretrained_list, reference_mean=hf_reference_mean, reference_cov=hf_reference_cov,
+        )
+        results["pretrained"] = pre_run
+        print(f"--- pretrained done: converged={pre_run['converged']}, {pre_run['rounds_run']} rounds ---")
+
+    if "online_active" in methods:
+        print(f"--- online_active: {n_chains} chains ---")
+        on_run = run_until_rhat_converged(
+            [
+                lambda i=i: _init_online_active_state(
+                    problem, surrogate=seed_surrogate, gamma_threshold=GAMMA_THRESHOLD,
+                    seed=seed_base + 300 + i, theta0=theta0,
+                )
+                for i in range(n_chains)
+            ],
+            chunk_size=chunk_size, max_total_coarse_evals=max_total_coarse_evals,
+            # `online_active` never freezes, so it keeps spending HF budget throughout
+            # this loop (unlike `ours`/`pretrained`) -- capped at the same
+            # MAX_ADAPT_COARSE_EVALS ceiling `ours`'s adaptive/training phase is held
+            # to, so the two methods' online-learning HF budgets are directly
+            # comparable rather than one being implicitly allowed far more.
+            max_hf_evals=MAX_ADAPT_COARSE_EVALS,
+            rhat_threshold=rhat_threshold, min_ess=min_ess, patience=patience, n_jobs=n_jobs, label="online_active",
+        )
+        chains_by_method["online_active"] = on_run.pop("chains")
+        # Unlike pretrained/ours, online_active's surrogate keeps learning throughout
+        # the monitored loop -- its *final* state (not the initial one) has the
+        # surrogate that actually produced the returned chains.
+        surrogates_by_method["online_active"] = [s.model.lf_model for s in on_run.pop("final_states")]
+        on_run["pooled"] = pooled_summarize(
+            chains_by_method["online_active"], problem, burn_in=on_run["burn_in"] or 0, n_offline_hf=n_init,
+            reference_mean=hf_reference_mean, reference_cov=hf_reference_cov,
+        )
+        results["online_active"] = on_run
+        print(f"--- online_active done: converged={on_run['converged']}, {on_run['rounds_run']} rounds ---")
+
+    if "ours" not in methods:
+        return results, chains_by_method, surrogates_by_method
 
     # ours: the adaptive phase runs *once* (shared by every replicate), then production
     # is chunked and monitored exactly like the other three methods. See this
