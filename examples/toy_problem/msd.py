@@ -134,7 +134,7 @@ def make_prior() -> IndependentUniformPrior:
     well, without removing the "wide range of possible shapes" difficulty the wide box
     is there to create.
     """
-    return IndependentUniformPrior(low=[20.0, 2.0], high=[80.0, 5.0])
+    return IndependentUniformPrior(low=[10.0, 0.1], high=[100.0, 2.0])
 
 
 def make_observation(

@@ -64,6 +64,7 @@ nav:
       - Surrogates: api/surrogates.md
       - Diagnostics: api/diagnostics.md
       - Utils: api/utils.md
+      - Verification: api/verification.md
 
 extra_css:
   - stylesheets/extra.css

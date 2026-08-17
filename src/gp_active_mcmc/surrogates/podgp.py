@@ -1,13 +1,13 @@
 from __future__ import annotations
 
 import copy
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 import numpy as np
 from numpy.typing import ArrayLike, NDArray
 
 from .gp import MultiOutputGP
-from .pod import POD
+from .pod import POD, pod_energy
 
 FloatArray = NDArray[np.float64]
 
@@ -63,6 +63,58 @@ class PODGPSurrogate:
         This prevents numerical issues when variances become exactly zero.
     y_var_floor
         Small non-negative floor applied to the reconstructed output variance.
+    X_history, Y_history
+        Every raw `(theta, y_true)` HF pair ever passed to [`update`][gp_active_mcmc.podgp.PODGPSurrogate.update],
+        accumulated for [`refit_pod`][gp_active_mcmc.podgp.PODGPSurrogate.refit_pod] (see there for why this
+        needs to be stored separately -- `gp`'s own stored targets are POD *coefficients*,
+        not the raw snapshots, so they can't be used to refit the basis later). Seed this
+        with the offline design's own `(X, Y)` at construction time, or `refit_pod`'s
+        basis is only ever built from points collected *after* construction. `None`
+        (the default) means "nothing accumulated yet"; `update` initialises it lazily.
+    pod_refit_every
+        If set, [`update`][gp_active_mcmc.podgp.PODGPSurrogate.update] calls
+        [`refit_pod`][gp_active_mcmc.podgp.PODGPSurrogate.refit_pod] automatically every
+        `pod_refit_every` accumulated points. `None` (the default) disables this --
+        `update` then behaves exactly as before, only ever refining the GP within the
+        basis fixed at construction time.
+    pod_refit_max
+        Caps the total number of times [`refit_pod`][gp_active_mcmc.podgp.PODGPSurrogate.refit_pod]
+        actually does its work over this surrogate's *lifetime* -- persistent, not
+        reset by anything, and enforced by `refit_pod` itself regardless of what
+        triggers the call (`update`'s own `pod_refit_every` cadence, or an external
+        caller invoking it directly, e.g. a cross-replicate sync hook). `None` (the
+        default) means unbounded. This used to be enforced only at `update`'s call
+        site with its own separate counter, which meant an external direct caller of
+        `refit_pod` had no cap at all -- self-gating here closes that gap.
+
+        This is also the *only* thing that ever changes the GP's hyperparameters:
+        `gp.n_retrain_max` should be left at `0` on every `MultiOutputGP` this
+        surrogate is built with, so `update`'s incremental re-optimisation path never
+        fires on its own between refits. Every `refit_pod` call (up to `pod_refit_max`
+        of them) grants the rebuilt GP a genuine, from-scratch hyperparameter search --
+        one trigger, one cap, no separate warm-started or incremental in-between state
+        to reason about.
+    adaptive_rank
+        If `True`, each `refit_pod` call also re-derives the POD rank itself (via
+        `pod_energy` on the *full* accumulated `Y_history`, same criterion as
+        `select_pod_rank_and_seed_design`'s one-shot offline choice) instead of
+        reusing whatever rank the surrogate started with. Why this matters: the
+        initial rank is only ever as good as the small offline sample it was picked
+        from -- confirmed directly to badly underestimate the true out-of-sample rank
+        needed (e.g. 12% of the prior exceeding the noise floor at a rank picked this
+        way from 25 points). As real HF data accumulates through active learning, a
+        larger sample gives a better-informed rank estimate; `False` (the default)
+        keeps today's behaviour of a rank fixed at construction time. Cheap to add:
+        `refit_pod` already rebuilds the GP from scratch every time regardless (a
+        changed basis makes the old GP's targets stale either way), so letting the
+        *rank* also change during that same rebuild doesn't add a new mechanism.
+    rank_energy_threshold
+        Cumulative-energy threshold used when `adaptive_rank` is set (default `0.999`,
+        matching `select_pod_rank_and_seed_design`'s own default).
+    rank_max
+        Upper bound on how large `adaptive_rank` may grow the rank (default `None`,
+        meaning `min(20, n_history - 1, n_obs)` -- mirrors
+        `select_pod_rank_and_seed_design`'s own `r_max_cap=20` default).
 
     Notes
     -----
@@ -85,6 +137,15 @@ class PODGPSurrogate:
     gp: MultiOutputGP
     coeff_var_floor: float = 1e-12
     y_var_floor: float = 1e-14
+    X_history: FloatArray | None = None
+    Y_history: FloatArray | None = None
+    pod_refit_every: int | None = None
+    pod_refit_max: int | None = None
+    adaptive_rank: bool = False
+    rank_energy_threshold: float = 0.999
+    rank_max: int | None = None
+    _since_pod_refit: int = field(default=0, repr=False)
+    _pod_refit_count: int = field(default=0, repr=False)
 
     def _predict_coeffs(self, theta: ArrayLike) -> tuple[FloatArray, FloatArray]:
         """Predict POD coefficients (mean and variance) from parameters.
@@ -217,6 +278,100 @@ class PODGPSurrogate:
         a_true = self.pod.transform(y2)[0]  # (r,)
         self.gp.update(theta2, a_true)
 
+        self.X_history = theta2.copy() if self.X_history is None else np.vstack([self.X_history, theta2])
+        self.Y_history = y2.copy() if self.Y_history is None else np.vstack([self.Y_history, y2])
+
+        if self.pod_refit_every is not None:
+            self._since_pod_refit += 1
+            if self._since_pod_refit >= self.pod_refit_every:
+                self.refit_pod()  # no-ops on its own once pod_refit_max is spent
+                self._since_pod_refit = 0
+
+    def refit_pod(self, *, rank: int | None = None) -> None:
+        """Refit the POD compression basis from the *full* accumulated HF history
+        (`X_history`/`Y_history`: the seed design plus every point learned since), then
+        re-project that same history through the new basis and retrain the GP from
+        scratch on the reprojected coefficients.
+
+        Why this exists
+        ----------------
+        `update` alone only ever refines the GP's mapping *into a fixed coefficient
+        space*: `self.pod.transform(y2)` projects each new HF snapshot onto the basis
+        fixed at construction time, and whatever output-space energy that snapshot has
+        *outside* that basis is discarded before the GP ever sees it -- no amount of
+        additional HF data or GP retraining can recover it. That's an irreducible
+        representation-error floor that `update` cannot touch. `active_learning_offline_design`
+        already refits both `pod` and `gp` from scratch once per batch for exactly this
+        reason; this method gives the same capability to the online, per-HF-call path
+        (`ActiveMCMCModel.coarse`/`.fine` -> `lf_model.update`), so it can also let its
+        actively-selected HF points reshape the basis, not just the GP fit within it.
+
+        Self-gated on `pod_refit_max` (see its field docstring) -- safe to call
+        directly (e.g. from an external cross-replicate sync hook) as well as via
+        `update`'s own cadence; both draw from the same persistent counter, so the cap
+        means the same thing regardless of what's triggering the call. A no-op once
+        `pod_refit_max` is spent (keeps the current `pod`/`gp` as-is). Every call that
+        isn't a no-op grants the rebuilt GP a genuine, from-scratch hyperparameter
+        optimisation -- this is the only place this surrogate's GP hyperparameters
+        ever change; `gp.n_retrain_max` should be `0` so `update`'s own incremental
+        path never fires between refits.
+
+        Parameters
+        ----------
+        rank
+            POD rank to refit at. Defaults to `self.pod.rank` (same capacity, re-fit
+            from more/different data) unless `self.adaptive_rank` is set, in which
+            case it defaults instead to a freshly-derived rank (see `adaptive_rank`'s
+            field docstring). Pass an explicit value to override either default.
+
+        Raises
+        ------
+        RuntimeError
+            If `update` has never been called (nothing accumulated to refit from).
+        """
+        if self.X_history is None or self.Y_history is None:
+            raise RuntimeError("No accumulated history to refit from -- call update() at least once first.")
+        if self.pod_refit_max is not None and self._pod_refit_count >= self.pod_refit_max:
+            return
+        self._pod_refit_count += 1
+
+        if rank is not None:
+            r = int(rank)
+        elif self.adaptive_rank:
+            r_max = self.rank_max
+            if r_max is None:
+                r_max = 20
+            r_max = max(1, min(r_max, self.X_history.shape[0] - 1, self.Y_history.shape[1]))
+            energy_curve = pod_energy(
+                self.Y_history, r_max=r_max, randomized=self.pod.randomized,
+                n_oversamples=self.pod.n_oversamples, n_iter=self.pod.n_iter, random_state=self.pod.random_state,
+            )
+            r = int(np.searchsorted(energy_curve, self.rank_energy_threshold) + 1)
+            r = min(r, r_max)
+        else:
+            r = int(self.pod.rank)
+        new_pod = POD(
+            rank=r,
+            randomized=self.pod.randomized,
+            n_oversamples=self.pod.n_oversamples,
+            n_iter=self.pod.n_iter,
+            random_state=self.pod.random_state,
+        ).fit(self.Y_history)
+        A = new_pod.transform(self.Y_history)
+
+        new_gp = MultiOutputGP(
+            X_train=self.X_history,
+            Y_train=A,
+            kernel=self.gp.kernel,
+            ard=self.gp.ard,
+            noise_variance=self.gp.noise_variance,
+            update_every=self.gp.update_every,
+            n_retrain_max=self.gp.n_retrain_max,
+            max_iters=self.gp.max_iters,
+        )
+        self.pod = new_pod
+        self.gp = new_gp
+
     def log_likelihood(self) -> float:
         """Return the summed marginal log-likelihood of the underlying GP(s)."""
         return self.gp.log_likelihood()
@@ -237,4 +392,11 @@ class PODGPSurrogate:
             gp=copy.deepcopy(self.gp),
             coeff_var_floor=self.coeff_var_floor,
             y_var_floor=self.y_var_floor,
+            X_history=None if self.X_history is None else self.X_history.copy(),
+            Y_history=None if self.Y_history is None else self.Y_history.copy(),
+            pod_refit_every=self.pod_refit_every,
+            pod_refit_max=self.pod_refit_max,
+            adaptive_rank=self.adaptive_rank,
+            rank_energy_threshold=self.rank_energy_threshold,
+            rank_max=self.rank_max,
         )
