@@ -1,3 +1,9 @@
+"""Runs the mass-spring-damper method comparison (hf_only/pretrained/online_active/
+adaptive_da, see `msd_methods`) across `--n-seeds` independent problem instances,
+appending one metrics row per seed to `results/sweep_convergence_driven[_TAG].jsonl`
+and saving each seed's figures/artifact bundle alongside it.
+"""
+
 from __future__ import annotations
 
 import argparse
@@ -41,27 +47,18 @@ from msd_plots import plot_posterior_scatter, plot_surrogate_comparison, plot_tr
 
 from gp_active_mcmc.utils.rng import set_seed
 
-# Per-seed offsets are spaced 10_000 apart so a single seed's internal seeding (which
-# uses offsets up to +600) never collides with the next seed's.
+# Spaced well past the largest per-seed offset (methods._SEED_OFFSETS tops out at
+# 600) so one seed's internal seeding never collides with the next seed's.
 SEED_STRIDE = 10_000
 
 
 def load_artifact(seed: int, *, tag: str = "") -> dict[str, Any]:
-    """Load one seed's full result bundle saved by `run_one_seed`, e.g. to remake a
-    figure with different styling without re-running the sweep.
-
-    Returns a dict with `problem` (reconstructed via `build_problem` from the saved
-    `problem_seed`/`sigma_obs` -- `Problem.hf_forward` is a closure, not directly
-    picklable, and `build_problem` is fully deterministic in those two arguments so
-    reconstructing is exact, not an approximation), `seed_surrogate` (before
-    training), `seed_X`/`seed_Y` (the offline seed design -- every point in it is an
-    HF evaluation), `offline_surrogate` (`pretrained`, after training),
-    `surrogates_by_method` (`online_active`/`adaptive_da`, after), `chains_by_method`
-    (`hf_only`/`online_active`/`adaptive_da`/`adaptive_da_adapt`, raw per-replicate
-    `MCMCChain`s -- each chain's `.extras.used_hf` boolean mask picks out its
-    HF-evaluated points), `training_cost`, and `posterior` (the same dicts written to
-    the `.jsonl` row).
-    """
+    """Loads one seed's full result bundle saved by `run_one_seed` (`seed_surrogate`,
+    `seed_X`/`seed_Y`, `offline_surrogate`, `surrogates_by_method`, `chains_by_method`,
+    `training_cost`, `posterior` -- the same dicts written to the `.jsonl` row), e.g.
+    to remake a figure with different styling without re-running the sweep. Also
+    reconstructs `problem` via `build_problem`, since `Problem.hf_forward` is a
+    closure and isn't itself picklable."""
     path = _artifacts_dir(tag) / f"seed_{seed}.joblib"
     artifact = joblib.load(path)
     artifact["problem"] = build_problem(problem_seed=artifact["problem_seed"], sigma_obs=artifact["sigma_obs"])
@@ -94,9 +91,8 @@ def _save_figures(
     posterior: dict[str, Any],
     include_synced: bool,
 ) -> None:
-    """Save this seed's four figures (surrogate comparison, posterior scatter, full
-    and post-burn-in traces) under `figures/[tag/]`.
-    """
+    """Saves this seed's four figures (surrogate comparison, posterior scatter, full
+    and post-burn-in traces) under `figures/[tag/]`."""
     surrogates_for_plot = {
         "online_active": surrogates_by_method["online_active"][0],
         "adaptive_da": surrogates_by_method["adaptive_da"][0],
@@ -146,16 +142,11 @@ def _save_figures(
 
 
 def _save_artifact(problem_seed: int, *, sigma_obs: float, tag: str, **bundle: Any) -> None:
-    """Save this seed's full result bundle to `sweep_artifacts/[tag/]seed_N.joblib`.
-
-    `problem` itself isn't included: `Problem.hf_forward` is a closure, which plain
-    `pickle` (what `joblib.dump` uses) can't serialize. `build_problem` is
-    deterministic in (`problem_seed`, `sigma_obs`), so `load_artifact` reconstructs
-    an identical `Problem` from those two saved values instead.
-
-    A failure here is logged, not raised: it must not take down the already-computed
-    metrics row the caller still needs to write.
-    """
+    """Saves this seed's full result bundle to `sweep_artifacts/[tag/]seed_N.joblib`
+    (`problem` itself excluded -- `Problem.hf_forward` is an unpicklable closure;
+    `load_artifact` reconstructs it from the saved `problem_seed`/`sigma_obs` instead).
+    A failure here is logged, not raised, so it can't take down the already-computed
+    metrics row the caller still needs to write."""
     artifacts_dir = _artifacts_dir(tag)
     artifacts_dir.mkdir(parents=True, exist_ok=True)
     try:
@@ -185,13 +176,11 @@ def run_one_seed(
     adaptive_da_adapt_coarse_evals: int | None = None,
     max_subchain: int = MAX_SUBCHAIN,
 ) -> dict[str, Any]:
-    """Run the training-cost and posterior-accuracy comparisons for one problem
-    instance, save its figures and full artifact bundle, and return its `.jsonl` row.
-
-    `skip_training_cost` skips `run_training_cost_comparison` -- the slow half of
-    every seed (`pretrained`'s offline greedy-active-learning design in particular)
-    -- for fast iteration on just the posterior/MCMC comparison.
-    """
+    """Runs the training-cost and posterior-accuracy comparisons for one problem
+    instance, saves its figures and full artifact bundle, and returns its `.jsonl`
+    row. `skip_training_cost` skips the slow half (`pretrained`'s offline
+    greedy-active-learning design in particular) for fast iteration on just the
+    posterior/MCMC comparison."""
     problem = build_problem(problem_seed=problem_seed, sigma_obs=sigma_obs)
     seed_surrogate, seed_X, seed_Y = build_initial_surrogate(
         problem, set_seed(1_000 + problem_seed), n_init=n_init, pod_rank=pod_rank, kernel=KERNEL,
@@ -286,8 +275,8 @@ def _build_parser() -> argparse.ArgumentParser:
         f"learning (default {POD_REFIT_EVERY}).",
     )
     design.add_argument(
-        "--pod-refit-max", type=int, default=-1,
-        help="Cap on total refit_pod() calls per surrogate lifetime. -1 (default) for unbounded.",
+        "--pod-refit-max", type=int, default=None,
+        help="Cap on total refit_pod() calls per surrogate lifetime. Unbounded by default.",
     )
     design.add_argument(
         "--adaptive-rank", action="store_true",
@@ -299,8 +288,8 @@ def _build_parser() -> argparse.ArgumentParser:
         help=f"Cumulative-energy threshold for --adaptive-rank (default {RANK_ENERGY_THRESHOLD}).",
     )
     design.add_argument(
-        "--rank-max", type=int, default=-1,
-        help="Upper bound on the adaptively-derived rank. -1 (default) uses refit_pod()'s own fallback.",
+        "--rank-max", type=int, default=None,
+        help="Upper bound on the adaptively-derived rank. Uses refit_pod()'s own fallback by default.",
     )
 
     problem = parser.add_argument_group("problem / methods")
@@ -313,9 +302,9 @@ def _build_parser() -> argparse.ArgumentParser:
         help="Coarse-eval ceiling for adaptive_da's adaptive phase, and the HF-call cap for online_active.",
     )
     problem.add_argument(
-        "--adaptive-da-adapt-coarse-evals", type=int, default=-1, dest="adaptive_da_adapt_coarse_evals",
+        "--adaptive-da-adapt-coarse-evals", type=int, default=None, dest="adaptive_da_adapt_coarse_evals",
         help="Decouples adaptive_da's adaptive-phase ceiling from --max-adapt-coarse-evals (they aren't the "
-        "same currency: coarse evals vs. real HF calls). -1 (default) keeps them shared.",
+        "same currency: coarse evals vs. real HF calls). Shared with --max-adapt-coarse-evals by default.",
     )
     problem.add_argument(
         "--max-subchain", type=int, default=MAX_SUBCHAIN,
@@ -358,22 +347,10 @@ def _build_parser() -> argparse.ArgumentParser:
     return parser
 
 
-def _resolve_args(args: argparse.Namespace) -> argparse.Namespace:
-    """Convert argparse's `-1`/negative sentinels to the `None` they represent, and
-    validate `--burn-in-fraction`.
-    """
-    args.pod_refit_max = None if args.pod_refit_max < 0 else args.pod_refit_max
-    args.rank_max = None if args.rank_max < 0 else args.rank_max
-    args.adaptive_da_adapt_coarse_evals = (
-        None if args.adaptive_da_adapt_coarse_evals < 0 else args.adaptive_da_adapt_coarse_evals
-    )
+def main() -> None:
+    args = _build_parser().parse_args()
     if not 0.0 <= args.burn_in_fraction < 1.0:
         raise SystemExit("--burn-in-fraction must be in [0, 1).")
-    return args
-
-
-def main() -> None:
-    args = _resolve_args(_build_parser().parse_args())
 
     RESULTS_DIR.mkdir(exist_ok=True)
     jsonl_path = _jsonl_path(args.tag)
@@ -385,7 +362,7 @@ def main() -> None:
             "name for a separate run."
         )
 
-    # Built once, shared by every seed -- these settings don't vary seed to seed.
+    # Built once and shared by every seed -- these settings don't vary seed to seed.
     convergence = ConvergenceConfig(
         chunk_size=args.chunk_size, max_total_coarse_evals=args.max_total_coarse_evals,
         rhat_threshold=args.rhat_threshold, min_ess=args.min_ess, n_jobs=args.n_jobs,

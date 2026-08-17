@@ -17,35 +17,14 @@ __all__ = ["Problem"]
 @runtime_checkable
 class Problem(Protocol):
     """Structural interface for an inverse problem usable with this package's
-    comparison harness.
-
-    Any object exposing these six attributes qualifies, checked structurally (no
-    inheritance needed). A concrete problem may carry extra fields of its own (a time
-    grid, a mesh, ...); they are simply invisible to the harness.
-
-    Attributes
-    ----------
-    prior
-        Prior distribution, duck-typing a `scipy.stats` frozen distribution:
-        `.rvs`, `.pdf`/`.logpdf`, `.mean`, `.cov`.
-    theta_true
-        Ground-truth parameter vector, shape ``(d,)``.
-    y_obs
-        Observed data the likelihood conditions on, shape ``(n_obs,)``.
-    sigma_obs
-        Observation-noise standard deviation (i.i.d. Gaussian noise).
-    hf_forward
-        High-fidelity forward model, ``theta -> y``. See
-        `gp_active_mcmc.protocols.HighFidelityModel`.
-    param_names
-        One name per dimension of `theta_true`, in order (e.g. ``("k", "c")``) --
-        problem metadata, not a per-call choice, so functions taking `problem` never
-        need it passed separately.
+    comparison harness. Any object exposing these six attributes qualifies, checked
+    structurally (no inheritance needed); a concrete problem may carry extra fields of
+    its own (a time grid, a mesh, ...), simply invisible to the harness.
     """
 
-    prior: Any
-    theta_true: FloatArray
-    y_obs: FloatArray
-    sigma_obs: float
-    hf_forward: HighFidelityModel
-    param_names: tuple[str, ...]
+    prior: Any  # duck-types a scipy.stats frozen distribution: .rvs, .pdf/.logpdf, .mean, .cov
+    theta_true: FloatArray  # ground-truth parameter vector, shape (d,)
+    y_obs: FloatArray  # observed data the likelihood conditions on, shape (n_obs,)
+    sigma_obs: float  # observation-noise standard deviation (i.i.d. Gaussian noise)
+    hf_forward: HighFidelityModel  # high-fidelity forward model, theta -> y
+    param_names: tuple[str, ...]  # one name per dim of theta_true, e.g. ("k", "c")

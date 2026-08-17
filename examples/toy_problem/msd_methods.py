@@ -27,9 +27,8 @@ in `gp_active_mcmc.verification` and is re-exported here unchanged, so this modu
 and `examples/navier_stokes/ns_problem.py` both build on exactly the same tested,
 documented implementation rather than each maintaining their own copy.
 
-This module has no `__main__`: it is imported by `run_sweep_convergence_driven.py`
-(the multi-seed sweep driver) and `msd_benchmark.ipynb` (the paper's comparison
-notebook).
+This module has no `__main__`: it is imported by `run.py` (the multi-seed sweep
+driver) and `msd_benchmark.ipynb` (the paper's comparison notebook).
 """
 
 from __future__ import annotations

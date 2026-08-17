@@ -29,43 +29,17 @@ __all__ = [
 ]
 
 
-# ---------------------------------------------------------------------------
-# effective_burn_in / adaptive_da_* helpers.
-#
-# `run_adaptive_da`'s chain mixes two row currencies: one row per coarse evaluation
-# during the adaptive phase, one row per DA block during the frozen production phase.
-# These helpers reconstruct burn-in and a common x-axis in coarse-evaluation units
-# from that method's metadata dict (`meta_adaptive_da`).
-# ---------------------------------------------------------------------------
+# effective_burn_in / adaptive_da_* helpers: run_adaptive_da's chain mixes two row
+# currencies (one row per coarse eval during the adaptive phase, one row per DA block
+# during frozen production), so these reconstruct burn-in and a common x-axis in
+# coarse-evaluation units from its metadata dict (meta_adaptive_da).
 
 
 def effective_burn_in(method: str, *, meta_adaptive_da: dict[str, Any] | None = None, default: int = 0) -> int:
-    """Burn-in to use for posterior summaries/plots.
-
-    `adaptive_da`'s adaptive phase is non-stationary (the surrogate is still updating),
-    so it's discarded in full via ``meta_adaptive_da["n_adapt_samples"]`` regardless of
-    `default`. Every other method uses `default`.
-
-    Parameters
-    ----------
-    method
-        Method name, e.g. ``"hf_only"``, ``"online_active"``, ``"adaptive_da"``.
-    meta_adaptive_da
-        Required when ``method == "adaptive_da"``: the metadata dict returned by
-        `run_adaptive_da`.
-    default
-        Burn-in for every method other than `"adaptive_da"`.
-
-    Returns
-    -------
-    burn_in
-        Number of leading rows to discard.
-
-    Raises
-    ------
-    ValueError
-        If ``method == "adaptive_da"`` and `meta_adaptive_da` is not given.
-    """
+    """Burn-in to use for posterior summaries/plots. `adaptive_da`'s adaptive phase is
+    non-stationary (the surrogate is still updating), so it's discarded in full via
+    `meta_adaptive_da["n_adapt_samples"]` (required in that case) regardless of
+    `default`; every other method uses `default` as-is."""
     if method == "adaptive_da":
         if meta_adaptive_da is None:
             raise ValueError("meta_adaptive_da is required to compute burn-in for 'adaptive_da'.")
@@ -74,22 +48,10 @@ def effective_burn_in(method: str, *, meta_adaptive_da: dict[str, Any] | None = 
 
 
 def adaptive_da_coarse_eval_units(meta_adaptive_da: dict[str, Any]) -> int:
-    """True coarse-evaluation cost of `run_adaptive_da`'s returned chain.
-
-    ``chain.n_steps`` undercounts this during production: each row there is a whole DA
-    block of `frozen_subsampling_rate` coarse evaluations, not one. Use this as
-    `summarize`'s/`pooled_summarize`'s `n_coarse_eval_units` override.
-
-    Parameters
-    ----------
-    meta_adaptive_da
-        Metadata dict returned by `run_adaptive_da`.
-
-    Returns
-    -------
-    n_coarse_eval_units
-        True total coarse-evaluation cost.
-    """
+    """True coarse-evaluation cost of `run_adaptive_da`'s returned chain --
+    `chain.n_steps` undercounts this during production, where each row is a whole DA
+    block of `frozen_subsampling_rate` coarse evaluations, not one. Use as
+    `summarize`'s/`pooled_summarize`'s `n_coarse_eval_units` override."""
     n_adapt_coarse_evals = int(meta_adaptive_da["adapt_metadata"]["coarse_evals_used"])
     if meta_adaptive_da["phase"] == "adapt_only":
         return n_adapt_coarse_evals
@@ -99,22 +61,9 @@ def adaptive_da_coarse_eval_units(meta_adaptive_da: dict[str, Any]) -> int:
 
 
 def adaptive_da_cumulative_coarse_evals(meta_adaptive_da: dict[str, Any]) -> FloatArray:
-    """Per-row cumulative coarse-evaluation count for `adaptive_da`'s full (adaptive +
-    production) chain -- the x-axis a plot should use instead of raw row index, since
-    each production row is a whole DA block, not one coarse evaluation (see
-    `adaptive_da_coarse_eval_units`).
-
-    Parameters
-    ----------
-    meta_adaptive_da
-        Metadata dict returned by `run_adaptive_da`.
-
-    Returns
-    -------
-    x
-        Cumulative coarse-evaluation count, one entry per row of the chain
-        `run_adaptive_da` returned alongside this metadata.
-    """
+    """Per-row cumulative coarse-evaluation count for `adaptive_da`'s full chain --
+    the x-axis a plot should use instead of raw row index, since each production row
+    is a whole DA block, not one coarse eval (see `adaptive_da_coarse_eval_units`)."""
     n_adapt = int(meta_adaptive_da["n_adapt_samples"])
     adapt_x = np.arange(1, n_adapt + 1, dtype=float)
     if meta_adaptive_da["phase"] == "adapt_only":
@@ -129,28 +78,13 @@ def adaptive_da_cumulative_coarse_evals(meta_adaptive_da: dict[str, Any]) -> Flo
 def adaptive_da_full_resolution_trace(
     chain: MCMCChain, meta_adaptive_da: dict[str, Any]
 ) -> tuple[FloatArray, FloatArray, NDArray[np.bool_]]:
-    """Full-resolution ``(x, samples, used_hf)`` trajectory for `adaptive_da`, across
-    both phases.
-
-    `chain` alone is one row per DA block during production, hiding the cheap
-    intra-block coarse steps. This stitches the adaptive phase with the production
-    phase's diagnostic chain (``meta_adaptive_da["production_diagnostic_chain"]``) to
-    recover the full-resolution path, useful for a trace plot colored by `used_hf`.
-
-    Parameters
-    ----------
-    chain
-        The chain returned by `run_adaptive_da`.
-    meta_adaptive_da
-        The metadata dict returned alongside it.
-
-    Returns
-    -------
-    x, samples, used_hf
-        `x` in the same "coarse-evaluation iteration" units as
-        `adaptive_da_cumulative_coarse_evals`, so it can share an x-axis with the other
-        methods' (already full-resolution) traces.
-    """
+    """Full-resolution ``(x, samples, used_hf)`` trajectory for `adaptive_da`
+    (chain + metadata from `run_adaptive_da`), across both phases. `chain` alone is
+    one row per DA block during production, hiding the cheap intra-block coarse
+    steps; this stitches in the production phase's diagnostic chain
+    (`meta_adaptive_da["production_diagnostic_chain"]`) to recover the full-resolution
+    path for a `used_hf`-colored trace plot. `x` shares units with
+    `adaptive_da_cumulative_coarse_evals`."""
     n_adapt = int(meta_adaptive_da["n_adapt_samples"])
     adapt_samples = chain.samples[:n_adapt]
     adapt_used_hf = (
@@ -182,28 +116,10 @@ def adaptive_da_multichain_trace(
 ) -> tuple[FloatArray, FloatArray, NDArray[np.bool_]]:
     """Stitched ``(x, samples, used_hf)`` trace for one `adaptive_da` replicate from
     `run_convergence_driven_comparison` -- the multi-chain analog of
-    `adaptive_da_full_resolution_trace`.
-
-    The production segment here is at DA-block resolution (one row per block), not
-    full coarse-eval resolution: the chunked production loop doesn't request the
-    intra-block diagnostic chain for every replicate every round. `x` is still in
-    coarse-evaluation-iteration units, so it lines up with the other methods' traces.
-
-    Parameters
-    ----------
-    adapt_chain
-        The (shared) adaptive-phase chain.
-    adapt_meta
-        The (shared) adaptive-phase metadata.
-    production_chain
-        This replicate's production-phase chain.
-    frozen_rate
-        This replicate's frozen `subsampling_rate`.
-
-    Returns
-    -------
-    x, samples, used_hf
-        As in `adaptive_da_full_resolution_trace`.
+    `adaptive_da_full_resolution_trace`. The production segment here is at DA-block
+    resolution (one row per block, not per coarse eval): the chunked production loop
+    doesn't request the intra-block diagnostic chain every round. `x` stays in
+    coarse-evaluation-iteration units so it lines up with the other methods' traces.
     """
     n_adapt = adapt_chain.n_steps
     adapt_x = np.arange(1, n_adapt + 1, dtype=float)
@@ -235,34 +151,14 @@ def prepare_trace_data(
     adaptive_da_adapt_key: str | None = None,
 ) -> tuple[dict[str, list[tuple[FloatArray, FloatArray, NDArray[np.bool_]]]], dict[str, float]]:
     """Per-replicate ``(x, samples, used_hf)`` traces and each method's R-hat-validated
-    burn-in, converted into the same x-axis (coarse-evaluation-iteration) units as its
-    trace.
-
-    `x` is row index for every name in `full_resolution_methods`. `adaptive_da_method`
-    is stitched via `adaptive_da_multichain_trace`, with its burn-in converted using
-    the shared adaptive phase's coarse-eval cost and the frozen `subsampling_rate`.
-
-    Parameters
-    ----------
-    chains_by_method
-        As returned by `run_convergence_driven_comparison`.
-    posterior
-        As returned by `run_convergence_driven_comparison`.
-    full_resolution_methods
-        Names of the methods whose chains are already one row per coarse evaluation
-        throughout (e.g. ``("hf_only", "online_active")``).
-    adaptive_da_method
-        Dict key `adaptive_da`'s traces/burn-in are stored/read under, both in the
-        inputs and the returned dicts.
-    adaptive_da_adapt_key
-        Dict key `chains_by_method`'s adaptive-phase chains are stored under. Defaults
-        to ``f"{adaptive_da_method}_adapt"``.
-
-    Returns
-    -------
-    traces, burn_ins_x
-        `traces` maps method name to a list of per-replicate ``(x, samples, used_hf)``
-        tuples; `burn_ins_x` maps method name to its burn-in in `x` units.
+    burn-in, both `chains_by_method`/`posterior` (as returned by
+    `run_convergence_driven_comparison`), converted to a shared x-axis
+    (coarse-evaluation-iteration units). `x` is row index for `full_resolution_methods`
+    (already one row per coarse eval, e.g. `("hf_only", "online_active")`);
+    `adaptive_da_method` is stitched via `adaptive_da_multichain_trace` instead, with
+    its burn-in converted using the shared adaptive phase's coarse-eval cost and the
+    frozen `subsampling_rate`. `adaptive_da_adapt_key` defaults to
+    ``f"{adaptive_da_method}_adapt"``.
     """
     if adaptive_da_adapt_key is None:
         adaptive_da_adapt_key = f"{adaptive_da_method}_adapt"
@@ -304,39 +200,23 @@ def prepare_trace_data(
     return traces, burn_ins_x
 
 
-# ---------------------------------------------------------------------------
-# Distributional posterior-quality metrics, in addition to RMSE-to-truth: RMSE only
-# checks the posterior mean against a single point, saying nothing about spread/shape.
-# These compare a pooled posterior against a reference distribution (typically the
-# R-hat-validated HF-only posterior) under a Gaussian approximation of both.
-# ---------------------------------------------------------------------------
+# Distributional posterior-quality metrics, beyond RMSE-to-truth (which only checks
+# the mean against a single point, saying nothing about spread/shape): compare a
+# pooled posterior against a reference (typically the R-hat-validated HF-only
+# posterior) under a Gaussian approximation of both.
 
 
 def gaussian_wasserstein2(mean_a: FloatArray, cov_a: FloatArray, mean_b: FloatArray, cov_b: FloatArray) -> float:
     """Closed-form 2-Wasserstein distance between ``N(mean_a, cov_a)`` and
-    ``N(mean_b, cov_b)``.
+    ``N(mean_b, cov_b))``: symmetric and a true metric (unlike KL), capturing both a
+    location mismatch (mean term) and a shape/spread mismatch (trace term), in the
+    parameters' own units.
 
     .. math::
 
         W_2^2 = \\lVert \\mathrm{mean}_a - \\mathrm{mean}_b \\rVert^2
         + \\mathrm{tr}\\left(\\mathrm{cov}_a + \\mathrm{cov}_b
         - 2 \\left(\\mathrm{cov}_b^{1/2} \\mathrm{cov}_a \\mathrm{cov}_b^{1/2}\\right)^{1/2}\\right).
-
-    Symmetric and a true metric (unlike KL): captures both a location mismatch (the
-    mean term) and a shape/spread mismatch (the trace term), in the same units as the
-    parameters themselves.
-
-    Parameters
-    ----------
-    mean_a, cov_a
-        Mean and covariance of the first Gaussian.
-    mean_b, cov_b
-        Mean and covariance of the second Gaussian.
-
-    Returns
-    -------
-    w2
-        The 2-Wasserstein distance (non-negative).
     """
     from scipy.linalg import sqrtm
 
@@ -355,27 +235,11 @@ def gaussian_wasserstein2(mean_a: FloatArray, cov_a: FloatArray, mean_b: FloatAr
 
 
 def gaussian_kl(mean_a: FloatArray, cov_a: FloatArray, mean_b: FloatArray, cov_b: FloatArray) -> float:
-    """Closed-form ``KL(N(mean_a, cov_a) || N(mean_b, cov_b))``.
-
-    Asymmetric: ``KL(method || reference)`` penalizes the method's posterior for being
-    confidently wrong (placing mass where the reference doesn't) more than for being
-    overly diffuse. In particular it blows up if the method's posterior is much
-    narrower than the reference's in some direction while also being off-center -- a
-    failure mode RMSE and even W2 can under-report, since a narrow-but-wrong posterior
-    is a worse UQ failure than a wide-but-centered one.
-
-    Parameters
-    ----------
-    mean_a, cov_a
-        Mean and covariance of the first Gaussian.
-    mean_b, cov_b
-        Mean and covariance of the second Gaussian.
-
-    Returns
-    -------
-    kl
-        The KL divergence.
-    """
+    """Closed-form ``KL(N(mean_a, cov_a) || N(mean_b, cov_b))``. Asymmetric: unlike
+    RMSE or even W2, it blows up if `mean_a`'s posterior is confidently wrong -- much
+    narrower than the reference in some direction while also off-center -- rather
+    than just overly diffuse, since a narrow-but-wrong posterior is a worse UQ
+    failure than a wide-but-centered one."""
     mean_a = np.asarray(mean_a, dtype=float)
     mean_b = np.asarray(mean_b, dtype=float)
     cov_a = np.asarray(cov_a, dtype=float)
@@ -403,33 +267,13 @@ def summarize(
     n_offline_hf: int = 0,
     n_coarse_eval_units: int | None = None,
 ) -> dict[str, Any]:
-    """Summarize a chain's accuracy and total HF cost.
-
-    Parameters
-    ----------
-    chain
-        The chain to summarize.
-    problem
-        Inverse-problem definition; only `problem.theta_true` is used.
-    burn_in
-        Number of leading rows to discard.
-    reference_mean
-        If given, additionally reports `mean_abs_dev_from_reference`.
-    n_offline_hf
-        Number of HF evaluations spent before this chain started (e.g. a shared
-        offline seed design), added to `n_hf_calls` since it's otherwise invisible in
-        `chain.extras.used_hf`.
-    n_coarse_eval_units
-        Overrides the HF-call-fraction denominator's step count (`chain.n_steps`) for
-        methods where a chain row isn't one coarse evaluation -- currently only
-        `adaptive_da`, via `adaptive_da_coarse_eval_units`. `None` uses `chain.n_steps`.
-
-    Returns
-    -------
-    summary
-        Dict with `n_steps`, `posterior_mean`, `posterior_std`, `rmse_to_truth`,
-        `n_offline_hf`, `n_hf_calls_online`, `n_hf_calls`, `hf_call_fraction`, and
-        (if `reference_mean` given) `mean_abs_dev_from_reference`.
+    """Summarizes a chain's accuracy and total HF cost. `n_offline_hf` (HF evals spent
+    before this chain started, e.g. a shared seed design) is added to `n_hf_calls`
+    since it's otherwise invisible in `chain.extras.used_hf`. `n_coarse_eval_units`
+    overrides the HF-call-fraction denominator for methods where a chain row isn't one
+    coarse eval (currently only `adaptive_da`, via `adaptive_da_coarse_eval_units`);
+    `None` uses `chain.n_steps`. `reference_mean`, if given, adds
+    `mean_abs_dev_from_reference` to the returned dict.
     """
     post = chain.burn_in(burn_in)
     n_hf_online = int(np.sum(chain.extras.used_hf)) if chain.extras.used_hf is not None else 0
@@ -455,34 +299,11 @@ def summarize(
 def multichain_diagnostics(
     chains: list[MCMCChain], *, burn_in: int, param_names: tuple[str, ...]
 ) -> dict[str, Any]:
-    """Gelman-Rubin R-hat and effective sample size across independent chains.
-
-    Chains should share the same starting point `theta0`, so R-hat measures
-    within-vs-between-chain mixing rather than sensitivity to the initial point.
-    Chains of different length are truncated to the shortest one, since arviz requires
-    equal draw counts across chains.
-
-    Parameters
-    ----------
-    chains
-        Independent replicate chains.
-    burn_in
-        Number of leading rows to discard from each chain before diagnosing.
-    param_names
-        One name per parameter dimension, in order. No default: every caller supplies
-        its own problem's parameter names.
-
-    Returns
-    -------
-    diagnostics
-        Dict with `n_chains`, `n_draws_per_chain`, `rhat` (per-parameter), `ess_bulk`
-        (per-parameter).
-
-    Raises
-    ------
-    ValueError
-        If fewer than 2 post-burn-in draws are available per chain.
-    """
+    """Gelman-Rubin R-hat and bulk-ESS across independent chains, which should share
+    the same starting `theta0` so R-hat measures within-vs-between-chain mixing rather
+    than sensitivity to the initial point. Chains of different length are truncated to
+    the shortest, since arviz requires equal draw counts. Raises `ValueError` if fewer
+    than 2 post-burn-in draws are available per chain."""
     import arviz as az
 
     posts = [c.burn_in(burn_in).samples for c in chains]
@@ -513,43 +334,15 @@ def find_burn_in_via_rhat(
     patience: int = 5,
     param_names: tuple[str, ...],
 ) -> dict[str, Any]:
-    """Find the smallest burn-in at which R-hat (across `chains`) drops to
-    `rhat_threshold` *and* bulk-ESS is at least `min_ess` (if given), holding for
-    `patience` consecutive larger candidates -- not just the first dip below
-    threshold, which could be a fluke of a noisy R-hat estimate on very few draws.
-
-    `min_burn_in` excludes candidates below a hard floor -- e.g. for a method whose
-    target is non-stationary for its first `n` samples (an online-adapting surrogate),
-    pass at least that `n`, since no amount of burn-in trimmed from within that phase
-    can fix it via R-hat alone.
-
-    Parameters
-    ----------
-    chains
-        Independent replicate chains.
-    candidate_burn_ins
-        Burn-in values to try. `None` (the default) sweeps ~50 evenly-spaced
-        candidates across the shortest chain's length.
-    rhat_threshold
-        Maximum acceptable R-hat.
-    min_ess
-        Minimum acceptable bulk-ESS, or `None` to skip the ESS check.
-    min_burn_in
-        Hard floor excluding candidates below it.
-    patience
-        Number of consecutive larger candidates that must all pass before convergence
-        is declared.
-    param_names
-        One name per parameter dimension. No default: every caller supplies its own
-        problem's parameter names.
-
-    Returns
-    -------
-    result
-        Dict with `burn_in`, `rhat`, `ess_bulk`, `converged` (whether any candidate
-        satisfied both the R-hat and ESS conditions and held), and `sweep` (the full
-        list of tried `{burn_in, rhat, ess_bulk, max_rhat, min_ess_bulk}`, useful for
-        plotting R-hat/ESS vs. assumed burn-in).
+    """Finds the smallest burn-in at which R-hat drops to `rhat_threshold` *and*
+    bulk-ESS is at least `min_ess` (if given), holding for `patience` consecutive
+    larger candidates -- not just the first dip, which could be a fluke of a noisy
+    R-hat estimate on few draws. `candidate_burn_ins` defaults to ~50 evenly-spaced
+    candidates across the shortest chain; `min_burn_in` excludes candidates below a
+    hard floor (e.g. an online-adapting surrogate's non-stationary opening `n`
+    samples, which no amount of R-hat-based trimming inside that phase can fix).
+    Returns `burn_in`/`rhat`/`ess_bulk`/`converged` for the chosen candidate plus the
+    full `sweep` (useful for plotting R-hat/ESS vs. assumed burn-in).
     """
     n_total = min(c.n_steps for c in chains)
     if candidate_burn_ins is None:
@@ -610,49 +403,14 @@ def pooled_summarize(
     n_offline_hf: int | list[int] = 0,
     n_coarse_eval_units: int | list[int] | None = None,
 ) -> dict[str, Any]:
-    """Like `summarize`, but pools post-burn-in samples across several chains into one
-    richer posterior estimate, using a single validated `burn_in` (typically from
-    `find_burn_in_via_rhat`) shared by all of them.
-
-    Parameters
-    ----------
-    chains
-        Replicate chains to pool.
-    problem
-        Inverse-problem definition; only `problem.theta_true` is used.
-    burn_in
-        Number of leading rows to discard from each chain.
-    reference_mean, reference_cov
-        If both given, additionally computes `wasserstein2_to_reference` and
-        `kl_to_reference`: distributional distances to a reference posterior (under a
-        Gaussian approximation of both), typically the R-hat-validated HF-only
-        posterior.
-    n_offline_hf
-        A single int for a cost paid once for the whole ensemble (e.g. a shared
-        offline seed design, `deepcopy`d into every replicate -- added to the total
-        once, not per chain), or a list with one entry per chain for replicates that
-        each paid their own independent offline cost (e.g. each training its own
-        design from scratch).
-    n_coarse_eval_units
-        The pooled analog of `summarize`'s parameter of the same name: an override for
-        each chain's step count in the HF-call-fraction denominator, needed for
-        `adaptive_da` (see `adaptive_da_coarse_eval_units`). Same int-or-per-chain-list
-        shape as `n_offline_hf`; `None` uses each chain's own `n_steps`.
-
-    Returns
-    -------
-    summary
-        Dict with `n_chains`, `n_pooled_samples`, `posterior_mean`, `posterior_std`,
-        `posterior_cov`, `rmse_to_truth`, `n_offline_hf`, `n_offline_hf_total`,
-        `n_hf_calls_online`, `n_hf_calls`, `hf_call_fraction`, and (depending on which
-        reference arguments were given) `mean_abs_dev_from_reference`,
-        `wasserstein2_to_reference`, `kl_to_reference`.
-
-    Raises
-    ------
-    ValueError
-        If `n_offline_hf`/`n_coarse_eval_units`, given as a list, doesn't have one
-        entry per chain.
+    """Like `summarize`, but pools post-burn-in samples across `chains` into one
+    richer posterior estimate at a single shared `burn_in` (typically from
+    `find_burn_in_via_rhat`). `n_offline_hf`/`n_coarse_eval_units` each take a single
+    int for a one-time ensemble-wide cost (e.g. a shared seed design `deepcopy`'d into
+    every replicate -- added once, not per chain) or a per-chain list for independently
+    paid costs; raises `ValueError` if a list doesn't have one entry per chain.
+    `reference_mean`+`reference_cov`, if both given, add `wasserstein2_to_reference`
+    and `kl_to_reference` (typically vs. the R-hat-validated HF-only posterior).
     """
     if isinstance(n_offline_hf, int):
         # Shared, one-time cost -- reported per-chain below for transparency (each

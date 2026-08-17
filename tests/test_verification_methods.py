@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import itertools
 from dataclasses import dataclass
 from typing import Any
 
@@ -9,6 +10,7 @@ from scipy.stats import multivariate_normal
 
 from gp_active_mcmc.verification.design import build_initial_surrogate
 from gp_active_mcmc.verification.methods import (
+    _SEED_OFFSETS,
     run_adaptive_da,
     run_hf_only,
     run_online_active,
@@ -131,3 +133,18 @@ def test_run_training_cost_comparison_return_type() -> None:
     assert isinstance(metrics, dict)
     assert "offline" in metrics and "online" in metrics
     assert offline_surrogate.gp.n_train >= 6
+
+
+def test_seed_offsets_are_pairwise_disjoint() -> None:
+    # Every offset in _SEED_OFFSETS marks the start of a [offset, offset + n) range of
+    # per-replicate seeds within one seed_base block (see examples/toy_problem/run.py's
+    # SEED_STRIDE for how seed_base itself is chosen per problem instance). If two
+    # offsets were closer together than any real --n-chains, two methods could silently
+    # draw identical seeds within the same seed_base -- this is the invariant that
+    # would otherwise break without any test noticing.
+    plausible_max_n_chains = 50  # generous: run.py's --n-chains defaults to 5
+    offsets = sorted(_SEED_OFFSETS.values())
+    for lower, upper in itertools.pairwise(offsets):
+        assert upper - lower >= plausible_max_n_chains, (
+            f"seed offsets {lower} and {upper} are closer than {plausible_max_n_chains} apart"
+        )

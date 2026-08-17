@@ -25,39 +25,16 @@ class ConvergenceConfig:
     advance per round, when to declare convergence, and how to parallelize across
     replicates. Shared by every method in one `run_convergence_driven_comparison`
     call, so it's one value passed around instead of eight.
-
-    Attributes
-    ----------
-    chunk_size
-        Coarse-evaluation-unit budget advanced per round, per replicate.
-    max_total_coarse_evals
-        Safety cap on total coarse-evaluation cost.
-    rhat_threshold
-        Maximum R-hat to declare convergence.
-    min_ess
-        Minimum bulk-ESS to declare convergence. `None` skips the ESS check.
-    patience
-        Consecutive passing rounds/candidates required before declaring convergence.
-    n_jobs
-        Number of parallel workers; `None` defaults to sequential (1) for
-        portability.
-    parallel_backend
-        Joblib backend for `n_jobs > 1`, e.g. ``"loky"`` for processes or
-        ``"threading"`` for threads. `None` uses joblib's default backend.
-    burn_in_fraction
-        If given, checks a single fixed burn-in candidate each round
-        (``int(burn_in_fraction * current_chain_length)``) instead of searching ~50
-        candidates. See `run_until_rhat_converged` for the full semantics.
     """
 
-    chunk_size: int
-    max_total_coarse_evals: int
-    rhat_threshold: float = 1.01
-    min_ess: float | None = None
-    patience: int = 5
-    n_jobs: int | None = None
-    parallel_backend: str | None = None
-    burn_in_fraction: float | None = None
+    chunk_size: int  # coarse-evaluation-unit budget advanced per round, per replicate
+    max_total_coarse_evals: int  # safety cap on total coarse-evaluation cost
+    rhat_threshold: float = 1.01  # maximum R-hat to declare convergence
+    min_ess: float | None = None  # minimum bulk-ESS to declare convergence; None skips the ESS check
+    patience: int = 5  # consecutive passing rounds/candidates required before declaring convergence
+    n_jobs: int | None = None  # parallel workers; None defaults to sequential (1) for portability
+    parallel_backend: str | None = None  # joblib backend for n_jobs > 1 ("loky"/"threading"); None = joblib default
+    burn_in_fraction: float | None = None  # fixed-candidate mode; see run_until_rhat_converged for full semantics
 
 
 def _reset_model_log(model: Any | None) -> None:
@@ -216,59 +193,31 @@ def run_until_rhat_converged(
     verbose: bool = True,
     post_round_hook: Callable[[list[_ChunkState], list[int]], tuple[list[_ChunkState], list[int]]] | None = None,
 ) -> dict[str, Any]:
-    """Run `len(init_fns)` independent replicate chains in synchronized rounds, each
-    round advancing every chain by one `config.chunk_size`-coarse-eval chunk in
-    parallel (`joblib`), stopping once `find_burn_in_via_rhat` reports convergence
-    across the accumulated chains, `config.max_total_coarse_evals` is reached, or
-    `max_hf_evals` is reached -- whichever comes first.
+    """Runs `len(init_fns)` independent replicate chains (each built by its own
+    zero-arg `init_fns` factory) in synchronized rounds, each round advancing every
+    chain by one `config.chunk_size`-coarse-eval chunk in parallel (`joblib`),
+    stopping once `find_burn_in_via_rhat` reports convergence across the accumulated
+    chains, `config.max_total_coarse_evals` is reached, or `max_hf_evals` (an
+    additional cap on `max(hf_evals_per_chain)`, for methods whose coarse-eval-to-HF
+    ratio isn't fixed) is reached -- whichever comes first.
 
-    Parameters
-    ----------
-    init_fns
-        One zero-argument factory per replicate, each returning that replicate's
-        initial `_ChunkState`.
-    config
-        Convergence-loop settings (budget, thresholds, parallelization).
-    param_names
-        Forwarded to `find_burn_in_via_rhat`.
-    max_hf_evals
-        If given, an additional cap on `max(hf_evals_per_chain)` -- bounds cumulative
-        HF-call count directly, for methods whose coarse-eval-to-HF-call ratio isn't
-        fixed.
-    label
-        Prefix for progress lines, e.g. a method name.
-    verbose
-        If `True`, print one progress line per round (overwriting the previous one;
-        the final round gets a persisted newline).
-    post_round_hook
-        If given, called with `(states, hf_evals_per_chain)` after every round, before
-        the convergence check; its return value replaces both going forward. `None`
-        leaves both untouched.
-
-    Notes
-    -----
-    `config.burn_in_fraction`, if given, replaces the default ~50-candidate burn-in
-    search with a single fixed candidate,
-    ``int(burn_in_fraction * current_chain_length)``, re-evaluated each round --
-    `config.patience` then requires that many consecutive *rounds* to pass, not
-    consecutive candidates within one round. `None` keeps the full search.
+    `post_round_hook`, if given, is called with `(states, hf_evals_per_chain)` after
+    every round and before the convergence check; its return value replaces both going
+    forward. `config.burn_in_fraction`, if given, replaces the default ~50-candidate
+    burn-in search with a single fixed candidate re-evaluated each round
+    (``int(burn_in_fraction * current_chain_length)``), and `config.patience` then
+    requires that many consecutive *rounds* (not candidates) to pass.
 
     Returns
     -------
     result
-        Dict with `chains` (final `list[MCMCChain]`, one per replicate),
-        `rounds_run`, `coarse_evals_per_chain` (true coarse-eval cost so far, not
-        `chain.n_steps` whenever `subsampling_rate > 1`), `total_coarse_evals`,
-        `hf_evals_per_chain`/`total_hf_evals`, `stop_reason`
+        Dict with `chains`, `rounds_run`, `coarse_evals_per_chain` (true coarse-eval
+        cost, not `chain.n_steps` whenever `subsampling_rate > 1`),
+        `total_coarse_evals`, `hf_evals_per_chain`/`total_hf_evals`, `stop_reason`
         (`"converged"`/`"max_coarse_evals"`/`"max_hf_evals"`), `final_states`, and the
         usual `find_burn_in_via_rhat` fields (`burn_in`, `rhat`, `ess_bulk`,
-        `converged`).
-
-    Raises
-    ------
-    ValueError
-        If `init_fns` is empty, or `config.chunk_size`/`config.max_total_coarse_evals`
-        /(when given) `max_hf_evals` is not positive.
+        `converged`). Raises `ValueError` if `init_fns` is empty or any positive-only
+        budget argument isn't positive.
     """
     _validate_round_run_inputs(
         init_fns,
@@ -285,9 +234,8 @@ def run_until_rhat_converged(
     rounds_run = 0
     stable_streak = 0
 
-    # Default to the sequential joblib backend for portability. loky's process backend
-    # can fail in restricted environments that block system semaphore queries; callers
-    # can still opt into n_jobs > 1 and choose a backend explicitly.
+    # Sequential by default: loky's process backend can fail where semaphore queries
+    # are blocked. Callers can still opt into n_jobs > 1 with an explicit backend.
     effective_n_jobs = 1 if config.n_jobs is None else config.n_jobs
     parallel_kwargs: dict[str, Any] = {"n_jobs": effective_n_jobs}
     if config.parallel_backend is not None and effective_n_jobs != 1:

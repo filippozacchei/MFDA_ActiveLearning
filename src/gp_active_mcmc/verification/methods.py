@@ -1,9 +1,8 @@
 """The four comparison methods: hf_only, pretrained, online_active, adaptive_da.
 
-Also defines `_ChunkState`, the resumable per-replicate state `harness.py`'s
-round-based orchestration advances one chunk at a time -- defined here (not in
-`harness.py`) because every `_init_*_state` factory below constructs one, and
-`harness.py` in turn imports it from here, not the other way around.
+Also defines `_ChunkState` (the per-replicate state `harness.py`'s round-based
+orchestration resumes one chunk at a time) since every `_init_*_state` factory below
+builds one.
 """
 
 from __future__ import annotations
@@ -59,21 +58,15 @@ __all__ = [
 
 @contextlib.contextmanager
 def _suppress_tinyda_output() -> Any:
-    """Silence tinyDA's per-call console output (a `print` plus a `tqdm` bar) for the
-    duration of one `with` block. `tinyDA.sample` has no verbosity flag to turn these
-    off in the sequential path this package always uses.
-    """
+    """Silences tinyDA's per-call print + tqdm bar (it has no verbosity flag)."""
     with open(os.devnull, "w") as devnull, contextlib.redirect_stdout(devnull), contextlib.redirect_stderr(devnull):
         yield
 
 
 def _posterior(problem: Problem, forward: Callable[[FloatArray], FloatArray], *, surrogate: bool) -> tda.Posterior:
-    """The single ``tda.Posterior`` shared by every non-DA method: a Gaussian
-    likelihood with covariance ``sigma_obs**2 * I`` wrapping `forward`.
-
-    `surrogate=True` (a GP-backed `forward`, e.g. `model.coarse`) uses
-    `ActiveGPLogLike`, which accounts for the surrogate's own predictive variance;
-    `surrogate=False` (the raw HF model) uses plain `tda.AdaptiveGaussianLogLike`.
+    """Gaussian-likelihood ``tda.Posterior`` (cov ``sigma_obs**2 * I``) wrapping
+    `forward`. `surrogate=True` uses `ActiveGPLogLike`, which accounts for the GP's own
+    predictive variance; `surrogate=False` uses plain `tda.AdaptiveGaussianLogLike`.
     """
     cov = (problem.sigma_obs**2) * np.eye(len(problem.y_obs))
     loglike = (
@@ -95,64 +88,41 @@ def _da_posteriors(problem: Problem, model: ActiveMCMCModel) -> list[tda.Posteri
 @dataclass
 class _ChunkState:
     """Resumable per-replicate state for one method's chunked, round-based MCMC run.
-
-    The same shape covers all of: HF-only (`model=None`, no surrogate involved),
-    pretrained/online_active (single posterior), and `adaptive_da`'s production phase
-    (two-posterior DA, frozen model, fixed `subsampling_rate`) -- only the objects
-    inside differ, not the chunking mechanics.
-
-    Attributes
-    ----------
-    posterior
-        `tda.Posterior` (single-posterior methods) or `list[tda.Posterior]`
-        (`adaptive_da`'s two-level DA).
-    proposal
-        The (shared, adaptive) MCMC proposal.
-    theta_current
-        Current chain position, advanced in place by each chunk.
-    model
-        `ActiveMCMCModel`, or `None` for pure HF-only.
-    subsampling_rate
-        Coarse steps per outer iteration (DA block size); `1` for single-posterior
-        methods.
-    chain_key
-        `tinyDA` chain key to extract per chunk.
+    One shape for all of: HF-only (`model=None`), pretrained/online_active (single
+    posterior), and `adaptive_da`'s production phase (two-posterior DA, frozen model,
+    fixed `subsampling_rate`) -- only the objects inside differ, not the mechanics.
     """
 
-    posterior: Any
+    posterior: Any  # tda.Posterior, or list[tda.Posterior] for adaptive_da's two-level DA
     proposal: Any
     theta_current: FloatArray
-    model: Any | None = None
-    subsampling_rate: int = 1
-    chain_key: str = "chain_0"
+    model: Any | None = None  # ActiveMCMCModel, or None for pure HF-only
+    subsampling_rate: int = 1  # DA block size; 1 for single-posterior methods
+    chain_key: str = "chain_0"  # tinyDA chain key to extract per chunk
 
 
-# ---------------------------------------------------------------------------
-# Method 1: HF-only Metropolis-Hastings (reference)
-# ---------------------------------------------------------------------------
+# Per-method seed offsets within one seed_base block -- single source of truth for
+# harness.py and run_training_cost_comparison below, so a new method can't silently
+# collide with an existing one (each entry must stay >= n_chains from its neighbors;
+# enforced by test_seed_offsets_are_pairwise_disjoint).
+_SEED_OFFSETS: dict[str, int] = {
+    "hf_only": 100,
+    "pretrained": 200,
+    "online_active": 300,
+    "online_active_synced": 350,
+    "adaptive_da": 400,
+    "training_cost_offline": 500,
+    "training_cost_online": 600,
+}
+
+
+# --- Method 1: HF-only Metropolis-Hastings (reference) ---------------------
 
 
 def run_hf_only(problem: Problem, *, iterations: int, seed: int, theta0: FloatArray | None = None) -> MCMCChain:
-    """Run a single HF-only Metropolis-Hastings chain -- the ground-truth reference
-    every other method is compared against.
-
-    Parameters
-    ----------
-    problem
-        Inverse-problem definition.
-    iterations
-        Number of MCMC iterations.
-    seed
-        Seed for the initial-parameter draw (if `theta0` is not given) and the
-        underlying RNG.
-    theta0
-        Starting parameter vector. Drawn from `problem.prior` if not given.
-
-    Returns
-    -------
-    chain
-        The sampled chain (`used_hf` all `True`).
-    """
+    """Runs a single HF-only MH chain (`used_hf` all `True`) -- the ground-truth
+    reference every other method is compared against. `theta0` defaults to a
+    `problem.prior` draw."""
     posterior = _posterior(problem, problem.hf_forward, surrogate=False)
     proposal = make_proposal(problem)
 
@@ -174,9 +144,7 @@ def run_hf_only(problem: Problem, *, iterations: int, seed: int, theta0: FloatAr
     return MCMCChain.from_arrays(samples=samples, used_hf=used_hf)
 
 
-# ---------------------------------------------------------------------------
-# Method 2: pretrained surrogate (offline active-learning design) + frozen MH
-# ---------------------------------------------------------------------------
+# --- Method 2: pretrained surrogate (offline active-learning design) + frozen MH ---
 
 
 def run_pretrained(
@@ -191,35 +159,9 @@ def run_pretrained(
     seed: int,
     theta0: FloatArray | None = None,
 ) -> tuple[MCMCChain, int, PODGPSurrogate]:
-    """Train a surrogate purely offline (`active_learning_offline_design`), freeze it,
-    then run a single Metropolis-Hastings chain against it (no HF correction).
-
-    Parameters
-    ----------
-    problem
-        Inverse-problem definition.
-    seed_X, seed_Y
-        Initial training design.
-    gamma_threshold
-        Worst-case predictive-standard-deviation stopping target for the offline
-        design (see `active_learning_offline_design`).
-    pod_rank
-        POD basis rank.
-    kernel
-        GP kernel name.
-    iterations
-        Number of MCMC iterations.
-    seed
-        Seed for the offline-design RNG, the initial-parameter draw, and sampling.
-    theta0
-        Starting parameter vector. Drawn from `problem.prior` if not given.
-
-    Returns
-    -------
-    chain, n_hf_spent, surrogate
-        The sampled chain, the total number of HF evaluations spent training the
-        surrogate, and the trained (frozen) `PODGPSurrogate`.
-    """
+    """Trains a surrogate purely offline (`active_learning_offline_design`), freezes
+    it, then runs a single MH chain against it (no HF correction). Returns the chain,
+    the total HF evaluations spent training, and the frozen surrogate."""
     rng = set_seed(seed)
     surrogate = active_learning_offline_design(
         problem, seed_X, seed_Y, gamma_threshold=gamma_threshold, pod_rank=pod_rank, kernel=kernel, rng=rng
@@ -245,9 +187,7 @@ def run_pretrained(
     return result.chain, n_hf_spent, surrogate
 
 
-# ---------------------------------------------------------------------------
-# Method 3: Riccius-style online active learning (single posterior, no DA)
-# ---------------------------------------------------------------------------
+# --- Method 3: Riccius-style online active learning (single posterior, no DA) ---
 
 
 def run_online_active(
@@ -260,33 +200,10 @@ def run_online_active(
     theta0: FloatArray | None = None,
     online_learning: OnlineLearningConfig = DEFAULT_ONLINE_LEARNING,
 ) -> tuple[MCMCChain, PODGPSurrogate]:
-    """Run a single chain where the surrogate directly substitutes for the likelihood
-    and is refined online via an uncertainty threshold, with no HF-correction step
-    (Riccius et al. 2025, Algorithm 1).
-
-    Parameters
-    ----------
-    problem
-        Inverse-problem definition.
-    surrogate
-        Shared starting surrogate, deep-copied internally (see
-        `_surrogate_for_online_learning`) so the caller's copy is untouched.
-    gamma_threshold
-        Predictive-variance trust threshold gating HF correction calls.
-    iterations
-        Number of MCMC iterations.
-    seed
-        Seed for the initial-parameter draw and sampling.
-    theta0
-        Starting parameter vector. Drawn from `problem.prior` if not given.
-    online_learning
-        POD/GP refit and rank settings for the online-learning surrogate.
-
-    Returns
-    -------
-    chain, surrogate
-        The sampled chain and the (online-updated) surrogate at the end of sampling.
-    """
+    """Runs a single chain where the surrogate directly substitutes for the
+    likelihood and is refined online via an uncertainty threshold, with no
+    HF-correction step (Riccius et al. 2025, Algorithm 1). `surrogate` is deep-copied
+    internally, so the caller's copy is untouched."""
     model = ActiveMCMCModel(
         lf_model=_surrogate_for_online_learning(surrogate, online_learning),
         hf_model=problem.hf_forward,
@@ -311,9 +228,7 @@ def run_online_active(
     return result.chain, cast(PODGPSurrogate, model.lf_model)
 
 
-# ---------------------------------------------------------------------------
-# Method 4: adaptive delayed-acceptance MCMC with freeze-to-production
-# ---------------------------------------------------------------------------
+# --- Method 4: adaptive delayed-acceptance MCMC with freeze-to-production ---
 
 
 def run_adaptive_da(
@@ -330,39 +245,11 @@ def run_adaptive_da(
 ) -> tuple[MCMCChain, dict[str, Any], PODGPSurrogate]:
     """Adaptive delayed-acceptance MCMC with a freeze-to-production stage: an
     `AdaptiveSubchain` policy grows the coarse-to-fine subsampling rate as the
-    surrogate proves trustworthy, then freezes the surrogate/rate once converged and
-    switches to a plain, HF-corrected DA production chain.
-
-    Parameters
-    ----------
-    problem
-        Inverse-problem definition.
-    surrogate
-        Shared starting surrogate, deep-copied internally so the caller's copy is
-        untouched.
-    gamma_threshold
-        Predictive-variance trust threshold gating HF correction calls.
-    n_coarse_evals
-        Total coarse-evaluation budget across both phases.
-    max_adapt_coarse_evals
-        Coarse-evaluation ceiling on the adaptive phase alone.
-    seed
-        Seed for the initial-parameter draw and sampling.
-    theta0
-        Starting parameter vector. Drawn from `problem.prior` if not given.
-    online_learning
-        POD/GP refit and rank settings for the online-learning surrogate.
-    max_subchain
-        Ceiling on `AdaptiveSubchain`'s subsampling rate (coarse steps between HF
-        corrections), both during the adaptive phase and after freezing for
-        production.
-
-    Returns
-    -------
-    chain, metadata, surrogate
-        The concatenated adapt+production chain, `sample_adaptive_then_frozen_chain`'s
-        metadata dict, and the (possibly refit) surrogate.
-    """
+    surrogate proves trustworthy, then freezes surrogate + rate once converged (or
+    `max_adapt_coarse_evals` is hit) and switches to a plain, HF-corrected DA
+    production chain for the rest of `n_coarse_evals`. Returns the concatenated
+    adapt+production chain, `sample_adaptive_then_frozen_chain`'s metadata dict, and
+    the (possibly refit) surrogate."""
     state = AdaptiveSubchainState(subchain_length=10)
     control = AdaptiveSubchainControl(
         update_every=5,
@@ -405,14 +292,12 @@ def run_adaptive_da(
     return result.chain, result.metadata, cast(PODGPSurrogate, model.lf_model)
 
 
-# ---------------------------------------------------------------------------
-# Training-cost comparison: `adaptive_da`'s online, MCMC-path-guided active learning
-# vs. `pretrained`'s offline, global greedy-max-variance active learning -- how much
-# HF budget each needs to reach a trustworthy surrogate. Training only; no downstream
-# MCMC production phase runs on either side, since a DA-corrected posterior targets the
-# truth regardless of how its surrogate was trained, making a posterior-accuracy
-# comparison uninformative about training strategy specifically.
-# ---------------------------------------------------------------------------
+# --- Training-cost comparison: adaptive_da's online, MCMC-path-guided active
+# learning vs. pretrained's offline, global greedy-max-variance active learning --
+# how much HF budget each needs for a trustworthy surrogate. Training only, no
+# downstream MCMC: a DA-corrected posterior targets the truth regardless of how its
+# surrogate was trained, so a posterior-accuracy comparison wouldn't say anything
+# about training strategy specifically. ---
 
 
 def run_training_cost_comparison(
@@ -429,52 +314,26 @@ def run_training_cost_comparison(
     online_learning: OnlineLearningConfig = DEFAULT_ONLINE_LEARNING,
     max_subchain: int = 10_000,
 ) -> tuple[dict[str, Any], PODGPSurrogate]:
-    """Training-cost comparison for one problem instance: offline greedy active
-    learning (`active_learning_offline_design`) vs. `adaptive_da`'s online adaptive
-    phase, both starting from the same shared `seed_X`/`seed_Y` design and run to
-    their own convergence criterion.
-
-    `adaptive_da`'s adaptive phase is obtained via `run_adaptive_da` with
-    `n_coarse_evals` capped at `max_adapt_coarse_evals`, so the production phase is
-    skipped entirely rather than run and discarded.
-
-    Parameters
-    ----------
-    problem
-        Inverse-problem definition.
-    seed_X, seed_Y
-        Shared initial training design.
-    seed_surrogate
-        Shared starting surrogate for `adaptive_da`'s adaptive phase.
-    gamma_threshold
-        Predictive-variance/-standard-deviation trust threshold, shared by both sides.
-    pod_rank
-        POD basis rank.
-    kernel
-        GP kernel name, used by the offline side.
-    max_adapt_coarse_evals
-        Coarse-evaluation ceiling for `adaptive_da`'s adaptive phase.
-    seed_base
-        Base seed; the offline and online sides use `seed_base + 500`/`+ 600`
-        respectively so a shared `seed_base` never collides across calls.
-    online_learning, max_subchain
-        Forwarded to `run_adaptive_da`.
+    """Offline greedy active learning (`active_learning_offline_design`) vs.
+    `adaptive_da`'s online adaptive phase (via `run_adaptive_da` with `n_coarse_evals`
+    capped at `max_adapt_coarse_evals`, so its production phase never runs), both from
+    the same shared `seed_X`/`seed_Y` design.
 
     Returns
     -------
     metrics, offline_surrogate
-        `metrics` is a JSON-serializable dict with `n_init`, `offline` (`n_hf_total`,
-        `n_hf_extra` -- HF calls beyond the shared seed design, `wall_time_s`), and
-        `online` (`n_hf_extra`, `coarse_evals_used`, `wall_time_s`, `converged`,
-        `final_subchain_length`, `subchain_length_history`). `offline_surrogate` is the
-        trained `PODGPSurrogate` (not JSON-serializable, kept separate).
+        `metrics` (JSON-serializable): `n_init`, `offline` (`n_hf_total`, `n_hf_extra`,
+        `wall_time_s`), `online` (`n_hf_extra`, `coarse_evals_used`, `wall_time_s`,
+        `converged`, `final_subchain_length`, `subchain_length_history`).
+        `offline_surrogate`: the trained `PODGPSurrogate`, kept separate since it isn't
+        JSON-serializable.
     """
     n_init = int(seed_X.shape[0])
 
     t0 = time.time()
     offline_surrogate, offline_n_hf_total = _train_pretrained_surrogate(
         problem, seed_X=seed_X, seed_Y=seed_Y, gamma_threshold=gamma_threshold, pod_rank=pod_rank,
-        kernel=kernel, seed=seed_base + 500,
+        kernel=kernel, seed=seed_base + _SEED_OFFSETS["training_cost_offline"],
     )
     offline_wall_time = time.time() - t0
 
@@ -482,7 +341,8 @@ def run_training_cost_comparison(
     adapt_chain, adapt_meta, _adapt_surrogate = run_adaptive_da(
         problem, surrogate=seed_surrogate, gamma_threshold=gamma_threshold,
         n_coarse_evals=max_adapt_coarse_evals, max_adapt_coarse_evals=max_adapt_coarse_evals,
-        seed=seed_base + 600, online_learning=online_learning, max_subchain=max_subchain,
+        seed=seed_base + _SEED_OFFSETS["training_cost_online"], online_learning=online_learning,
+        max_subchain=max_subchain,
     )
     online_wall_time = time.time() - t0
 
@@ -491,11 +351,15 @@ def run_training_cost_comparison(
         else np.zeros(adapt_chain.n_steps, dtype=bool)
     )
     subchain_hist = adapt_chain.extras.subchain_length
-    # No production phase ran here, so metadata is "adapt_only" shaped: the coarse-eval
-    # count lives in the nested adapt_metadata, not the top-level key.
-    coarse_evals_used = adapt_meta.get("adapt_coarse_evals_used")
-    if coarse_evals_used is None:
-        coarse_evals_used = adapt_meta["adapt_metadata"]["coarse_evals_used"]
+    # adapt_meta["adapt_metadata"]["coarse_evals_used"] is present in both of
+    # sample_adaptive_then_frozen_chain's metadata shapes ("adapt_only" and
+    # "adapt_then_production") and is always the adaptive phase's own coarse-eval count
+    # (confirmed against gp_active_mcmc/inference/sampling.py: the top-level
+    # "adapt_coarse_evals_used" key, on the branch where it exists at all, is set to
+    # exactly this same value) -- the quantity this comparison wants, since it measures
+    # training cost for the adaptive phase specifically (see the module-level comment
+    # above on why no production phase runs on either side of this comparison).
+    coarse_evals_used = adapt_meta["adapt_metadata"]["coarse_evals_used"]
     metrics: dict[str, Any] = {
         "n_init": n_init,
         "offline": {
@@ -515,9 +379,7 @@ def run_training_cost_comparison(
     return metrics, offline_surrogate
 
 
-# ---------------------------------------------------------------------------
-# Chunk-ready state factories for harness.py's round-based orchestration.
-# ---------------------------------------------------------------------------
+# --- Chunk-ready state factories for harness.py's round-based orchestration ---
 
 
 def _init_hf_only_state(problem: Problem, *, seed: int, theta0: FloatArray | None = None) -> _ChunkState:
@@ -539,14 +401,9 @@ def _train_pretrained_surrogate(
     kernel: KernelName,
     seed: int,
 ) -> tuple[PODGPSurrogate, int]:
-    """Train `pretrained`'s offline design once: a fixed upfront cost shared by every
-    replicate, not part of the monitored round loop.
-
-    Returns
-    -------
-    surrogate, n_hf_spent
-        The trained surrogate and the number of HF evaluations spent training it.
-    """
+    """Trains `pretrained`'s offline design once -- a fixed upfront cost shared by
+    every replicate, not part of the monitored round loop. Returns the trained
+    surrogate and the HF evaluations spent training it."""
     rng = set_seed(seed)
     surrogate = active_learning_offline_design(
         problem, seed_X, seed_Y, gamma_threshold=gamma_threshold, pod_rank=pod_rank, kernel=kernel, rng=rng
@@ -558,11 +415,9 @@ def _train_pretrained_surrogate(
 def _init_pretrained_state_from_surrogate(
     problem: Problem, *, surrogate: PODGPSurrogate, seed: int, theta0: FloatArray | None = None
 ) -> _ChunkState:
-    """Chunk-ready state for `pretrained`'s frozen, single-posterior sampling phase,
-    from an already-trained surrogate shared across every replicate (deep-copied here
-    so each replicate's `model.log` is independent, though the surrogate weights are
-    identical).
-    """
+    """Chunk-ready state for `pretrained`'s frozen sampling phase, from a surrogate
+    shared across replicates (deep-copied so each replicate's `model.log` is
+    independent even though the weights are identical)."""
     model = ActiveMCMCModel(
         lf_model=copy.deepcopy(surrogate), hf_model=problem.hf_forward, gamma_threshold=0.0, frozen=True
     )
@@ -578,39 +433,17 @@ def _init_pretrained_state_from_surrogate(
 def _make_online_active_sync_hook(
     n_seed: int,
 ) -> Any:
-    """Build a `run_until_rhat_converged` `post_round_hook` for `online_active_synced`:
-    an `online_active` variant (still no delayed-acceptance correction) where every
-    replicate's individually-collected HF points are pooled into a shared set and every
-    replicate's surrogate is refit on that pool once per round.
-
-    Targets inter-replicate surrogate disagreement specifically, without adding DA
-    correction: a perfectly synchronized surrogate here still only converges the
-    replicates to a consistently *biased* posterior, isolating the R-hat-convergence
-    problem from the correctness problem `adaptive_da`'s DA correction solves.
-
-    Every replicate starts as a deepcopy of the same seed surrogate, so only each
-    replicate's acquired suffix (past `n_seed`) is pooled and deduplicated (exact-row
-    match, since duplicates only arise from points already broadcast by a prior sync).
-    `refit_pod()` is self-gated on the surrogate's own `pod_refit_max`; this hook peeks
-    at replica 0's counter to skip pooling once that budget is spent, after which
-    replicates resume learning independently.
-
-    Also overwrites `hf_evals_per_chain` with the true pooled unique-point count each
-    round, since each replicate's surrogate embeds every other replicate's HF calls
-    too -- the per-chain tally `run_until_rhat_converged` keeps on its own would
-    otherwise undercount the real cost.
-
-    Parameters
-    ----------
-    n_seed
-        Size of the shared offline seed design every replicate's surrogate started
-        from.
-
-    Returns
-    -------
-    sync
-        A `post_round_hook`-shaped callable: ``(states, hf_evals_per_chain) ->
-        (states, hf_evals_per_chain)``.
+    """Builds a `run_until_rhat_converged` `post_round_hook` for
+    `online_active_synced`: pools every replicate's individually-collected HF points
+    (past the shared `n_seed`-sized offline design, deduplicated) into one set each
+    round and refits every replicate's surrogate on it -- still no DA correction, so
+    this isolates inter-replicate disagreement from the separate correctness problem
+    DA solves (a synchronized surrogate here still only converges replicates to a
+    consistently *biased* posterior). Also overwrites `hf_evals_per_chain` with the
+    true pooled unique-point count, since each surrogate embeds every replicate's HF
+    calls and the per-chain tally would otherwise undercount. Stops pooling once
+    `pod_refit_max` is spent (checked via replica 0's counter), after which replicates
+    resume learning independently.
     """
 
     def _history(s: PODGPSurrogate) -> tuple[FloatArray, FloatArray]:
@@ -683,18 +516,13 @@ def _init_adaptive_da_production_state(
     online_learning: OnlineLearningConfig = DEFAULT_ONLINE_LEARNING,
     max_subchain: int = 10_000,
 ) -> tuple[_ChunkState, dict[str, Any], MCMCChain]:
-    """Run `adaptive_da`'s adaptive phase to its own `has_converged()` completion --
-    unmonitored by cross-chain R-hat, since the target is non-stationary during
-    adaptation -- then freeze and return a chunk-ready state for the same round-based,
-    R-hat-monitored production loop the other methods use.
-
-    Returns
-    -------
-    state, adapt_meta, adapt_chain
-        `adapt_meta` carries adaptive-phase bookkeeping (`n_adapt_samples`,
-        `adapt_coarse_evals_used`) for cost accounting; `adapt_chain` lets callers
-        prepend it to the production trace for a full-resolution plot.
-    """
+    """Runs `adaptive_da`'s adaptive phase to its own `has_converged()` completion
+    (unmonitored by cross-chain R-hat, since the target is non-stationary during
+    adaptation), then freezes and returns a chunk-ready state for the same
+    round-based, R-hat-monitored production loop the other methods use. `adapt_meta`
+    carries `n_adapt_samples`/`adapt_coarse_evals_used` for cost accounting;
+    `adapt_chain` lets callers prepend it to the production trace for a
+    full-resolution plot."""
     state_hook = AdaptiveSubchainState(subchain_length=10)
     control = AdaptiveSubchainControl(
         update_every=5,
@@ -753,12 +581,9 @@ def _init_adaptive_da_production_state(
 def _init_adaptive_da_production_state_from_frozen(
     problem: Problem, *, frozen_model: ActiveMCMCModel, frozen_rate: int, theta0: FloatArray
 ) -> _ChunkState:
-    """Chunk-ready production state for `adaptive_da`, from an already-frozen
-    model/rate shared across every replicate (deep-copied here so each replicate's
-    `model.log` is independent, though the frozen surrogate weights and
-    `subsampling_rate` are identical). `theta0` is shared too, typically the single
-    adaptive phase's last state.
-    """
+    """Chunk-ready production state for `adaptive_da`, from a frozen model/rate
+    shared across replicates (deep-copied so each replicate's `model.log` is
+    independent). `theta0` is typically the shared adaptive phase's last state."""
     model_copy = copy.deepcopy(frozen_model)
     proposal = make_proposal(problem)
     return _ChunkState(

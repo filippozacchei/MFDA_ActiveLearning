@@ -29,30 +29,14 @@ class OnlineLearningConfig:
     """How an online-learning surrogate's POD basis, GP hyperparameters, and rank get
     refreshed as new HF points arrive. Shared by every `online_active`/`adaptive_da`
     call site -- see `PODGPSurrogate.refit_pod`/`.adaptive_rank` for the underlying
-    semantics; this is just those same knobs bundled into one value instead of five.
-
-    Attributes
-    ----------
-    pod_refit_every
-        Refit the POD basis and GP hyperparameters every N accumulated HF points.
-        `None` disables refitting.
-    pod_refit_max
-        Cap on total `refit_pod()` calls per surrogate lifetime. `None` for unbounded.
-    adaptive_rank
-        Let `refit_pod()` re-derive the POD rank from accumulated history instead of
-        keeping it fixed at the surrogate's original rank.
-    rank_energy_threshold
-        Cumulative-energy threshold used to pick the rank when `adaptive_rank` is set.
-    rank_max
-        Upper bound on the adaptively-derived rank. `None` uses `refit_pod()`'s own
-        fallback.
+    semantics; this just bundles those same knobs into one value instead of five.
     """
 
-    pod_refit_every: int | None = None
-    pod_refit_max: int | None = None
-    adaptive_rank: bool = False
-    rank_energy_threshold: float = 0.999
-    rank_max: int | None = None
+    pod_refit_every: int | None = None  # refit every N accumulated HF points; None disables refitting
+    pod_refit_max: int | None = None  # cap on total refit_pod() calls per surrogate lifetime; None = unbounded
+    adaptive_rank: bool = False  # let refit_pod() re-derive rank from history instead of keeping it fixed
+    rank_energy_threshold: float = 0.999  # cumulative-energy threshold used to pick the rank if adaptive_rank
+    rank_max: int | None = None  # upper bound on the adaptively-derived rank; None uses refit_pod()'s fallback
 
 
 # The "no refitting" default, as a module-level singleton (not a fresh call in every
@@ -69,31 +53,11 @@ def build_initial_surrogate(
     pod_rank: int,
     kernel: KernelName,
 ) -> tuple[PODGPSurrogate, FloatArray, FloatArray]:
-    """Draw an offline seed design and fit the shared surrogate every surrogate-based
-    method starts learning from.
-
-    The GP's `n_retrain_max` is fixed at 0: hyperparameters only ever change via a
-    later `PODGPSurrogate.refit_pod()` call (see `_surrogate_for_online_learning`).
-
-    Parameters
-    ----------
-    problem
-        Inverse-problem definition; uses `problem.prior`/`problem.hf_forward`.
-    rng
-        Random generator to draw the seed design from `problem.prior`.
-    n_init
-        Number of HF evaluations in the seed design.
-    pod_rank
-        POD basis rank the surrogate is fit at.
-    kernel
-        GP kernel name (see `gp_active_mcmc.surrogates.MultiOutputGP`).
-
-    Returns
-    -------
-    surrogate, X, Y
-        The fitted `PODGPSurrogate` and the seed design's inputs/outputs (shapes
-        ``(n_init, d)`` and ``(n_init, n_obs)``).
-    """
+    """Draws an `n_init`-point offline seed design and fits the shared surrogate every
+    surrogate-based method starts learning from. The GP's `n_retrain_max` is fixed at
+    0: hyperparameters only ever change via a later `PODGPSurrogate.refit_pod()` call
+    (see `_surrogate_for_online_learning`). Returns the fitted surrogate and the seed
+    design's inputs/outputs (shapes ``(n_init, d)`` and ``(n_init, n_obs)``)."""
     X = np.asarray([problem.prior.rvs(random_state=rng) for _ in range(n_init)], dtype=float)
     Y = np.asarray([problem.hf_forward(theta) for theta in X], dtype=float)
 
@@ -108,27 +72,13 @@ def build_initial_surrogate(
 
 @dataclass
 class PODRankSelection:
-    """Result of `select_pod_rank_and_seed_design`.
+    """Result of `select_pod_rank_and_seed_design`."""
 
-    Attributes
-    ----------
-    pod_rank
-        Smallest POD rank whose cumulative explained energy reaches the requested
-        threshold.
-    n_init
-        Sample size used, equal to ``X.shape[0]``.
-    X, Y
-        The HF sample itself, reusable as-is as the seed design for
-        `build_initial_surrogate`/`run_pretrained`'s `seed_X`/`seed_Y`.
-    energy_curve
-        Cumulative explained energy; index ``r - 1`` corresponds to rank ``r``.
-    """
-
-    pod_rank: int
-    n_init: int
-    X: FloatArray
+    pod_rank: int  # smallest rank whose cumulative explained energy reaches the requested threshold
+    n_init: int  # sample size used, equal to X.shape[0]
+    X: FloatArray  # the HF sample, reusable as-is as build_initial_surrogate/run_pretrained's seed_X/seed_Y
     Y: FloatArray
-    energy_curve: FloatArray
+    energy_curve: FloatArray  # cumulative explained energy; index r - 1 corresponds to rank r
 
 
 def select_pod_rank_and_seed_design(
@@ -139,37 +89,12 @@ def select_pod_rank_and_seed_design(
     energy_threshold: float = 0.999,
     r_max_cap: int = 20,
 ) -> PODRankSelection:
-    """Pick a POD rank from a single, plain HF sample of size `n_init`.
-
-    A one-shot model-selection step, not part of any method's active-learning budget.
-    Rank is the smallest one whose cumulative explained energy (from
-    `gp_active_mcmc.surrogates.pod_energy`) reaches `energy_threshold`. The sample
-    doubles as the seed design (`X`/`Y`) passed to every method.
-
-    Parameters
-    ----------
-    problem
-        Inverse-problem definition; uses `problem.prior`/`problem.hf_forward`.
-    rng
-        Random generator to draw the sample from `problem.prior`.
-    n_init
-        Sample size.
-    energy_threshold
-        Cumulative-energy target in ``(0, 1)``.
-    r_max_cap
-        Upper bound on the returned rank, in addition to the natural
-        ``min(n_init - 1, Y.shape[1])`` cap.
-
-    Returns
-    -------
-    selection
-        A `PODRankSelection`.
-
-    Raises
-    ------
-    ValueError
-        If `energy_threshold` is not in ``(0, 1)``.
-    """
+    """Picks a POD rank from a single, plain `n_init`-size HF sample -- a one-shot
+    model-selection step, not part of any method's active-learning budget. Rank is the
+    smallest one whose cumulative explained energy (`gp_active_mcmc.surrogates.pod_energy`)
+    reaches `energy_threshold`, additionally capped by `r_max_cap`. The sample doubles
+    as the seed design (`X`/`Y`) passed to every method. Raises `ValueError` if
+    `energy_threshold` isn't in ``(0, 1)``."""
     if not 0 < energy_threshold < 1:
         raise ValueError("energy_threshold must be in (0, 1).")
 
@@ -185,21 +110,8 @@ def select_pod_rank_and_seed_design(
 
 
 def _surrogate_for_online_learning(surrogate: PODGPSurrogate, config: OnlineLearningConfig) -> PODGPSurrogate:
-    """Deep-copy `surrogate` for a replicate that will call `.update()` during MCMC,
-    applying `config` to the copy.
-
-    Parameters
-    ----------
-    surrogate
-        The shared surrogate to copy.
-    config
-        Refit/rank settings applied to the copy's matching `PODGPSurrogate` fields.
-
-    Returns
-    -------
-    lf
-        An independent deep copy of `surrogate` with online-learning fields set.
-    """
+    """Deep-copies `surrogate` for a replicate that will call `.update()` during MCMC,
+    applying `config`'s refit/rank settings to the copy's matching fields."""
     lf = copy.deepcopy(surrogate)
     lf.pod_refit_every = config.pod_refit_every
     lf.pod_refit_max = config.pod_refit_max
@@ -224,46 +136,16 @@ def active_learning_offline_design(
     n_validation: int = 100,
 ) -> PODGPSurrogate:
     """Greedy max-predictive-variance acquisition, purely offline (no MCMC path).
-
     Stops once the surrogate's worst-case predictive variance over a fixed validation
     grid (drawn once, up front) is at or below ``gamma_threshold ** 2`` -- the grid and
     the max (not a fresh pool and a mean) keep the criterion from being satisfied by a
-    surrogate that is excellent almost everywhere but has one high-uncertainty pocket.
+    surrogate that's excellent almost everywhere but has one high-uncertainty pocket.
     `max_total_budget` is a safety cap if the criterion is never reached.
 
-    Points are acquired in batches of `batch_size`: each batch ranks a fresh candidate
-    pool against the surrogate's state at the start of the batch, then refits once,
-    keeping total refit cost proportional to ``n_added / batch_size`` rather than to
-    every single acquired point.
-
-    Parameters
-    ----------
-    problem
-        Inverse-problem definition; uses `problem.prior`/`problem.hf_forward`.
-    seed_X, seed_Y
-        Initial training design (HF inputs/outputs) to start from.
-    gamma_threshold
-        Worst-case predictive-standard-deviation stopping target.
-    pod_rank
-        POD basis rank the surrogate is refit at each batch.
-    kernel
-        GP kernel name.
-    rng
-        Random generator used to draw the validation grid and candidate pools.
-    candidate_pool_size
-        Number of fresh candidates drawn from the prior for each acquired point.
-    batch_size
-        Number of points acquired (and surrogate refit) per iteration.
-    max_total_budget
-        Safety cap on total training-set size (``seed_X.shape[0]`` plus acquired
-        points).
-    n_validation
-        Size of the fixed validation grid.
-
-    Returns
-    -------
-    surrogate
-        The trained `PODGPSurrogate`.
+    Points are acquired in batches of `batch_size`: each batch ranks a fresh
+    `candidate_pool_size`-point candidate pool against the surrogate's state at the
+    start of the batch, then refits once, keeping total refit cost proportional to
+    ``n_added / batch_size`` rather than to every single acquired point.
     """
     X_all = [seed_X.copy()]
     Y_all = [seed_Y.copy()]

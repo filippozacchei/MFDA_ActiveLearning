@@ -1,14 +1,7 @@
-"""Problem-agnostic MCMC-comparison harness for surrogate-assisted Bayesian inversion.
-
-Extracted from the mass-spring-damper example so a second (or third) inverse problem
-can reuse the same four-method comparison (`run_hf_only`, `run_pretrained`,
-`run_online_active`, `run_adaptive_da`) and its R-hat-driven multi-chain orchestration
-without duplicating it. Any object satisfying the `Problem` protocol -- `prior`,
-`theta_true`, `y_obs`, `sigma_obs`, `hf_forward` -- works with every function here.
-
-`run_convergence_driven_comparison` runs each method until its replicate chains agree
-(R-hat/ESS converge) and reports the cost to get there -- the comparison that
-demonstrates a computational-efficiency claim.
+"""Problem-agnostic MCMC-comparison harness for surrogate-assisted Bayesian inversion:
+four methods (`run_hf_only`, `run_pretrained`, `run_online_active`, `run_adaptive_da`)
+plus R-hat-driven multi-chain orchestration, reusable by any `Problem`-shaped inverse
+problem, extracted from the mass-spring-damper example for that reuse.
 """
 
 from __future__ import annotations

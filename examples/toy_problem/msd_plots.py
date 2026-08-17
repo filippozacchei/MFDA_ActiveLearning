@@ -1,8 +1,8 @@
 """Plotting functions for the mass-spring-damper benchmark's paper figures.
 
-Shared by `msd_benchmark.ipynb` and `run_sweep_convergence_driven.py`, so the per-seed
-figure gallery the sweep script saves to `results/figures/` and the figures shown
-inline in the notebook are produced by the exact same code.
+Shared by `msd_benchmark.ipynb` and `run.py`, so the per-seed figure gallery the sweep
+script saves to `results/figures/` and the figures shown inline in the notebook are
+produced by the exact same code.
 
 Four methods appear across these plots, but not all in every one:
 `hf_only` (ground truth), `pretrained`, `online_active` (Riccius-style, no DA
@@ -51,8 +51,7 @@ def plot_surrogate_comparison(
     training -- the "before" reference in every panel. `surrogates`: dict with one
     trained ("after") surrogate per method in `methods` (a subset of
     `SURROGATE_METHODS` is fine, e.g. `("online_active", "adaptive_da")` when
-    `pretrained` wasn't computed for this run -- see `run_sweep_convergence_driven.py`'s
-    `--skip-training-cost`).
+    `pretrained` wasn't computed for this run -- see `run.py`'s `--skip-training-cost`).
     """
     import matplotlib.pyplot as plt
 

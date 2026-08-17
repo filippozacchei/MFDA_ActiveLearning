@@ -1,12 +1,6 @@
-"""Convergence-driven multi-method comparison harness.
-
-`run_convergence_driven_comparison` runs each method until its replicate chains agree
-(R-hat/ESS converge) and reports the cost to get there -- the comparison that
-demonstrates a computational-efficiency claim.
-
-`n_chains` replicate chains advance in synchronized rounds: each round runs one
-`chunk_size`-coarse-eval chunk per replicate in parallel (`joblib`), then re-checks
-R-hat on the chains so far.
+"""Runs each comparison method to R-hat/ESS convergence and reports the cost to get
+there. `n_chains` replicates advance in synchronized joblib-parallel rounds of
+`chunk_size` coarse evals each, re-checking R-hat after every round.
 """
 
 from __future__ import annotations
@@ -24,6 +18,7 @@ from gp_active_mcmc.surrogates.gp import KernelName
 from gp_active_mcmc.utils.rng import set_seed
 from gp_active_mcmc.verification.design import DEFAULT_ONLINE_LEARNING, OnlineLearningConfig
 from gp_active_mcmc.verification.methods import (
+    _SEED_OFFSETS,
     _ChunkState,
     _init_adaptive_da_production_state,
     _init_adaptive_da_production_state_from_frozen,
@@ -55,15 +50,8 @@ class _PosteriorReference:
 
 
 def print_convergence_driven_table(results: dict[str, Any]) -> None:
-    """Cost-to-converge table: for each method, how much budget (coarse evals, HF
-    calls) it needed to reach R-hat<=threshold and ESS>=min_ess (or "capped" if it
-    never did), alongside the resulting accuracy.
-
-    Parameters
-    ----------
-    results
-        As returned by `run_convergence_driven_comparison` (its `results` element).
-    """
+    """Prints a cost-to-converge table (budget vs. accuracy per method) from
+    `run_convergence_driven_comparison`'s `results`."""
     header = (
         f"{'method':<14}{'status':>10}{'rounds':>8}{'coarse_evals':>14}"
         f"{'n_hf':>8}{'w2_ref':>10}{'kl_ref':>10}{'rmse':>10}"
@@ -147,6 +135,40 @@ def _reference_from_run(run: dict[str, Any]) -> _PosteriorReference:
     )
 
 
+def _run_method_and_summarize(
+    label: str,
+    init_fns: list[Callable[[], _ChunkState]],
+    *,
+    convergence: ConvergenceConfig,
+    param_names: tuple[str, ...],
+    problem: Problem,
+    n_offline_hf: int | list[int],
+    reference: _PosteriorReference | None = None,
+    max_hf_evals: int | None = None,
+    post_round_hook: Callable[[list[_ChunkState], list[int]], tuple[list[_ChunkState], list[int]]] | None = None,
+    n_coarse_eval_units: int | list[int] | None = None,
+    announce_start: bool = True,
+) -> tuple[dict[str, Any], list[MCMCChain], list[_ChunkState]]:
+    """Runs one method's monitored replicate loop and attaches its pooled summary --
+    the tail every method block in `run_convergence_driven_comparison` shares
+    (`adaptive_da` excepted; its two-phase structure doesn't fit). `announce_start=False`
+    skips the generic start line for a caller that already printed its own.
+    """
+    if announce_start:
+        print(f"--- {label}: {len(init_fns)} chains ---")
+    run = _run_monitored_replicates(
+        init_fns, label=label, config=convergence, param_names=param_names,
+        max_hf_evals=max_hf_evals, post_round_hook=post_round_hook,
+    )
+    chains, final_states = _take_monitored_outputs(run)
+    _attach_pooled_summary(
+        run, chains, problem, n_offline_hf=n_offline_hf, reference=reference,
+        n_coarse_eval_units=n_coarse_eval_units,
+    )
+    print(f"--- {label} done: converged={run['converged']}, {run['rounds_run']} rounds ---")
+    return run, chains, final_states
+
+
 def run_convergence_driven_comparison(
     problem: Problem,
     *,
@@ -166,81 +188,29 @@ def run_convergence_driven_comparison(
     online_learning: OnlineLearningConfig = DEFAULT_ONLINE_LEARNING,
     max_subchain: int = 10_000,
 ) -> tuple[dict[str, Any], dict[str, list[MCMCChain]], dict[str, list[PODGPSurrogate]]]:
-    """Runs each method until its replicate chains agree (R-hat/ESS converge, per
-    `convergence`) or `convergence.max_total_coarse_evals` is hit, and reports the
-    cost (HF calls, coarse evals) to get there alongside the resulting accuracy.
+    """Runs each method to R-hat/ESS convergence (or `convergence.max_total_coarse_evals`)
+    and reports cost (HF calls, coarse evals) and accuracy for the comparison table.
 
-    `pretrained` and `adaptive_da` each build their `n_chains` replicates from a
-    single shared offline design / adaptive phase, deep-copied into each replicate's
-    state, rather than an independently-retrained run per replicate -- independent
-    retraining would make each replicate target a subtly different frozen posterior,
-    breaking R-hat's same-target assumption. The shared one-time cost is charged to
-    the first replicate only. `online_active` has no freeze point, so each replicate's
-    surrogate keeps learning independently throughout.
+    `pretrained`/`adaptive_da` train once and deep-copy into `n_chains` replicates
+    instead of retraining each independently, so every replicate targets the same
+    frozen posterior -- independent retraining would break R-hat's same-target
+    assumption. `online_active` has no freeze point and keeps learning per replicate.
 
-    Parameters
-    ----------
-    problem
-        Inverse-problem definition. `problem.param_names` is forwarded to
-        `find_burn_in_via_rhat`; the shared offline design's size (`seed_X.shape[0]`)
-        is used wherever `n_init` was previously passed separately.
-    pod_rank
-        POD basis rank.
-    kernel
-        GP kernel name.
-    seed_X, seed_Y
-        Shared initial training design.
-    seed_surrogate
-        Shared starting surrogate for `online_active`/`adaptive_da`.
-    n_chains
-        Number of independent replicate chains per method.
-    gamma_threshold
-        Predictive-variance/-standard-deviation trust threshold.
-    max_adapt_coarse_evals
-        Coarse-evaluation ceiling for `adaptive_da`'s adaptive phase, and the
-        `max_hf_evals` cap for `online_active`/`online_active_synced` (so the two
-        methods' online-learning HF budgets are directly comparable).
-    convergence
-        Convergence-loop settings shared by every method's monitored round loop.
-    adaptive_da_adapt_coarse_evals
-        Decouples `adaptive_da`'s adaptive-phase coarse-eval ceiling from
-        `online_active`'s `max_hf_evals` cap, which otherwise share the single
-        `max_adapt_coarse_evals` value. That sharing looks like "the same ceiling",
-        but isn't the same currency: `max_hf_evals` bounds `online_active`'s real
-        HF-call count directly, while `adaptive_da`'s adaptive phase is capped by
-        total *coarse* evals, of which typically only a small fraction end up being
-        real HF calls (`AdaptiveSubchain` grows trust and skips HF quickly once its
-        own RMSE target is met). `None` (the default) means "same as
-        `max_adapt_coarse_evals`". Note `AdaptiveSubchain.has_converged` can still stop
-        the adaptive phase well short of any ceiling on its own signal -- raising this
-        only helps if the phase was actually ceiling-bound, not convergence-bound.
-    theta0
-        Shared starting parameter vector. Drawn from `problem.prior` if not given.
-    seed_base
-        Base seed; each method/replicate uses a distinct offset from this.
-    methods
-        Restricts which surrogate-based methods (``"pretrained"``, ``"online_active"``,
-        ``"online_active_synced"``, ``"adaptive_da"``) actually run their (expensive)
-        `n_chains`-replicate monitored loop -- ``"hf_only"`` always runs regardless,
-        since it supplies the HF-only reference every other method is compared
-        against.
-    online_learning
-        POD/GP refit and rank settings for `online_active`/`online_active_synced`/
-        `adaptive_da`'s surrogates.
-    max_subchain
-        Forwarded to `adaptive_da`'s `AdaptiveSubchainControl`.
+    `max_adapt_coarse_evals` doubles as `adaptive_da`'s adaptive-phase ceiling and
+    `online_active`'s HF-call cap, keeping their online budgets comparable;
+    `adaptive_da_adapt_coarse_evals` decouples them when needed -- coarse evals and HF
+    calls aren't the same currency, since `adaptive_da` skips most coarse evals as HF.
+
+    `methods` restricts which methods beyond the always-run `hf_only` reference
+    actually run their `n_chains`-replicate loop.
 
     Returns
     -------
     results, chains_by_method, surrogates_by_method
-        `results` is JSON-serializable, keyed by method name, each entry
-        containing `converged`, `rounds_run`, `coarse_evals_per_chain`,
-        `total_coarse_evals`, `rhat`, `ess_bulk`, `burn_in`, and `pooled`.
-        `adaptive_da`'s entry additionally has `adapt_metas` (per-replicate
-        adaptive-phase bookkeeping). `chains_by_method` also has
-        ``"adaptive_da_adapt"``: each replicate's adaptive-phase chain.
-        `surrogates_by_method` is keyed ``"pretrained"``/``"online_active"``/
-        ``"online_active_synced"``/``"adaptive_da"`` only (`hf_only` has no surrogate).
+        `results[method]` has `converged`, `rounds_run`, `total_coarse_evals`, `rhat`,
+        `ess_bulk`, `burn_in`, `pooled` (`adaptive_da` also has `adapt_metas`).
+        `chains_by_method` also has `"adaptive_da_adapt"`. `surrogates_by_method` omits
+        `hf_only` (no surrogate).
     """
     n_init = int(seed_X.shape[0])
     param_names = problem.param_names
@@ -252,7 +222,7 @@ def run_convergence_driven_comparison(
     surrogates_by_method: dict[str, list[PODGPSurrogate]] = {}
 
     def _make_hf_only_init(i: int) -> Callable[[], _ChunkState]:
-        return lambda: _init_hf_only_state(problem, seed=seed_base + 100 + i, theta0=theta0)
+        return lambda: _init_hf_only_state(problem, seed=seed_base + _SEED_OFFSETS["hf_only"] + i, theta0=theta0)
 
     def _make_state_init(state: _ChunkState) -> Callable[[], _ChunkState]:
         return lambda: state
@@ -263,108 +233,74 @@ def run_convergence_driven_comparison(
             seed=seed_base + seed_offset + i, theta0=theta0, online_learning=online_learning,
         )
 
-    print(f"--- hf_only: {n_chains} chains ---")
     hf_init_fns: list[Callable[[], _ChunkState]] = [_make_hf_only_init(i) for i in range(n_chains)]
-    hf_run = _run_monitored_replicates(hf_init_fns, label="hf_only", config=convergence, param_names=param_names)
-    hf_chains, _hf_states = _take_monitored_outputs(hf_run)
+    hf_run, hf_chains, _hf_states = _run_method_and_summarize(
+        "hf_only", hf_init_fns, convergence=convergence, param_names=param_names, problem=problem, n_offline_hf=0,
+    )
     chains_by_method["hf_only"] = hf_chains
-    _attach_pooled_summary(hf_run, hf_chains, problem, n_offline_hf=0)
     results["hf_only"] = hf_run
-    print(f"--- hf_only done: converged={hf_run['converged']}, {hf_run['rounds_run']} rounds ---")
-
     hf_reference = _reference_from_run(hf_run)
 
     if "pretrained" in methods:
         print("--- pretrained: training 1 shared offline design ---")
         pretrained_surrogate, n_hf_pretrained_shared = _train_pretrained_surrogate(
             problem, seed_X=seed_X, seed_Y=seed_Y, gamma_threshold=gamma_threshold, pod_rank=pod_rank,
-            kernel=kernel, seed=seed_base + 200,
+            kernel=kernel, seed=seed_base + _SEED_OFFSETS["pretrained"],
         )
+        n_hf_pretrained_list = [n_hf_pretrained_shared] + [0] * (n_chains - 1)
+        print(f"--- pretrained: offline design done (n_hf={n_hf_pretrained_shared}), starting {n_chains} chains ---")
         pretrained_inits = [
             _init_pretrained_state_from_surrogate(
-                problem, surrogate=pretrained_surrogate, seed=seed_base + 200 + i, theta0=theta0
+                problem, surrogate=pretrained_surrogate, seed=seed_base + _SEED_OFFSETS["pretrained"] + i,
+                theta0=theta0,
             )
             for i in range(n_chains)
         ]
-        n_hf_pretrained_list = [n_hf_pretrained_shared] + [0] * (n_chains - 1)
-        print(f"--- pretrained: offline design done (n_hf={n_hf_pretrained_shared}), starting {n_chains} chains ---")
         pretrained_init_fns: list[Callable[[], _ChunkState]] = [_make_state_init(s) for s in pretrained_inits]
-        pre_run = _run_monitored_replicates(
-            pretrained_init_fns, label="pretrained", config=convergence, param_names=param_names
+        pre_run, pretrained_chains, _pretrained_states = _run_method_and_summarize(
+            "pretrained", pretrained_init_fns, convergence=convergence, param_names=param_names, problem=problem,
+            n_offline_hf=n_hf_pretrained_list, reference=hf_reference, announce_start=False,
         )
-        pretrained_chains, _pretrained_states = _take_monitored_outputs(pre_run)
         chains_by_method["pretrained"] = pretrained_chains
         surrogates_by_method["pretrained"] = [pretrained_surrogate]
-        _attach_pooled_summary(
-            pre_run,
-            pretrained_chains,
-            problem,
-            n_offline_hf=n_hf_pretrained_list,
-            reference=hf_reference,
-        )
         results["pretrained"] = pre_run
-        print(f"--- pretrained done: converged={pre_run['converged']}, {pre_run['rounds_run']} rounds ---")
 
     if "online_active" in methods:
-        print(f"--- online_active: {n_chains} chains ---")
         online_active_init_fns: list[Callable[[], _ChunkState]] = [
-            _make_online_active_init(300, i) for i in range(n_chains)
+            _make_online_active_init(_SEED_OFFSETS["online_active"], i) for i in range(n_chains)
         ]
-        on_run = _run_monitored_replicates(
-            online_active_init_fns,
-            label="online_active",
-            config=convergence,
-            param_names=param_names,
-            max_hf_evals=max_adapt_coarse_evals,
+        on_run, online_chains, online_final_states = _run_method_and_summarize(
+            "online_active", online_active_init_fns, convergence=convergence, param_names=param_names,
+            problem=problem, n_offline_hf=n_init, reference=hf_reference, max_hf_evals=max_adapt_coarse_evals,
         )
-        online_chains, online_final_states = _take_monitored_outputs(on_run)
         chains_by_method["online_active"] = online_chains
         surrogates_by_method["online_active"] = _state_surrogates(online_final_states)
-        _attach_pooled_summary(
-            on_run,
-            online_chains,
-            problem,
-            n_offline_hf=n_init,
-            reference=hf_reference,
-        )
         results["online_active"] = on_run
-        print(f"--- online_active done: converged={on_run['converged']}, {on_run['rounds_run']} rounds ---")
 
     if "online_active_synced" in methods:
-        print(f"--- online_active_synced: {n_chains} chains ---")
         sync_hook = _make_online_active_sync_hook(n_init)
         synced_init_fns: list[Callable[[], _ChunkState]] = [
-            _make_online_active_init(350, i) for i in range(n_chains)
+            _make_online_active_init(_SEED_OFFSETS["online_active_synced"], i) for i in range(n_chains)
         ]
-        oas_run = _run_monitored_replicates(
-            synced_init_fns,
-            label="online_active_synced",
-            config=convergence,
-            param_names=param_names,
-            max_hf_evals=max_adapt_coarse_evals,
+        oas_run, synced_chains, synced_final_states = _run_method_and_summarize(
+            "online_active_synced", synced_init_fns, convergence=convergence, param_names=param_names,
+            problem=problem, n_offline_hf=n_init, reference=hf_reference, max_hf_evals=max_adapt_coarse_evals,
             post_round_hook=sync_hook,
         )
-        synced_chains, synced_final_states = _take_monitored_outputs(oas_run)
         chains_by_method["online_active_synced"] = synced_chains
         surrogates_by_method["online_active_synced"] = _state_surrogates(synced_final_states)
-        _attach_pooled_summary(
-            oas_run,
-            synced_chains,
-            problem,
-            n_offline_hf=n_init,
-            reference=hf_reference,
-        )
         results["online_active_synced"] = oas_run
-        print(f"--- online_active_synced done: converged={oas_run['converged']}, {oas_run['rounds_run']} rounds ---")
 
     if "adaptive_da" not in methods:
         return results, chains_by_method, surrogates_by_method
 
+    # Manual sequence: n_coarse_eval_units below needs the run's own
+    # coarse_evals_per_chain, which _run_method_and_summarize can't provide.
     adaptive_da_ceiling = max_adapt_coarse_evals if adaptive_da_adapt_coarse_evals is None else adaptive_da_adapt_coarse_evals
     print(f"--- adaptive_da: running 1 shared adaptive phase (coarse-eval ceiling={adaptive_da_ceiling}) ---")
     shared_state, shared_adapt_meta, shared_adapt_chain = _init_adaptive_da_production_state(
         problem, surrogate=seed_surrogate, gamma_threshold=gamma_threshold,
-        max_adapt_coarse_evals=adaptive_da_ceiling, seed=seed_base + 400, theta0=theta0,
+        max_adapt_coarse_evals=adaptive_da_ceiling, seed=seed_base + _SEED_OFFSETS["adaptive_da"], theta0=theta0,
         online_learning=online_learning, max_subchain=max_subchain,
     )
     assert shared_state.model is not None  # always set by _init_adaptive_da_production_state
