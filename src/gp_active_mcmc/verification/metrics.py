@@ -14,10 +14,10 @@ from gp_active_mcmc.verification.problem import Problem
 FloatArray = NDArray[np.float64]
 
 __all__ = [
-    "adaptive_da_coarse_eval_units",
-    "adaptive_da_cumulative_coarse_evals",
-    "adaptive_da_full_resolution_trace",
-    "adaptive_da_multichain_trace",
+    "adaptive_stm_coarse_eval_units",
+    "adaptive_stm_cumulative_coarse_evals",
+    "adaptive_stm_full_resolution_trace",
+    "adaptive_stm_multichain_trace",
     "effective_burn_in",
     "find_burn_in_via_rhat",
     "gaussian_kl",
@@ -29,74 +29,74 @@ __all__ = [
 ]
 
 
-# effective_burn_in / adaptive_da_* helpers: run_adaptive_da's chain mixes two row
+# effective_burn_in / adaptive_stm_* helpers: run_adaptive_stm's chain mixes two row
 # currencies (one row per coarse eval during the adaptive phase, one row per DA block
 # during frozen production), so these reconstruct burn-in and a common x-axis in
-# coarse-evaluation units from its metadata dict (meta_adaptive_da).
+# coarse-evaluation units from its metadata dict (meta_adaptive_stm).
 
 
-def effective_burn_in(method: str, *, meta_adaptive_da: dict[str, Any] | None = None, default: int = 0) -> int:
-    """Burn-in to use for posterior summaries/plots. `adaptive_da`'s adaptive phase is
+def effective_burn_in(method: str, *, meta_adaptive_stm: dict[str, Any] | None = None, default: int = 0) -> int:
+    """Burn-in to use for posterior summaries/plots. `adaptive_stm`'s adaptive phase is
     non-stationary (the surrogate is still updating), so it's discarded in full via
-    `meta_adaptive_da["n_adapt_samples"]` (required in that case) regardless of
+    `meta_adaptive_stm["n_adapt_samples"]` (required in that case) regardless of
     `default`; every other method uses `default` as-is."""
-    if method == "adaptive_da":
-        if meta_adaptive_da is None:
-            raise ValueError("meta_adaptive_da is required to compute burn-in for 'adaptive_da'.")
-        return int(meta_adaptive_da["n_adapt_samples"])
+    if method == "adaptive_stm":
+        if meta_adaptive_stm is None:
+            raise ValueError("meta_adaptive_stm is required to compute burn-in for 'adaptive_stm'.")
+        return int(meta_adaptive_stm["n_adapt_samples"])
     return default
 
 
-def adaptive_da_coarse_eval_units(meta_adaptive_da: dict[str, Any]) -> int:
-    """True coarse-evaluation cost of `run_adaptive_da`'s returned chain --
+def adaptive_stm_coarse_eval_units(meta_adaptive_stm: dict[str, Any]) -> int:
+    """True coarse-evaluation cost of `run_adaptive_stm`'s returned chain --
     `chain.n_steps` undercounts this during production, where each row is a whole DA
     block of `frozen_subsampling_rate` coarse evaluations, not one. Use as
     `summarize`'s/`pooled_summarize`'s `n_coarse_eval_units` override."""
-    n_adapt_coarse_evals = int(meta_adaptive_da["adapt_metadata"]["coarse_evals_used"])
-    if meta_adaptive_da["phase"] == "adapt_only":
+    n_adapt_coarse_evals = int(meta_adaptive_stm["adapt_metadata"]["coarse_evals_used"])
+    if meta_adaptive_stm["phase"] == "adapt_only":
         return n_adapt_coarse_evals
-    production_iterations = int(meta_adaptive_da["production_metadata"]["iterations"])
-    frozen_rate = int(meta_adaptive_da["frozen_subsampling_rate"])
+    production_iterations = int(meta_adaptive_stm["production_metadata"]["iterations"])
+    frozen_rate = int(meta_adaptive_stm["frozen_subsampling_rate"])
     return n_adapt_coarse_evals + production_iterations * frozen_rate
 
 
-def adaptive_da_cumulative_coarse_evals(meta_adaptive_da: dict[str, Any]) -> FloatArray:
-    """Per-row cumulative coarse-evaluation count for `adaptive_da`'s full chain --
+def adaptive_stm_cumulative_coarse_evals(meta_adaptive_stm: dict[str, Any]) -> FloatArray:
+    """Per-row cumulative coarse-evaluation count for `adaptive_stm`'s full chain --
     the x-axis a plot should use instead of raw row index, since each production row
-    is a whole DA block, not one coarse eval (see `adaptive_da_coarse_eval_units`)."""
-    n_adapt = int(meta_adaptive_da["n_adapt_samples"])
+    is a whole DA block, not one coarse eval (see `adaptive_stm_coarse_eval_units`)."""
+    n_adapt = int(meta_adaptive_stm["n_adapt_samples"])
     adapt_x = np.arange(1, n_adapt + 1, dtype=float)
-    if meta_adaptive_da["phase"] == "adapt_only":
+    if meta_adaptive_stm["phase"] == "adapt_only":
         return adapt_x
-    n_adapt_coarse_evals = int(meta_adaptive_da["adapt_metadata"]["coarse_evals_used"])
-    frozen_rate = int(meta_adaptive_da["frozen_subsampling_rate"])
-    n_production = int(meta_adaptive_da["n_production_samples"])
+    n_adapt_coarse_evals = int(meta_adaptive_stm["adapt_metadata"]["coarse_evals_used"])
+    frozen_rate = int(meta_adaptive_stm["frozen_subsampling_rate"])
+    n_production = int(meta_adaptive_stm["n_production_samples"])
     production_x = n_adapt_coarse_evals + frozen_rate * np.arange(1, n_production + 1, dtype=float)
     return np.concatenate([adapt_x, production_x])
 
 
-def adaptive_da_full_resolution_trace(
-    chain: MCMCChain, meta_adaptive_da: dict[str, Any]
+def adaptive_stm_full_resolution_trace(
+    chain: MCMCChain, meta_adaptive_stm: dict[str, Any]
 ) -> tuple[FloatArray, FloatArray, NDArray[np.bool_]]:
-    """Full-resolution ``(x, samples, used_hf)`` trajectory for `adaptive_da`
-    (chain + metadata from `run_adaptive_da`), across both phases. `chain` alone is
+    """Full-resolution ``(x, samples, used_hf)`` trajectory for `adaptive_stm`
+    (chain + metadata from `run_adaptive_stm`), across both phases. `chain` alone is
     one row per DA block during production, hiding the cheap intra-block coarse
     steps; this stitches in the production phase's diagnostic chain
-    (`meta_adaptive_da["production_diagnostic_chain"]`) to recover the full-resolution
+    (`meta_adaptive_stm["production_diagnostic_chain"]`) to recover the full-resolution
     path for a `used_hf`-colored trace plot. `x` shares units with
-    `adaptive_da_cumulative_coarse_evals`."""
-    n_adapt = int(meta_adaptive_da["n_adapt_samples"])
+    `adaptive_stm_cumulative_coarse_evals`."""
+    n_adapt = int(meta_adaptive_stm["n_adapt_samples"])
     adapt_samples = chain.samples[:n_adapt]
     adapt_used_hf = (
         chain.extras.used_hf[:n_adapt] if chain.extras.used_hf is not None else np.zeros(n_adapt, dtype=bool)
     )
     adapt_x = np.arange(1, n_adapt + 1, dtype=float)
 
-    diagnostic_chain = meta_adaptive_da.get("production_diagnostic_chain")
+    diagnostic_chain = meta_adaptive_stm.get("production_diagnostic_chain")
     if diagnostic_chain is None:
         return adapt_x, adapt_samples, adapt_used_hf
 
-    n_adapt_coarse_evals = int(meta_adaptive_da["adapt_metadata"]["coarse_evals_used"])
+    n_adapt_coarse_evals = int(meta_adaptive_stm["adapt_metadata"]["coarse_evals_used"])
     prod_samples = diagnostic_chain.samples
     prod_used_hf = (
         diagnostic_chain.extras.used_hf
@@ -111,12 +111,12 @@ def adaptive_da_full_resolution_trace(
     return x, samples, used_hf
 
 
-def adaptive_da_multichain_trace(
+def adaptive_stm_multichain_trace(
     adapt_chain: MCMCChain, adapt_meta: dict[str, Any], production_chain: MCMCChain, frozen_rate: int
 ) -> tuple[FloatArray, FloatArray, NDArray[np.bool_]]:
-    """Stitched ``(x, samples, used_hf)`` trace for one `adaptive_da` replicate from
+    """Stitched ``(x, samples, used_hf)`` trace for one `adaptive_stm` replicate from
     `run_convergence_driven_comparison` -- the multi-chain analog of
-    `adaptive_da_full_resolution_trace`. The production segment here is at DA-block
+    `adaptive_stm_full_resolution_trace`. The production segment here is at DA-block
     resolution (one row per block, not per coarse eval): the chunked production loop
     doesn't request the intra-block diagnostic chain every round. `x` stays in
     coarse-evaluation-iteration units so it lines up with the other methods' traces.
@@ -147,21 +147,21 @@ def prepare_trace_data(
     posterior: dict[str, Any],
     *,
     full_resolution_methods: tuple[str, ...],
-    adaptive_da_method: str = "adaptive_da",
-    adaptive_da_adapt_key: str | None = None,
+    adaptive_stm_method: str = "adaptive_stm",
+    adaptive_stm_adapt_key: str | None = None,
 ) -> tuple[dict[str, list[tuple[FloatArray, FloatArray, NDArray[np.bool_]]]], dict[str, float]]:
     """Per-replicate ``(x, samples, used_hf)`` traces and each method's R-hat-validated
     burn-in, both `chains_by_method`/`posterior` (as returned by
     `run_convergence_driven_comparison`), converted to a shared x-axis
     (coarse-evaluation-iteration units). `x` is row index for `full_resolution_methods`
-    (already one row per coarse eval, e.g. `("hf_only", "online_active")`);
-    `adaptive_da_method` is stitched via `adaptive_da_multichain_trace` instead, with
+    (already one row per coarse eval, e.g. `("hf_only", "adaptive_surrogate_mcmc")`);
+    `adaptive_stm_method` is stitched via `adaptive_stm_multichain_trace` instead, with
     its burn-in converted using the shared adaptive phase's coarse-eval cost and the
-    frozen `subsampling_rate`. `adaptive_da_adapt_key` defaults to
-    ``f"{adaptive_da_method}_adapt"``.
+    frozen `subsampling_rate`. `adaptive_stm_adapt_key` defaults to
+    ``f"{adaptive_stm_method}_adapt"``.
     """
-    if adaptive_da_adapt_key is None:
-        adaptive_da_adapt_key = f"{adaptive_da_method}_adapt"
+    if adaptive_stm_adapt_key is None:
+        adaptive_stm_adapt_key = f"{adaptive_stm_method}_adapt"
 
     traces: dict[str, list[tuple[FloatArray, FloatArray, NDArray[np.bool_]]]] = {}
     burn_ins_x: dict[str, float] = {}
@@ -176,14 +176,14 @@ def prepare_trace_data(
         ]
         burn_ins_x[name] = posterior[name]["burn_in"] or 0
 
-    adapt_metas = posterior[adaptive_da_method]["adapt_metas"]
-    coarse_evals_per_chain = posterior[adaptive_da_method]["coarse_evals_per_chain"]
-    adaptive_da_traces = []
+    adapt_metas = posterior[adaptive_stm_method]["adapt_metas"]
+    coarse_evals_per_chain = posterior[adaptive_stm_method]["coarse_evals_per_chain"]
+    adaptive_stm_traces = []
     frozen_rate = 1
     for adapt_chain, adapt_meta, production_chain, production_cost in zip(
-        chains_by_method[adaptive_da_adapt_key],
+        chains_by_method[adaptive_stm_adapt_key],
         adapt_metas,
-        chains_by_method[adaptive_da_method],
+        chains_by_method[adaptive_stm_method],
         coarse_evals_per_chain,
         strict=True,
     ):
@@ -191,11 +191,11 @@ def prepare_trace_data(
         # subsampling_rate is constant throughout production (frozen), and
         # coarse_evals_per_chain already sums iterations*subsampling_rate per round.
         frozen_rate = production_cost // (production_chain.n_steps - 1) if production_chain.n_steps > 1 else 1
-        adaptive_da_traces.append(adaptive_da_multichain_trace(adapt_chain, adapt_meta, production_chain, frozen_rate))
-    traces[adaptive_da_method] = adaptive_da_traces
+        adaptive_stm_traces.append(adaptive_stm_multichain_trace(adapt_chain, adapt_meta, production_chain, frozen_rate))
+    traces[adaptive_stm_method] = adaptive_stm_traces
     n_adapt_coarse_evals = int(adapt_metas[0]["adapt_coarse_evals_used"])
-    adaptive_da_burn_in_row = posterior[adaptive_da_method]["burn_in"] or 0
-    burn_ins_x[adaptive_da_method] = n_adapt_coarse_evals + frozen_rate * adaptive_da_burn_in_row
+    adaptive_stm_burn_in_row = posterior[adaptive_stm_method]["burn_in"] or 0
+    burn_ins_x[adaptive_stm_method] = n_adapt_coarse_evals + frozen_rate * adaptive_stm_burn_in_row
 
     return traces, burn_ins_x
 
@@ -271,7 +271,7 @@ def summarize(
     before this chain started, e.g. a shared seed design) is added to `n_hf_calls`
     since it's otherwise invisible in `chain.extras.used_hf`. `n_coarse_eval_units`
     overrides the HF-call-fraction denominator for methods where a chain row isn't one
-    coarse eval (currently only `adaptive_da`, via `adaptive_da_coarse_eval_units`);
+    coarse eval (currently only `adaptive_stm`, via `adaptive_stm_coarse_eval_units`);
     `None` uses `chain.n_steps`. `reference_mean`, if given, adds
     `mean_abs_dev_from_reference` to the returned dict.
     """

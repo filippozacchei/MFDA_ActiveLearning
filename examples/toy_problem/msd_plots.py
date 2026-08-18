@@ -4,13 +4,14 @@ Shared by `msd_benchmark.ipynb` and `run.py`, so the per-seed figure gallery the
 script saves to `results/figures/` and the figures shown inline in the notebook are
 produced by the exact same code.
 
-Four methods appear across these plots, but not all in every one:
-`hf_only` (ground truth), `pretrained`, `online_active` (Riccius-style, no DA
-correction), `adaptive_da`. The posterior-accuracy figures compare
-`hf_only`/`online_active`/`adaptive_da` only (`pretrained`'s frozen, uncorrected
-posterior isn't a fair comparison against DA-corrected chains -- see the notebook's
-introduction); `pretrained` appears in the surrogate-comparison and training-cost
-figures instead, where the comparison is between training strategies, not posteriors.
+Four methods appear across these plots, but not all in every one: `hf_only` (ground
+truth), `pretrained`, `adaptive_surrogate_mcmc` (Riccius, synced, no DA correction),
+`adaptive_stm`. The posterior-accuracy figures compare
+`hf_only`/`adaptive_surrogate_mcmc`/`adaptive_stm` only (`pretrained`'s frozen,
+uncorrected posterior isn't a fair comparison against DA-corrected chains -- see the
+notebook's introduction); `pretrained` appears in the surrogate-comparison and
+training-cost figures instead, where the comparison is between training strategies,
+not posteriors.
 """
 
 from __future__ import annotations
@@ -21,21 +22,19 @@ from matplotlib.figure import Figure
 METHOD_COLORS = {
     "hf_only": "0.35",
     "pretrained": "tab:red",
-    "online_active": "tab:orange",
-    "online_active_synced": "tab:green",
-    "adaptive_da": "tab:blue",
+    "adaptive_surrogate_mcmc": "tab:green",
+    "adaptive_stm": "tab:blue",
 }
-METHOD_MARKERS = {"pretrained": "s", "online_active": "^", "online_active_synced": "D", "adaptive_da": "o"}
+METHOD_MARKERS = {"pretrained": "s", "adaptive_surrogate_mcmc": "D", "adaptive_stm": "o"}
 METHOD_LABELS = {
     "hf_only": "MH with HF",
     "pretrained": "Pretrained (offline)",
-    "online_active": "Riccius-style online",
-    "online_active_synced": "Riccius-style, synced surrogates",
-    "adaptive_da": "Adaptive DA (ours, freeze)",
+    "adaptive_surrogate_mcmc": "Adaptive surrogate MCMC (Riccius)",
+    "adaptive_stm": "Adaptive STM (ours)",
 }
-SURROGATE_METHODS = ("pretrained", "online_active", "adaptive_da")
-POSTERIOR_METHODS = ("online_active", "adaptive_da")
-TRACE_METHODS = ("hf_only", "online_active", "adaptive_da")
+SURROGATE_METHODS = ("pretrained", "adaptive_surrogate_mcmc", "adaptive_stm")
+POSTERIOR_METHODS = ("adaptive_surrogate_mcmc", "adaptive_stm")
+TRACE_METHODS = ("hf_only", "adaptive_surrogate_mcmc", "adaptive_stm")
 LF_COLOR = "tab:blue"
 HF_COLOR = "tab:red"
 
@@ -44,13 +43,13 @@ def plot_surrogate_comparison(
     problem, seed_surrogate, surrogates, *, methods: tuple[str, ...] = SURROGATE_METHODS, title_suffix: str = ""
 ) -> Figure:
     """Surrogate prediction at `theta_true`, before vs. after training, for `methods`
-    (default all three surrogate-based methods: `pretrained`/`online_active`/`adaptive_da`)
-    side by side.
+    (default all three surrogate-based methods:
+    `pretrained`/`adaptive_surrogate_mcmc`/`adaptive_stm`) side by side.
 
     `seed_surrogate`: the shared offline design's surrogate, before any method-specific
     training -- the "before" reference in every panel. `surrogates`: dict with one
     trained ("after") surrogate per method in `methods` (a subset of
-    `SURROGATE_METHODS` is fine, e.g. `("online_active", "adaptive_da")` when
+    `SURROGATE_METHODS` is fine, e.g. `("adaptive_surrogate_mcmc", "adaptive_stm")` when
     `pretrained` wasn't computed for this run -- see `run.py`'s `--skip-training-cost`).
     """
     import matplotlib.pyplot as plt
@@ -92,10 +91,8 @@ def plot_posterior_scatter(
     methods: tuple[str, ...] = POSTERIOR_METHODS, title_suffix: str = "",
 ) -> Figure:
     """Pooled posterior scatter: `hf_only` (grey hexbin, the ground truth for this
-    problem instance) vs. `methods` (default `online_active`/`adaptive_da`; pass e.g.
-    `("online_active", "online_active_synced", "adaptive_da")` to also show the
-    synced-surrogate ablation), each pooled across its replicate chains at its own
-    R-hat-validated burn-in.
+    problem instance) vs. `methods` (default `adaptive_surrogate_mcmc`/`adaptive_stm`),
+    each pooled across its replicate chains at its own R-hat-validated burn-in.
     """
     import matplotlib.pyplot as plt
 
@@ -122,13 +119,13 @@ def plot_posterior_scatter(
 
 def plot_training_cost_boxplot(offline_extra: np.ndarray, online_extra: np.ndarray, *, n_init: int) -> Figure:
     """Training-cost comparison across seeds: extra HF calls beyond the shared offline
-    seed design, `pretrained` (offline, global active learning) vs. `adaptive_da`
+    seed design, `pretrained` (offline, global active learning) vs. `adaptive_stm`
     (online, MCMC-path-guided adaptive phase)."""
     import matplotlib.pyplot as plt
 
     fig, ax = plt.subplots(figsize=(6.5, 5))
     ax.boxplot(
-        [offline_extra, online_extra], tick_labels=["Pretrained\n(offline)", "Adaptive DA\n(online adaptive)"]
+        [offline_extra, online_extra], tick_labels=["Pretrained\n(offline)", "Adaptive STM\n(online adaptive)"]
     )
     rng = np.random.default_rng(0)
     for i, vals in enumerate([offline_extra, online_extra], start=1):
@@ -172,7 +169,7 @@ def plot_traces(
     """Trace plots (one row per method, one column per parameter), overlaying every
     replicate chain, colored by whether each point required an HF evaluation (blue =
     cheap LF/surrogate step, red = expensive HF call) -- shows the actual mixing
-    behaviour (many cheap LF steps between infrequent HF corrections for `adaptive_da`)
+    behaviour (many cheap LF steps between infrequent HF corrections for `adaptive_stm`)
     that a posterior scatter alone can't.
 
     `traces`/`burn_ins`: from `gp_active_mcmc.verification.prepare_trace_data`.

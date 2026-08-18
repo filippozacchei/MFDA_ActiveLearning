@@ -14,19 +14,16 @@ from numpy.typing import NDArray
 
 from gp_active_mcmc.inference import MCMCChain
 from gp_active_mcmc.surrogates import PODGPSurrogate
-from gp_active_mcmc.surrogates.gp import KernelName
 from gp_active_mcmc.utils.rng import set_seed
 from gp_active_mcmc.verification.design import DEFAULT_ONLINE_LEARNING, OnlineLearningConfig
 from gp_active_mcmc.verification.methods import (
     _SEED_OFFSETS,
     _ChunkState,
-    _init_adaptive_da_production_state,
-    _init_adaptive_da_production_state_from_frozen,
+    _init_adaptive_stm_production_state,
+    _init_adaptive_stm_production_state_from_frozen,
+    _init_adaptive_surrogate_mcmc_state,
     _init_hf_only_state,
-    _init_online_active_state,
-    _init_pretrained_state_from_surrogate,
-    _make_online_active_sync_hook,
-    _train_pretrained_surrogate,
+    _make_adaptive_surrogate_mcmc_sync_hook,
 )
 from gp_active_mcmc.verification.metrics import pooled_summarize
 from gp_active_mcmc.verification.problem import Problem
@@ -151,7 +148,7 @@ def _run_method_and_summarize(
 ) -> tuple[dict[str, Any], list[MCMCChain], list[_ChunkState]]:
     """Runs one method's monitored replicate loop and attaches its pooled summary --
     the tail every method block in `run_convergence_driven_comparison` shares
-    (`adaptive_da` excepted; its two-phase structure doesn't fit). `announce_start=False`
+    (`adaptive_stm` excepted; its two-phase structure doesn't fit). `announce_start=False`
     skips the generic start line for a caller that already printed its own.
     """
     if announce_start:
@@ -172,45 +169,20 @@ def _run_method_and_summarize(
 def run_convergence_driven_comparison(
     problem: Problem,
     *,
-    pod_rank: int,
-    kernel: KernelName,
     seed_X: FloatArray,
-    seed_Y: FloatArray,
     seed_surrogate: PODGPSurrogate,
     n_chains: int,
     gamma_threshold: float,
     max_adapt_coarse_evals: int,
     convergence: ConvergenceConfig,
-    adaptive_da_adapt_coarse_evals: int | None = None,
+    adaptive_stm_adapt_coarse_evals: int | None = None,
     theta0: FloatArray | None = None,
     seed_base: int = 0,
-    methods: tuple[str, ...] = ("hf_only", "pretrained", "online_active", "adaptive_da"),
+    methods: tuple[str, ...] = ("hf_only", "adaptive_surrogate_mcmc", "adaptive_stm"),
     online_learning: OnlineLearningConfig = DEFAULT_ONLINE_LEARNING,
     max_subchain: int = 10_000,
 ) -> tuple[dict[str, Any], dict[str, list[MCMCChain]], dict[str, list[PODGPSurrogate]]]:
-    """Runs each method to R-hat/ESS convergence (or `convergence.max_total_coarse_evals`)
-    and reports cost (HF calls, coarse evals) and accuracy for the comparison table.
-
-    `pretrained`/`adaptive_da` train once and deep-copy into `n_chains` replicates
-    instead of retraining each independently, so every replicate targets the same
-    frozen posterior -- independent retraining would break R-hat's same-target
-    assumption. `online_active` has no freeze point and keeps learning per replicate.
-
-    `max_adapt_coarse_evals` doubles as `adaptive_da`'s adaptive-phase ceiling and
-    `online_active`'s HF-call cap, keeping their online budgets comparable;
-    `adaptive_da_adapt_coarse_evals` decouples them when needed -- coarse evals and HF
-    calls aren't the same currency, since `adaptive_da` skips most coarse evals as HF.
-
-    `methods` restricts which methods beyond the always-run `hf_only` reference
-    actually run their `n_chains`-replicate loop.
-
-    Returns
-    -------
-    results, chains_by_method, surrogates_by_method
-        `results[method]` has `converged`, `rounds_run`, `total_coarse_evals`, `rhat`,
-        `ess_bulk`, `burn_in`, `pooled` (`adaptive_da` also has `adapt_metas`).
-        `chains_by_method` also has `"adaptive_da_adapt"`. `surrogates_by_method` omits
-        `hf_only` (no surrogate).
+    """Runs each method to R-hat/ESS convergence (or `convergence.max_total_coarse_evals`).
     """
     n_init = int(seed_X.shape[0])
     param_names = problem.param_names
@@ -227,8 +199,8 @@ def run_convergence_driven_comparison(
     def _make_state_init(state: _ChunkState) -> Callable[[], _ChunkState]:
         return lambda: state
 
-    def _make_online_active_init(seed_offset: int, i: int) -> Callable[[], _ChunkState]:
-        return lambda: _init_online_active_state(
+    def _make_adaptive_surrogate_mcmc_init(seed_offset: int, i: int) -> Callable[[], _ChunkState]:
+        return lambda: _init_adaptive_surrogate_mcmc_state(
             problem, surrogate=seed_surrogate, gamma_threshold=gamma_threshold,
             seed=seed_base + seed_offset + i, theta0=theta0, online_learning=online_learning,
         )
@@ -241,103 +213,67 @@ def run_convergence_driven_comparison(
     results["hf_only"] = hf_run
     hf_reference = _reference_from_run(hf_run)
 
-    if "pretrained" in methods:
-        print("--- pretrained: training 1 shared offline design ---")
-        pretrained_surrogate, n_hf_pretrained_shared = _train_pretrained_surrogate(
-            problem, seed_X=seed_X, seed_Y=seed_Y, gamma_threshold=gamma_threshold, pod_rank=pod_rank,
-            kernel=kernel, seed=seed_base + _SEED_OFFSETS["pretrained"],
-        )
-        n_hf_pretrained_list = [n_hf_pretrained_shared] + [0] * (n_chains - 1)
-        print(f"--- pretrained: offline design done (n_hf={n_hf_pretrained_shared}), starting {n_chains} chains ---")
-        pretrained_inits = [
-            _init_pretrained_state_from_surrogate(
-                problem, surrogate=pretrained_surrogate, seed=seed_base + _SEED_OFFSETS["pretrained"] + i,
-                theta0=theta0,
-            )
-            for i in range(n_chains)
-        ]
-        pretrained_init_fns: list[Callable[[], _ChunkState]] = [_make_state_init(s) for s in pretrained_inits]
-        pre_run, pretrained_chains, _pretrained_states = _run_method_and_summarize(
-            "pretrained", pretrained_init_fns, convergence=convergence, param_names=param_names, problem=problem,
-            n_offline_hf=n_hf_pretrained_list, reference=hf_reference, announce_start=False,
-        )
-        chains_by_method["pretrained"] = pretrained_chains
-        surrogates_by_method["pretrained"] = [pretrained_surrogate]
-        results["pretrained"] = pre_run
-
-    if "online_active" in methods:
-        online_active_init_fns: list[Callable[[], _ChunkState]] = [
-            _make_online_active_init(_SEED_OFFSETS["online_active"], i) for i in range(n_chains)
-        ]
-        on_run, online_chains, online_final_states = _run_method_and_summarize(
-            "online_active", online_active_init_fns, convergence=convergence, param_names=param_names,
-            problem=problem, n_offline_hf=n_init, reference=hf_reference, max_hf_evals=max_adapt_coarse_evals,
-        )
-        chains_by_method["online_active"] = online_chains
-        surrogates_by_method["online_active"] = _state_surrogates(online_final_states)
-        results["online_active"] = on_run
-
-    if "online_active_synced" in methods:
-        sync_hook = _make_online_active_sync_hook(n_init)
+    if "adaptive_surrogate_mcmc" in methods:
+        sync_hook = _make_adaptive_surrogate_mcmc_sync_hook(n_init)
         synced_init_fns: list[Callable[[], _ChunkState]] = [
-            _make_online_active_init(_SEED_OFFSETS["online_active_synced"], i) for i in range(n_chains)
+            _make_adaptive_surrogate_mcmc_init(_SEED_OFFSETS["adaptive_surrogate_mcmc"], i) for i in range(n_chains)
         ]
-        oas_run, synced_chains, synced_final_states = _run_method_and_summarize(
-            "online_active_synced", synced_init_fns, convergence=convergence, param_names=param_names,
+        asm_run, synced_chains, synced_final_states = _run_method_and_summarize(
+            "adaptive_surrogate_mcmc", synced_init_fns, convergence=convergence, param_names=param_names,
             problem=problem, n_offline_hf=n_init, reference=hf_reference, max_hf_evals=max_adapt_coarse_evals,
             post_round_hook=sync_hook,
         )
-        chains_by_method["online_active_synced"] = synced_chains
-        surrogates_by_method["online_active_synced"] = _state_surrogates(synced_final_states)
-        results["online_active_synced"] = oas_run
+        chains_by_method["adaptive_surrogate_mcmc"] = synced_chains
+        surrogates_by_method["adaptive_surrogate_mcmc"] = _state_surrogates(synced_final_states)
+        results["adaptive_surrogate_mcmc"] = asm_run
 
-    if "adaptive_da" not in methods:
+    if "adaptive_stm" not in methods:
         return results, chains_by_method, surrogates_by_method
 
     # Manual sequence: n_coarse_eval_units below needs the run's own
     # coarse_evals_per_chain, which _run_method_and_summarize can't provide.
-    adaptive_da_ceiling = max_adapt_coarse_evals if adaptive_da_adapt_coarse_evals is None else adaptive_da_adapt_coarse_evals
-    print(f"--- adaptive_da: running 1 shared adaptive phase (coarse-eval ceiling={adaptive_da_ceiling}) ---")
-    shared_state, shared_adapt_meta, shared_adapt_chain = _init_adaptive_da_production_state(
+    adaptive_stm_ceiling = max_adapt_coarse_evals if adaptive_stm_adapt_coarse_evals is None else adaptive_stm_adapt_coarse_evals
+    print(f"--- adaptive_stm: running 1 shared adaptive phase (coarse-eval ceiling={adaptive_stm_ceiling}) ---")
+    shared_state, shared_adapt_meta, shared_adapt_chain = _init_adaptive_stm_production_state(
         problem, surrogate=seed_surrogate, gamma_threshold=gamma_threshold,
-        max_adapt_coarse_evals=adaptive_da_ceiling, seed=seed_base + _SEED_OFFSETS["adaptive_da"], theta0=theta0,
+        max_adapt_coarse_evals=adaptive_stm_ceiling, seed=seed_base + _SEED_OFFSETS["adaptive_stm"], theta0=theta0,
         online_learning=online_learning, max_subchain=max_subchain,
     )
-    assert shared_state.model is not None  # always set by _init_adaptive_da_production_state
+    assert shared_state.model is not None  # always set by _init_adaptive_stm_production_state
     shared_frozen_model = shared_state.model
     frozen_rate = shared_state.subsampling_rate
     theta_last = shared_state.theta_current
-    print(f"--- adaptive_da: adaptive phase done (frozen_rate={frozen_rate}), starting {n_chains} production chains ---")
-    adaptive_da_inits = [
-        _init_adaptive_da_production_state_from_frozen(
+    print(f"--- adaptive_stm: adaptive phase done (frozen_rate={frozen_rate}), starting {n_chains} production chains ---")
+    adaptive_stm_inits = [
+        _init_adaptive_stm_production_state_from_frozen(
             problem, frozen_model=shared_frozen_model, frozen_rate=frozen_rate, theta0=theta_last
         )
         for _ in range(n_chains)
     ]
-    adaptive_da_metas = [shared_adapt_meta] * n_chains
-    adaptive_da_adapt_chains = [shared_adapt_chain] * n_chains
-    adaptive_da_init_fns: list[Callable[[], _ChunkState]] = [_make_state_init(s) for s in adaptive_da_inits]
-    adaptive_da_run = _run_monitored_replicates(
-        adaptive_da_init_fns, label="adaptive_da", config=convergence, param_names=param_names
+    adaptive_stm_metas = [shared_adapt_meta] * n_chains
+    adaptive_stm_adapt_chains = [shared_adapt_chain] * n_chains
+    adaptive_stm_init_fns: list[Callable[[], _ChunkState]] = [_make_state_init(s) for s in adaptive_stm_inits]
+    adaptive_stm_run = _run_monitored_replicates(
+        adaptive_stm_init_fns, label="adaptive_stm", config=convergence, param_names=param_names
     )
-    adaptive_da_chains, _adaptive_da_states = _take_monitored_outputs(adaptive_da_run)
-    chains_by_method["adaptive_da"] = adaptive_da_chains
-    surrogates_by_method["adaptive_da"] = [cast(PODGPSurrogate, shared_frozen_model.lf_model)]
-    adaptive_da_production_coarse_evals = [
+    adaptive_stm_chains, _adaptive_stm_states = _take_monitored_outputs(adaptive_stm_run)
+    chains_by_method["adaptive_stm"] = adaptive_stm_chains
+    surrogates_by_method["adaptive_stm"] = [cast(PODGPSurrogate, shared_frozen_model.lf_model)]
+    adaptive_stm_production_coarse_evals = [
         (int(shared_adapt_meta["adapt_coarse_evals_used"]) if i == 0 else 0) + production_cost
-        for i, production_cost in enumerate(adaptive_da_run["coarse_evals_per_chain"])
+        for i, production_cost in enumerate(adaptive_stm_run["coarse_evals_per_chain"])
     ]
     _attach_pooled_summary(
-        adaptive_da_run,
-        adaptive_da_chains,
+        adaptive_stm_run,
+        adaptive_stm_chains,
         problem,
         n_offline_hf=n_init,
-        n_coarse_eval_units=adaptive_da_production_coarse_evals,
+        n_coarse_eval_units=adaptive_stm_production_coarse_evals,
         reference=hf_reference,
     )
-    adaptive_da_run["adapt_metas"] = adaptive_da_metas
-    results["adaptive_da"] = adaptive_da_run
-    chains_by_method["adaptive_da_adapt"] = adaptive_da_adapt_chains
-    print(f"--- adaptive_da done: converged={adaptive_da_run['converged']}, {adaptive_da_run['rounds_run']} rounds ---")
+    adaptive_stm_run["adapt_metas"] = adaptive_stm_metas
+    results["adaptive_stm"] = adaptive_stm_run
+    chains_by_method["adaptive_stm_adapt"] = adaptive_stm_adapt_chains
+    print(f"--- adaptive_stm done: converged={adaptive_stm_run['converged']}, {adaptive_stm_run['rounds_run']} rounds ---")
 
     return results, chains_by_method, surrogates_by_method

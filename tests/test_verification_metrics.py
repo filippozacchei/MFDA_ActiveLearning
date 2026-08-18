@@ -8,8 +8,8 @@ import pytest
 
 from gp_active_mcmc.inference import MCMCChain
 from gp_active_mcmc.verification.metrics import (
-    adaptive_da_coarse_eval_units,
-    adaptive_da_cumulative_coarse_evals,
+    adaptive_stm_coarse_eval_units,
+    adaptive_stm_cumulative_coarse_evals,
     effective_burn_in,
     find_burn_in_via_rhat,
     gaussian_kl,
@@ -162,40 +162,40 @@ def test_find_burn_in_via_rhat_respects_min_burn_in_floor() -> None:
 
 
 # ---------------------------------------------------------------------------
-# effective_burn_in / adaptive_da_* helpers
+# effective_burn_in / adaptive_stm_* helpers
 # ---------------------------------------------------------------------------
 
 
-def test_effective_burn_in_requires_meta_for_adaptive_da() -> None:
+def test_effective_burn_in_requires_meta_for_adaptive_stm() -> None:
     with pytest.raises(ValueError):
-        effective_burn_in("adaptive_da", default=10)
+        effective_burn_in("adaptive_stm", default=10)
 
 
 def test_effective_burn_in_default_for_other_methods() -> None:
-    assert effective_burn_in("online_active", default=42) == 42
+    assert effective_burn_in("hf_only", default=42) == 42
 
 
-def test_effective_burn_in_uses_n_adapt_samples_for_adaptive_da() -> None:
+def test_effective_burn_in_uses_n_adapt_samples_for_adaptive_stm() -> None:
     meta = {"n_adapt_samples": 77}
-    assert effective_burn_in("adaptive_da", meta_adaptive_da=meta, default=10) == 77
+    assert effective_burn_in("adaptive_stm", meta_adaptive_stm=meta, default=10) == 77
 
 
-def test_adaptive_da_coarse_eval_units_adapt_only() -> None:
+def test_adaptive_stm_coarse_eval_units_adapt_only() -> None:
     meta: dict[str, Any] = {"phase": "adapt_only", "adapt_metadata": {"coarse_evals_used": 123}}
-    assert adaptive_da_coarse_eval_units(meta) == 123
+    assert adaptive_stm_coarse_eval_units(meta) == 123
 
 
-def test_adaptive_da_coarse_eval_units_with_production() -> None:
+def test_adaptive_stm_coarse_eval_units_with_production() -> None:
     meta: dict[str, Any] = {
         "phase": "adapt_then_production",
         "adapt_metadata": {"coarse_evals_used": 100},
         "production_metadata": {"iterations": 20},
         "frozen_subsampling_rate": 5,
     }
-    assert adaptive_da_coarse_eval_units(meta) == 100 + 20 * 5
+    assert adaptive_stm_coarse_eval_units(meta) == 100 + 20 * 5
 
 
-def test_adaptive_da_cumulative_coarse_evals_monotonic() -> None:
+def test_adaptive_stm_cumulative_coarse_evals_monotonic() -> None:
     meta: dict[str, Any] = {
         "n_adapt_samples": 10,
         "phase": "adapt_then_production",
@@ -203,7 +203,7 @@ def test_adaptive_da_cumulative_coarse_evals_monotonic() -> None:
         "frozen_subsampling_rate": 5,
         "n_production_samples": 4,
     }
-    x = adaptive_da_cumulative_coarse_evals(meta)
+    x = adaptive_stm_cumulative_coarse_evals(meta)
     assert x.shape == (14,)
     assert np.all(np.diff(x) > 0)
     assert x[-1] == 100 + 5 * 4
@@ -231,10 +231,10 @@ def test_prepare_trace_data_uses_configurable_method_names() -> None:
     }
     traces, burn_ins_x = prepare_trace_data(
         chains_by_method, posterior, full_resolution_methods=("method_a",),
-        adaptive_da_method="c", adaptive_da_adapt_key="c_adapt",
+        adaptive_stm_method="c", adaptive_stm_adapt_key="c_adapt",
     )
-    # No hardcoded "hf_only"/"online_active"/"ours" literal survives: only the
-    # caller-supplied names appear.
+    # No hardcoded "hf_only"/"adaptive_stm" literal survives: only the caller-supplied
+    # names appear.
     assert set(traces.keys()) == {"method_a", "c"}
     assert set(burn_ins_x.keys()) == {"method_a", "c"}
     assert "hf_only" not in traces

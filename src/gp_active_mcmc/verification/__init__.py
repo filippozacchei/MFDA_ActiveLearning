@@ -1,7 +1,7 @@
 """Problem-agnostic MCMC-comparison harness for surrogate-assisted Bayesian inversion:
-four methods (`run_hf_only`, `run_pretrained`, `run_online_active`, `run_adaptive_da`)
-plus R-hat-driven multi-chain orchestration, reusable by any `Problem`-shaped inverse
-problem, extracted from the mass-spring-damper example for that reuse.
+methods (`run_hf_only`, `run_pretrained`, `run_adaptive_stm`) plus R-hat-driven
+multi-chain orchestration, reusable by any `Problem`-shaped inverse problem, extracted
+from the mass-spring-damper example for that reuse.
 """
 
 from __future__ import annotations
@@ -19,17 +19,16 @@ from gp_active_mcmc.verification.harness import (
     run_convergence_driven_comparison,
 )
 from gp_active_mcmc.verification.methods import (
-    run_adaptive_da,
+    run_adaptive_stm,
     run_hf_only,
-    run_online_active,
     run_pretrained,
     run_training_cost_comparison,
 )
 from gp_active_mcmc.verification.metrics import (
-    adaptive_da_coarse_eval_units,
-    adaptive_da_cumulative_coarse_evals,
-    adaptive_da_full_resolution_trace,
-    adaptive_da_multichain_trace,
+    adaptive_stm_coarse_eval_units,
+    adaptive_stm_cumulative_coarse_evals,
+    adaptive_stm_full_resolution_trace,
+    adaptive_stm_multichain_trace,
     effective_burn_in,
     find_burn_in_via_rhat,
     gaussian_kl,
@@ -50,10 +49,10 @@ __all__ = [
     "PODRankSelection",
     "Problem",
     "active_learning_offline_design",
-    "adaptive_da_coarse_eval_units",
-    "adaptive_da_cumulative_coarse_evals",
-    "adaptive_da_full_resolution_trace",
-    "adaptive_da_multichain_trace",
+    "adaptive_stm_coarse_eval_units",
+    "adaptive_stm_cumulative_coarse_evals",
+    "adaptive_stm_full_resolution_trace",
+    "adaptive_stm_multichain_trace",
     "build_initial_surrogate",
     "effective_burn_in",
     "find_burn_in_via_rhat",
@@ -64,10 +63,9 @@ __all__ = [
     "pooled_summarize",
     "prepare_trace_data",
     "print_convergence_driven_table",
-    "run_adaptive_da",
+    "run_adaptive_stm",
     "run_convergence_driven_comparison",
     "run_hf_only",
-    "run_online_active",
     "run_pretrained",
     "run_training_cost_comparison",
     "run_until_rhat_converged",

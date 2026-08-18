@@ -9,23 +9,27 @@ Implements four inference strategies at a (roughly) matched high-fidelity (HF) b
    greedy max-variance active-learning acquisition, then frozen; matches the
    "Pretrained Model" arm in Riccius et al. (2025). See
    `gp_active_mcmc.verification.run_pretrained`.
-3. Riccius-style online active learning (single posterior, no delayed acceptance) --
-   the surrogate is substituted directly for the likelihood and refined online via an
-   uncertainty threshold, with no HF-correction step. Matches Algorithm 1 in
-   Riccius et al. (2025), "Integration of Active Learning and MCMC Sampling for
-   Efficient Bayesian Calibration of Mechanical Properties". See
-   `gp_active_mcmc.verification.run_online_active`.
-4. Proposed: adaptive delayed-acceptance MCMC with a freeze-to-production stage.
-   See `gp_active_mcmc.verification.run_adaptive_da`.
+3. Adaptive surrogate MCMC (Riccius, synced) -- the surrogate is substituted directly
+   for the likelihood and refined online via an uncertainty threshold, with no
+   HF-correction step, matching Algorithm 1 in Riccius et al. (2025), "Integration of
+   Active Learning and MCMC Sampling for Efficient Bayesian Calibration of Mechanical
+   Properties"; every replicate's individually-collected HF points are additionally
+   pooled into a shared surrogate each round, isolating inter-replicate disagreement
+   from the separate correctness problem DA correction solves. Built from
+   `run_convergence_driven_comparison`'s orchestration (no standalone `run_*`
+   function), not `gp_active_mcmc.verification.methods._init_adaptive_surrogate_mcmc_state`
+   directly.
+4. Proposed (adaptive_stm): adaptive delayed-acceptance MCMC with a freeze-to-production
+   stage. See `gp_active_mcmc.verification.run_adaptive_stm`.
 
 Only genuinely MSD-specific code lives here: the `Problem` dataclass (with its extra
 `t` timeline field), `build_problem`, and this problem's calibrated constants
-(`N_INIT`, `POD_RANK`, `GAMMA_THRESHOLD`, ...). Every problem-agnostic function --
-`run_hf_only`, `run_pretrained`, `run_online_active`, `run_adaptive_da`,
-`run_convergence_driven_comparison`, the metrics, the chunked-round harness -- lives
-in `gp_active_mcmc.verification` and is re-exported here unchanged, so this module
-and `examples/navier_stokes/ns_problem.py` both build on exactly the same tested,
-documented implementation rather than each maintaining their own copy.
+(`N_INIT`, `GAMMA_THRESHOLD`, ...). Every problem-agnostic function --
+`run_hf_only`, `run_pretrained`, `run_adaptive_stm`, `run_convergence_driven_comparison`,
+the metrics, the chunked-round harness -- lives in `gp_active_mcmc.verification` and is
+re-exported here unchanged, so this module and `examples/navier_stokes/ns_problem.py`
+both build on exactly the same tested, documented implementation rather than each
+maintaining their own copy.
 
 This module has no `__main__`: it is imported by `run.py` (the multi-seed sweep
 driver) and `msd_benchmark.ipynb` (the paper's comparison notebook).
@@ -47,10 +51,10 @@ from gp_active_mcmc.verification import (
     OnlineLearningConfig,
     PODRankSelection,
     active_learning_offline_design,
-    adaptive_da_coarse_eval_units,
-    adaptive_da_cumulative_coarse_evals,
-    adaptive_da_full_resolution_trace,
-    adaptive_da_multichain_trace,
+    adaptive_stm_coarse_eval_units,
+    adaptive_stm_cumulative_coarse_evals,
+    adaptive_stm_full_resolution_trace,
+    adaptive_stm_multichain_trace,
     build_initial_surrogate,
     effective_burn_in,
     find_burn_in_via_rhat,
@@ -61,10 +65,9 @@ from gp_active_mcmc.verification import (
     pooled_summarize,
     prepare_trace_data,
     print_convergence_driven_table,
-    run_adaptive_da,
+    run_adaptive_stm,
     run_convergence_driven_comparison,
     run_hf_only,
-    run_online_active,
     run_pretrained,
     run_training_cost_comparison,
     run_until_rhat_converged,
@@ -73,7 +76,6 @@ from gp_active_mcmc.verification import (
 )
 
 __all__ = [
-    "ADAPTIVE_RANK",
     "DEFAULT_ONLINE_LEARNING",
     "GAMMA_THRESHOLD",
     "KERNEL",
@@ -81,7 +83,6 @@ __all__ = [
     "MAX_SUBCHAIN",
     "N_INIT",
     "PARAM_NAMES",
-    "POD_RANK",
     "POD_REFIT_EVERY",
     "POD_REFIT_MAX",
     "RANK_ENERGY_THRESHOLD",
@@ -92,10 +93,10 @@ __all__ = [
     "PODRankSelection",
     "Problem",
     "active_learning_offline_design",
-    "adaptive_da_coarse_eval_units",
-    "adaptive_da_cumulative_coarse_evals",
-    "adaptive_da_full_resolution_trace",
-    "adaptive_da_multichain_trace",
+    "adaptive_stm_coarse_eval_units",
+    "adaptive_stm_cumulative_coarse_evals",
+    "adaptive_stm_full_resolution_trace",
+    "adaptive_stm_multichain_trace",
     "build_initial_surrogate",
     "build_problem",
     "effective_burn_in",
@@ -107,10 +108,9 @@ __all__ = [
     "pooled_summarize",
     "prepare_trace_data",
     "print_convergence_driven_table",
-    "run_adaptive_da",
+    "run_adaptive_stm",
     "run_convergence_driven_comparison",
     "run_hf_only",
-    "run_online_active",
     "run_pretrained",
     "run_training_cost_comparison",
     "run_until_rhat_converged",
@@ -133,10 +133,8 @@ GAMMA_THRESHOLD = 0.01
 MAX_ADAPT_COARSE_EVALS = 700
 MAX_SUBCHAIN = 25
 N_INIT = 25
-POD_RANK = 8
 POD_REFIT_EVERY = 25
 POD_REFIT_MAX: int | None = None
-ADAPTIVE_RANK = False
 RANK_ENERGY_THRESHOLD = 0.999
 RANK_MAX: int | None = None
 

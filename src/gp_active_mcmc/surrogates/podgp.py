@@ -95,19 +95,20 @@ class PODGPSurrogate:
         one trigger, one cap, no separate warm-started or incremental in-between state
         to reason about.
     adaptive_rank
-        If `True`, each `refit_pod` call also re-derives the POD rank itself (via
-        `pod_energy` on the *full* accumulated `Y_history`, same criterion as
-        `select_pod_rank_and_seed_design`'s one-shot offline choice) instead of
+        If `True` (the default), each `refit_pod` call also re-derives the POD rank
+        itself (via `pod_energy` on the *full* accumulated `Y_history`, same criterion
+        as `select_pod_rank_and_seed_design`'s one-shot offline choice) instead of
         reusing whatever rank the surrogate started with. Why this matters: the
         initial rank is only ever as good as the small offline sample it was picked
         from -- confirmed directly to badly underestimate the true out-of-sample rank
         needed (e.g. 12% of the prior exceeding the noise floor at a rank picked this
         way from 25 points). As real HF data accumulates through active learning, a
-        larger sample gives a better-informed rank estimate; `False` (the default)
-        keeps today's behaviour of a rank fixed at construction time. Cheap to add:
-        `refit_pod` already rebuilds the GP from scratch every time regardless (a
-        changed basis makes the old GP's targets stale either way), so letting the
-        *rank* also change during that same rebuild doesn't add a new mechanism.
+        larger sample gives a better-informed rank estimate, so this is the
+        methodological default; set `False` to keep a rank fixed at construction time
+        instead. Cheap to add: `refit_pod` already rebuilds the GP from scratch every
+        time regardless (a changed basis makes the old GP's targets stale either way),
+        so letting the *rank* also change during that same rebuild doesn't add a new
+        mechanism.
     rank_energy_threshold
         Cumulative-energy threshold used when `adaptive_rank` is set (default `0.999`,
         matching `select_pod_rank_and_seed_design`'s own default).
@@ -141,7 +142,7 @@ class PODGPSurrogate:
     Y_history: FloatArray | None = None
     pod_refit_every: int | None = None
     pod_refit_max: int | None = None
-    adaptive_rank: bool = False
+    adaptive_rank: bool = True
     rank_energy_threshold: float = 0.999
     rank_max: int | None = None
     _since_pod_refit: int = field(default=0, repr=False)

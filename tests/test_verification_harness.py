@@ -97,12 +97,11 @@ def test_run_convergence_driven_comparison_methods_param_restricts_execution() -
     problem = _make_problem()
     rng = np.random.default_rng(5)
     seed_X = np.asarray([problem.prior.rvs(random_state=rng) for _ in range(6)], dtype=float)
-    seed_Y = np.asarray([problem.hf_forward(x) for x in seed_X], dtype=float)
-    seed_surrogate, _X, _Y = build_initial_surrogate(problem, rng, n_init=6, pod_rank=2, kernel="rbf")
+    seed_surrogate, _X, _Y = build_initial_surrogate(problem, rng, n_init=6, kernel="rbf")
 
     convergence = ConvergenceConfig(chunk_size=10, max_total_coarse_evals=20, rhat_threshold=1e-9, min_ess=1.0, n_jobs=1)
     results, chains_by_method, surrogates_by_method = run_convergence_driven_comparison(
-        problem, pod_rank=2, kernel="rbf", seed_X=seed_X, seed_Y=seed_Y, seed_surrogate=seed_surrogate,
+        problem, seed_X=seed_X, seed_surrogate=seed_surrogate,
         n_chains=2, gamma_threshold=1e6, max_adapt_coarse_evals=15,
         convergence=convergence, methods=("hf_only",), seed_base=5000,
     )
@@ -113,22 +112,21 @@ def test_run_convergence_driven_comparison_methods_param_restricts_execution() -
 
 @_IGNORE_RHAT_DIVIDE_BY_ZERO
 @_IGNORE_SUBSAMPLING_RATE_DEPRECATION
-def test_run_convergence_driven_comparison_adaptive_da_dict_keys() -> None:
+def test_run_convergence_driven_comparison_adaptive_stm_dict_keys() -> None:
     problem = _make_problem()
     rng = np.random.default_rng(6)
     seed_X = np.asarray([problem.prior.rvs(random_state=rng) for _ in range(6)], dtype=float)
-    seed_Y = np.asarray([problem.hf_forward(x) for x in seed_X], dtype=float)
-    seed_surrogate, _X, _Y = build_initial_surrogate(problem, rng, n_init=6, pod_rank=2, kernel="rbf")
+    seed_surrogate, _X, _Y = build_initial_surrogate(problem, rng, n_init=6, kernel="rbf")
 
     convergence = ConvergenceConfig(chunk_size=10, max_total_coarse_evals=20, rhat_threshold=1e-9, min_ess=1.0, n_jobs=1)
     results, chains_by_method, surrogates_by_method = run_convergence_driven_comparison(
-        problem, pod_rank=2, kernel="rbf", seed_X=seed_X, seed_Y=seed_Y, seed_surrogate=seed_surrogate,
+        problem, seed_X=seed_X, seed_surrogate=seed_surrogate,
         n_chains=2, gamma_threshold=1e6, max_adapt_coarse_evals=15,
-        convergence=convergence, methods=("hf_only", "adaptive_da"),
+        convergence=convergence, methods=("hf_only", "adaptive_stm"),
         seed_base=6000,
     )
-    assert "adaptive_da" in results
+    assert "adaptive_stm" in results
     assert "ours" not in results
-    assert "adaptive_da_adapt" in chains_by_method
-    assert "adaptive_da" in chains_by_method
-    assert "adaptive_da" in surrogates_by_method
+    assert "adaptive_stm_adapt" in chains_by_method
+    assert "adaptive_stm" in chains_by_method
+    assert "adaptive_stm" in surrogates_by_method

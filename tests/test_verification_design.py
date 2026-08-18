@@ -47,7 +47,7 @@ def _make_problem(seed: int = 0) -> _Problem:
 def test_build_initial_surrogate_shapes() -> None:
     problem = _make_problem()
     rng = np.random.default_rng(1)
-    surrogate, X, Y = build_initial_surrogate(problem, rng, n_init=8, pod_rank=2, kernel="rbf")
+    surrogate, X, Y = build_initial_surrogate(problem, rng, n_init=8, kernel="rbf")
     assert X.shape == (8, 2)
     assert Y.shape == (8, 20)
     assert surrogate.gp.n_train == 8
@@ -78,7 +78,7 @@ def test_active_learning_offline_design_stops_on_gamma_threshold() -> None:
     seed_X = np.asarray([problem.prior.rvs(random_state=rng) for _ in range(10)], dtype=float)
     seed_Y = np.asarray([problem.hf_forward(x) for x in seed_X], dtype=float)
     surrogate = active_learning_offline_design(
-        problem, seed_X, seed_Y, gamma_threshold=1e6, pod_rank=2, kernel="rbf", rng=rng,
+        problem, seed_X, seed_Y, gamma_threshold=1e6, kernel="rbf", rng=rng,
     )
     assert surrogate.gp.n_train == 10  # criterion trivially satisfied immediately, no extra points acquired
 
@@ -89,7 +89,7 @@ def test_active_learning_offline_design_respects_max_total_budget() -> None:
     seed_X = np.asarray([problem.prior.rvs(random_state=rng) for _ in range(5)], dtype=float)
     seed_Y = np.asarray([problem.hf_forward(x) for x in seed_X], dtype=float)
     surrogate = active_learning_offline_design(
-        problem, seed_X, seed_Y, gamma_threshold=1e-12, pod_rank=2, kernel="rbf", rng=rng,
+        problem, seed_X, seed_Y, gamma_threshold=1e-12, kernel="rbf", rng=rng,
         batch_size=5, max_total_budget=15,
     )
     assert surrogate.gp.n_train == 15  # never reaches the (unreachable) criterion, capped by max_total_budget
@@ -98,18 +98,16 @@ def test_active_learning_offline_design_respects_max_total_budget() -> None:
 def test_surrogate_for_online_learning_deepcopies_and_sets_fields() -> None:
     problem = _make_problem()
     rng = np.random.default_rng(6)
-    surrogate, _X, _Y = build_initial_surrogate(problem, rng, n_init=6, pod_rank=2, kernel="rbf")
+    surrogate, _X, _Y = build_initial_surrogate(problem, rng, n_init=6, kernel="rbf")
 
     config = OnlineLearningConfig(
-        pod_refit_every=5, pod_refit_max=3, adaptive_rank=True, rank_energy_threshold=0.99, rank_max=4,
+        pod_refit_every=5, pod_refit_max=3, rank_energy_threshold=0.99, rank_max=4,
     )
     lf = _surrogate_for_online_learning(surrogate, config)
     assert lf is not surrogate
     assert lf.pod_refit_every == 5
     assert lf.pod_refit_max == 3
-    assert lf.adaptive_rank is True
     assert lf.rank_energy_threshold == 0.99
     assert lf.rank_max == 4
     # Original untouched.
     assert surrogate.pod_refit_every is None
-    assert surrogate.adaptive_rank is False

@@ -1,7 +1,8 @@
-"""Runs the mass-spring-damper method comparison (hf_only/pretrained/online_active/
-adaptive_da, see `msd_methods`) across `--n-seeds` independent problem instances,
-appending one metrics row per seed to `results/sweep_convergence_driven[_TAG].jsonl`
-and saving each seed's figures/artifact bundle alongside it.
+"""Runs the mass-spring-damper method comparison
+(hf_only/pretrained/adaptive_surrogate_mcmc/adaptive_stm, see `msd_methods`) across
+`--n-seeds` independent problem instances, appending one metrics row per seed to
+`results/sweep_convergence_driven[_TAG].jsonl` and saving each seed's figures/artifact
+bundle alongside it.
 """
 
 from __future__ import annotations
@@ -31,7 +32,6 @@ from msd_methods import (
     MAX_ADAPT_COARSE_EVALS,
     MAX_SUBCHAIN,
     N_INIT,
-    POD_RANK,
     POD_REFIT_EVERY,
     RANK_ENERGY_THRESHOLD,
     RESULTS_DIR,
@@ -89,18 +89,14 @@ def _save_figures(
     chains_by_method: dict[str, list[Any]],
     surrogates_by_method: dict[str, list[Any]],
     posterior: dict[str, Any],
-    include_synced: bool,
 ) -> None:
     """Saves this seed's four figures (surrogate comparison, posterior scatter, full
     and post-burn-in traces) under `figures/[tag/]`."""
     surrogates_for_plot = {
-        "online_active": surrogates_by_method["online_active"][0],
-        "adaptive_da": surrogates_by_method["adaptive_da"][0],
+        "adaptive_surrogate_mcmc": surrogates_by_method["adaptive_surrogate_mcmc"][0],
+        "adaptive_stm": surrogates_by_method["adaptive_stm"][0],
     }
-    surrogate_methods = ("online_active", "adaptive_da")
-    if include_synced:
-        surrogates_for_plot["online_active_synced"] = surrogates_by_method["online_active_synced"][0]
-        surrogate_methods = ("online_active", "online_active_synced", "adaptive_da")
+    surrogate_methods = ("adaptive_surrogate_mcmc", "adaptive_stm")
     if offline_surrogate is not None:
         surrogates_for_plot["pretrained"] = offline_surrogate
         surrogate_methods = ("pretrained", *surrogate_methods)
@@ -114,10 +110,7 @@ def _save_figures(
     )
     fig_surrogate.savefig(figures_dir / f"surrogate_comparison_seed_{problem_seed}.png", bbox_inches="tight")
 
-    posterior_methods = (
-        ("online_active", "online_active_synced", "adaptive_da") if include_synced
-        else ("online_active", "adaptive_da")
-    )
+    posterior_methods = ("adaptive_surrogate_mcmc", "adaptive_stm")
     burn_ins = {name: posterior[name]["burn_in"] or 0 for name in ("hf_only", *posterior_methods)}
     fig_posterior = plot_posterior_scatter(
         problem, chains_by_method, burn_ins, methods=posterior_methods, title_suffix=title_suffix
@@ -125,8 +118,8 @@ def _save_figures(
     fig_posterior.savefig(figures_dir / f"posterior_scatter_seed_{problem_seed}.png", bbox_inches="tight")
 
     traces, trace_burn_ins = prepare_trace_data(
-        chains_by_method, posterior, full_resolution_methods=("hf_only", "online_active"),
-        adaptive_da_method="adaptive_da",
+        chains_by_method, posterior, full_resolution_methods=("hf_only", "adaptive_surrogate_mcmc"),
+        adaptive_stm_method="adaptive_stm",
     )
     fig_trace_full = plot_traces(problem, traces, trace_burn_ins, mode="full", title_suffix=title_suffix)
     fig_trace_full.savefig(figures_dir / f"trace_full_seed_{problem_seed}.png", bbox_inches="tight")
@@ -169,11 +162,9 @@ def run_one_seed(
     convergence: ConvergenceConfig,
     tag: str,
     n_init: int = N_INIT,
-    pod_rank: int = POD_RANK,
     skip_training_cost: bool = False,
     online_learning: OnlineLearningConfig = DEFAULT_ONLINE_LEARNING,
-    include_synced: bool = False,
-    adaptive_da_adapt_coarse_evals: int | None = None,
+    adaptive_stm_adapt_coarse_evals: int | None = None,
     max_subchain: int = MAX_SUBCHAIN,
 ) -> dict[str, Any]:
     """Runs the training-cost and posterior-accuracy comparisons for one problem
@@ -183,7 +174,8 @@ def run_one_seed(
     posterior/MCMC comparison."""
     problem = build_problem(problem_seed=problem_seed, sigma_obs=sigma_obs)
     seed_surrogate, seed_X, seed_Y = build_initial_surrogate(
-        problem, set_seed(1_000 + problem_seed), n_init=n_init, pod_rank=pod_rank, kernel=KERNEL,
+        problem, set_seed(1_000 + problem_seed), n_init=n_init, kernel=KERNEL,
+        rank_energy_threshold=online_learning.rank_energy_threshold, rank_max=online_learning.rank_max,
     )
     seed_base = problem_seed * SEED_STRIDE
 
@@ -192,45 +184,39 @@ def run_one_seed(
     else:
         training_cost, offline_surrogate = run_training_cost_comparison(
             problem, seed_X=seed_X, seed_Y=seed_Y, seed_surrogate=seed_surrogate,
-            gamma_threshold=gamma_threshold, pod_rank=pod_rank, kernel=KERNEL,
+            gamma_threshold=gamma_threshold, kernel=KERNEL,
             max_adapt_coarse_evals=max_adapt_coarse_evals, seed_base=seed_base,
             online_learning=online_learning, max_subchain=max_subchain,
         )
 
-    methods = ("hf_only", "online_active", "adaptive_da")
-    if include_synced:
-        methods = ("hf_only", "online_active", "online_active_synced", "adaptive_da")
-
+    # methods left at its default (hf_only, adaptive_surrogate_mcmc, adaptive_stm):
+    # this sweep always compares exactly those three.
     posterior, chains_by_method, surrogates_by_method = run_convergence_driven_comparison(
-        problem, pod_rank=pod_rank, kernel=KERNEL, seed_X=seed_X, seed_Y=seed_Y,
-        seed_surrogate=seed_surrogate, n_chains=n_chains, gamma_threshold=gamma_threshold,
-        max_adapt_coarse_evals=max_adapt_coarse_evals,
-        adaptive_da_adapt_coarse_evals=adaptive_da_adapt_coarse_evals,
-        convergence=convergence, seed_base=seed_base, methods=methods,
+        problem, seed_X=seed_X, seed_surrogate=seed_surrogate, n_chains=n_chains,
+        gamma_threshold=gamma_threshold, max_adapt_coarse_evals=max_adapt_coarse_evals,
+        adaptive_stm_adapt_coarse_evals=adaptive_stm_adapt_coarse_evals,
+        convergence=convergence, seed_base=seed_base,
         online_learning=online_learning, max_subchain=max_subchain,
     )
 
     _save_figures(
         problem, problem_seed=problem_seed, tag=tag, seed_surrogate=seed_surrogate,
         offline_surrogate=offline_surrogate, chains_by_method=chains_by_method,
-        surrogates_by_method=surrogates_by_method, posterior=posterior, include_synced=include_synced,
+        surrogates_by_method=surrogates_by_method, posterior=posterior,
     )
 
     metrics_row = {
         "seed": problem_seed,
         "n_init": n_init,
-        "pod_rank": pod_rank,
         "sigma_obs": sigma_obs,
         "gamma_threshold": gamma_threshold,
         "max_adapt_coarse_evals": max_adapt_coarse_evals,
-        "adaptive_da_adapt_coarse_evals": adaptive_da_adapt_coarse_evals,
-        "adaptive_rank": online_learning.adaptive_rank,
+        "adaptive_stm_adapt_coarse_evals": adaptive_stm_adapt_coarse_evals,
         "rank_energy_threshold": online_learning.rank_energy_threshold,
         "rank_max": online_learning.rank_max,
         "pod_refit_every": online_learning.pod_refit_every,
         "pod_refit_max": online_learning.pod_refit_max,
         "max_subchain": max_subchain,
-        "include_synced": include_synced,
         "burn_in_fraction": convergence.burn_in_fraction,
         "training_cost": training_cost,
         "posterior": posterior,
@@ -253,21 +239,11 @@ def _build_parser() -> argparse.ArgumentParser:
     sweep.add_argument("--n-seeds", type=int, default=25, help="Number of problem instances to run.")
     sweep.add_argument("--start-seed", type=int, default=0, help="First problem seed (for resuming a sweep).")
     sweep.add_argument("--tag", type=str, default="", help="Suffix/subdirectory for this run's outputs.")
-    sweep.add_argument(
-        "--overwrite", action="store_true",
-        help="Required to start a fresh (--start-seed 0) run when the target .jsonl already has rows, so an "
-        "accidental re-run can't silently truncate a completed sweep.",
-    )
 
     design = parser.add_argument_group("surrogate design")
     design.add_argument(
         "--n-init", type=int, default=N_INIT,
         help=f"Size of the shared offline seed design every method starts from (default {N_INIT}).",
-    )
-    design.add_argument(
-        "--pod-rank", type=int, default=POD_RANK,
-        help=f"POD basis rank (default {POD_RANK}, derived for the default --n-init -- re-derive via "
-        "select_pod_rank_and_seed_design if you change --n-init).",
     )
     design.add_argument(
         "--pod-refit-every", type=int, default=POD_REFIT_EVERY,
@@ -279,17 +255,14 @@ def _build_parser() -> argparse.ArgumentParser:
         help="Cap on total refit_pod() calls per surrogate lifetime. Unbounded by default.",
     )
     design.add_argument(
-        "--adaptive-rank", action="store_true",
-        help="Let refit_pod() re-derive the POD rank from accumulated history instead of keeping it fixed "
-        "at --pod-rank.",
-    )
-    design.add_argument(
         "--rank-energy-threshold", type=float, default=RANK_ENERGY_THRESHOLD,
-        help=f"Cumulative-energy threshold for --adaptive-rank (default {RANK_ENERGY_THRESHOLD}).",
+        help="Cumulative-energy threshold used to adaptively derive the POD rank -- for the initial seed "
+        f"surrogate, the offline pretrained design's every batch refit, and refit_pod()'s every online "
+        f"refit alike; there's no fixed-rank option (default {RANK_ENERGY_THRESHOLD}).",
     )
     design.add_argument(
         "--rank-max", type=int, default=None,
-        help="Upper bound on the adaptively-derived rank. Uses refit_pod()'s own fallback by default.",
+        help="Upper bound on the adaptively-derived rank, wherever it's derived. 20 by default.",
     )
 
     problem = parser.add_argument_group("problem / methods")
@@ -299,21 +272,17 @@ def _build_parser() -> argparse.ArgumentParser:
     )
     problem.add_argument(
         "--max-adapt-coarse-evals", type=int, default=MAX_ADAPT_COARSE_EVALS,
-        help="Coarse-eval ceiling for adaptive_da's adaptive phase, and the HF-call cap for online_active.",
+        help="Coarse-eval ceiling for adaptive_stm's adaptive phase, and the HF-call cap for "
+        "adaptive_surrogate_mcmc.",
     )
     problem.add_argument(
-        "--adaptive-da-adapt-coarse-evals", type=int, default=None, dest="adaptive_da_adapt_coarse_evals",
-        help="Decouples adaptive_da's adaptive-phase ceiling from --max-adapt-coarse-evals (they aren't the "
+        "--adaptive-stm-adapt-coarse-evals", type=int, default=None, dest="adaptive_stm_adapt_coarse_evals",
+        help="Decouples adaptive_stm's adaptive-phase ceiling from --max-adapt-coarse-evals (they aren't the "
         "same currency: coarse evals vs. real HF calls). Shared with --max-adapt-coarse-evals by default.",
     )
     problem.add_argument(
         "--max-subchain", type=int, default=MAX_SUBCHAIN,
-        help=f"Ceiling on adaptive_da's coarse-to-fine subsampling rate (default {MAX_SUBCHAIN}).",
-    )
-    problem.add_argument(
-        "--include-synced", action="store_true",
-        help="Also run 'online_active_synced': online_active with replicate surrogates pooled into a shared "
-        "one each round, isolating inter-replicate disagreement from the lack of DA correction.",
+        help=f"Ceiling on adaptive_stm's coarse-to-fine subsampling rate (default {MAX_SUBCHAIN}).",
     )
     problem.add_argument(
         "--skip-training-cost", action="store_true",
@@ -355,13 +324,6 @@ def main() -> None:
     RESULTS_DIR.mkdir(exist_ok=True)
     jsonl_path = _jsonl_path(args.tag)
 
-    if args.start_seed == 0 and not args.overwrite and jsonl_path.exists() and jsonl_path.stat().st_size > 0:
-        raise SystemExit(
-            f"{jsonl_path} already has content and --start-seed is 0, which would truncate it. "
-            "Pass --overwrite to confirm, --start-seed N to resume/append instead, or --tag a different "
-            "name for a separate run."
-        )
-
     # Built once and shared by every seed -- these settings don't vary seed to seed.
     convergence = ConvergenceConfig(
         chunk_size=args.chunk_size, max_total_coarse_evals=args.max_total_coarse_evals,
@@ -370,8 +332,7 @@ def main() -> None:
     )
     online_learning = OnlineLearningConfig(
         pod_refit_every=args.pod_refit_every, pod_refit_max=args.pod_refit_max,
-        adaptive_rank=args.adaptive_rank, rank_energy_threshold=args.rank_energy_threshold,
-        rank_max=args.rank_max,
+        rank_energy_threshold=args.rank_energy_threshold, rank_max=args.rank_max,
     )
 
     mode = "a" if args.start_seed > 0 and jsonl_path.exists() else "w"
@@ -384,15 +345,13 @@ def main() -> None:
                     sigma_obs=args.sigma_obs,
                     gamma_threshold=args.gamma_threshold,
                     max_adapt_coarse_evals=args.max_adapt_coarse_evals,
-                    adaptive_da_adapt_coarse_evals=args.adaptive_da_adapt_coarse_evals,
+                    adaptive_stm_adapt_coarse_evals=args.adaptive_stm_adapt_coarse_evals,
                     n_chains=args.n_chains,
                     convergence=convergence,
                     tag=args.tag,
                     n_init=args.n_init,
-                    pod_rank=args.pod_rank,
                     skip_training_cost=args.skip_training_cost,
                     online_learning=online_learning,
-                    include_synced=args.include_synced,
                     max_subchain=args.max_subchain,
                 )
             except Exception:  # noqa: BLE001 - keep later seeds running after an isolated seed failure.
@@ -406,15 +365,11 @@ def main() -> None:
                 f"offline_extra_hf={tc['offline']['n_hf_extra']}, online_extra_hf={tc['online']['n_hf_extra']}, "
                 if tc is not None else ""
             )
-            synced_str = (
-                f", online_active_synced={row['posterior']['online_active_synced']['converged']}"
-                if args.include_synced else ""
-            )
             print(
                 f"[seed {i}] done in {dt:.1f}s  ({training_cost_str}"
                 f"posterior: hf_only={row['posterior']['hf_only']['converged']}, "
-                f"online_active={row['posterior']['online_active']['converged']}{synced_str}, "
-                f"adaptive_da={row['posterior']['adaptive_da']['converged']})"
+                f"adaptive_surrogate_mcmc={row['posterior']['adaptive_surrogate_mcmc']['converged']}, "
+                f"adaptive_stm={row['posterior']['adaptive_stm']['converged']})"
             )
 
     print(f"\nSaved metrics to {jsonl_path}, figures to {_figures_dir(args.tag)}, artifacts to {_artifacts_dir(args.tag)}")

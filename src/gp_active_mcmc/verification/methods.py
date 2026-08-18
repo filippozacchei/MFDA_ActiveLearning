@@ -1,4 +1,4 @@
-"""The four comparison methods: hf_only, pretrained, online_active, adaptive_da.
+"""The comparison methods: hf_only, pretrained, adaptive_surrogate_mcmc, adaptive_stm.
 
 Also defines `_ChunkState` (the per-replicate state `harness.py`'s round-based
 orchestration resumes one chunk at a time) since every `_init_*_state` factory below
@@ -48,9 +48,8 @@ from gp_active_mcmc.verification.sampling import make_proposal
 FloatArray = NDArray[np.float64]
 
 __all__ = [
-    "run_adaptive_da",
+    "run_adaptive_stm",
     "run_hf_only",
-    "run_online_active",
     "run_pretrained",
     "run_training_cost_comparison",
 ]
@@ -78,7 +77,7 @@ def _posterior(problem: Problem, forward: Callable[[FloatArray], FloatArray], *,
 
 
 def _da_posteriors(problem: Problem, model: ActiveMCMCModel) -> list[tda.Posterior]:
-    """The `[coarse, fine]` posterior pair `adaptive_da`'s two-level DA sampling uses."""
+    """The `[coarse, fine]` posterior pair `adaptive_stm`'s two-level DA sampling uses."""
     return [
         _posterior(problem, model.coarse, surrogate=True),
         _posterior(problem, model.fine, surrogate=False),
@@ -88,12 +87,13 @@ def _da_posteriors(problem: Problem, model: ActiveMCMCModel) -> list[tda.Posteri
 @dataclass
 class _ChunkState:
     """Resumable per-replicate state for one method's chunked, round-based MCMC run.
-    One shape for all of: HF-only (`model=None`), pretrained/online_active (single
-    posterior), and `adaptive_da`'s production phase (two-posterior DA, frozen model,
-    fixed `subsampling_rate`) -- only the objects inside differ, not the mechanics.
+    One shape for all of: HF-only (`model=None`), pretrained/adaptive_surrogate_mcmc
+    (single posterior), and `adaptive_stm`'s production phase (two-posterior DA, frozen
+    model, fixed `subsampling_rate`) -- only the objects inside differ, not the
+    mechanics.
     """
 
-    posterior: Any  # tda.Posterior, or list[tda.Posterior] for adaptive_da's two-level DA
+    posterior: Any  # tda.Posterior, or list[tda.Posterior] for adaptive_stm's two-level DA
     proposal: Any
     theta_current: FloatArray
     model: Any | None = None  # ActiveMCMCModel, or None for pure HF-only
@@ -107,10 +107,8 @@ class _ChunkState:
 # enforced by test_seed_offsets_are_pairwise_disjoint).
 _SEED_OFFSETS: dict[str, int] = {
     "hf_only": 100,
-    "pretrained": 200,
-    "online_active": 300,
-    "online_active_synced": 350,
-    "adaptive_da": 400,
+    "adaptive_surrogate_mcmc": 350,
+    "adaptive_stm": 400,
     "training_cost_offline": 500,
     "training_cost_online": 600,
 }
@@ -153,18 +151,21 @@ def run_pretrained(
     seed_X: FloatArray,
     seed_Y: FloatArray,
     gamma_threshold: float,
-    pod_rank: int,
     kernel: KernelName,
     iterations: int,
     seed: int,
     theta0: FloatArray | None = None,
+    rank_energy_threshold: float = 0.999,
+    rank_max: int | None = None,
 ) -> tuple[MCMCChain, int, PODGPSurrogate]:
-    """Trains a surrogate purely offline (`active_learning_offline_design`), freezes
-    it, then runs a single MH chain against it (no HF correction). Returns the chain,
-    the total HF evaluations spent training, and the frozen surrogate."""
+    """Trains a surrogate purely offline (`active_learning_offline_design`, POD rank
+    adaptively re-derived at every refit -- no fixed-rank option), freezes it, then
+    runs a single MH chain against it (no HF correction). Returns the chain, the total
+    HF evaluations spent training, and the frozen surrogate."""
     rng = set_seed(seed)
     surrogate = active_learning_offline_design(
-        problem, seed_X, seed_Y, gamma_threshold=gamma_threshold, pod_rank=pod_rank, kernel=kernel, rng=rng
+        problem, seed_X, seed_Y, gamma_threshold=gamma_threshold, kernel=kernel, rng=rng,
+        rank_energy_threshold=rank_energy_threshold, rank_max=rank_max,
     )
     n_hf_spent = surrogate.gp.n_train
 
@@ -187,51 +188,10 @@ def run_pretrained(
     return result.chain, n_hf_spent, surrogate
 
 
-# --- Method 3: Riccius-style online active learning (single posterior, no DA) ---
+# --- Method 3: adaptive delayed-acceptance MCMC with freeze-to-production ---
 
 
-def run_online_active(
-    problem: Problem,
-    *,
-    surrogate: PODGPSurrogate,
-    gamma_threshold: float,
-    iterations: int,
-    seed: int,
-    theta0: FloatArray | None = None,
-    online_learning: OnlineLearningConfig = DEFAULT_ONLINE_LEARNING,
-) -> tuple[MCMCChain, PODGPSurrogate]:
-    """Runs a single chain where the surrogate directly substitutes for the
-    likelihood and is refined online via an uncertainty threshold, with no
-    HF-correction step (Riccius et al. 2025, Algorithm 1). `surrogate` is deep-copied
-    internally, so the caller's copy is untouched."""
-    model = ActiveMCMCModel(
-        lf_model=_surrogate_for_online_learning(surrogate, online_learning),
-        hf_model=problem.hf_forward,
-        gamma_threshold=gamma_threshold,
-    )
-    posterior = _posterior(problem, model.coarse, surrogate=True)
-    proposal = make_proposal(problem)
-
-    rng = set_seed(seed)
-    if theta0 is None:
-        theta0 = np.asarray(problem.prior.rvs(random_state=rng), dtype=float)
-
-    result = sample_active_chain(
-        model=model,
-        posterior=posterior,
-        proposal=proposal,
-        iterations=int(iterations),
-        initial_parameters=theta0,
-        subsampling_rate=1,
-        chain_key="chain_0",
-    )
-    return result.chain, cast(PODGPSurrogate, model.lf_model)
-
-
-# --- Method 4: adaptive delayed-acceptance MCMC with freeze-to-production ---
-
-
-def run_adaptive_da(
+def run_adaptive_stm(
     problem: Problem,
     *,
     surrogate: PODGPSurrogate,
@@ -292,7 +252,7 @@ def run_adaptive_da(
     return result.chain, result.metadata, cast(PODGPSurrogate, model.lf_model)
 
 
-# --- Training-cost comparison: adaptive_da's online, MCMC-path-guided active
+# --- Training-cost comparison: adaptive_stm's online, MCMC-path-guided active
 # learning vs. pretrained's offline, global greedy-max-variance active learning --
 # how much HF budget each needs for a trustworthy surrogate. Training only, no
 # downstream MCMC: a DA-corrected posterior targets the truth regardless of how its
@@ -307,7 +267,6 @@ def run_training_cost_comparison(
     seed_Y: FloatArray,
     seed_surrogate: PODGPSurrogate,
     gamma_threshold: float,
-    pod_rank: int,
     kernel: KernelName,
     max_adapt_coarse_evals: int,
     seed_base: int,
@@ -315,7 +274,7 @@ def run_training_cost_comparison(
     max_subchain: int = 10_000,
 ) -> tuple[dict[str, Any], PODGPSurrogate]:
     """Offline greedy active learning (`active_learning_offline_design`) vs.
-    `adaptive_da`'s online adaptive phase (via `run_adaptive_da` with `n_coarse_evals`
+    `adaptive_stm`'s online adaptive phase (via `run_adaptive_stm` with `n_coarse_evals`
     capped at `max_adapt_coarse_evals`, so its production phase never runs), both from
     the same shared `seed_X`/`seed_Y` design.
 
@@ -331,14 +290,17 @@ def run_training_cost_comparison(
     n_init = int(seed_X.shape[0])
 
     t0 = time.time()
+    # Offline side reuses online_learning's rank-derivation tuning: there's one
+    # adaptive-rank policy in this package, not a separate one per method.
     offline_surrogate, offline_n_hf_total = _train_pretrained_surrogate(
-        problem, seed_X=seed_X, seed_Y=seed_Y, gamma_threshold=gamma_threshold, pod_rank=pod_rank,
-        kernel=kernel, seed=seed_base + _SEED_OFFSETS["training_cost_offline"],
+        problem, seed_X=seed_X, seed_Y=seed_Y, gamma_threshold=gamma_threshold, kernel=kernel,
+        seed=seed_base + _SEED_OFFSETS["training_cost_offline"],
+        rank_energy_threshold=online_learning.rank_energy_threshold, rank_max=online_learning.rank_max,
     )
     offline_wall_time = time.time() - t0
 
     t0 = time.time()
-    adapt_chain, adapt_meta, _adapt_surrogate = run_adaptive_da(
+    adapt_chain, adapt_meta, _adapt_surrogate = run_adaptive_stm(
         problem, surrogate=seed_surrogate, gamma_threshold=gamma_threshold,
         n_coarse_evals=max_adapt_coarse_evals, max_adapt_coarse_evals=max_adapt_coarse_evals,
         seed=seed_base + _SEED_OFFSETS["training_cost_online"], online_learning=online_learning,
@@ -397,44 +359,28 @@ def _train_pretrained_surrogate(
     seed_X: FloatArray,
     seed_Y: FloatArray,
     gamma_threshold: float,
-    pod_rank: int,
     kernel: KernelName,
     seed: int,
+    rank_energy_threshold: float = 0.999,
+    rank_max: int | None = None,
 ) -> tuple[PODGPSurrogate, int]:
     """Trains `pretrained`'s offline design once -- a fixed upfront cost shared by
     every replicate, not part of the monitored round loop. Returns the trained
     surrogate and the HF evaluations spent training it."""
     rng = set_seed(seed)
     surrogate = active_learning_offline_design(
-        problem, seed_X, seed_Y, gamma_threshold=gamma_threshold, pod_rank=pod_rank, kernel=kernel, rng=rng
+        problem, seed_X, seed_Y, gamma_threshold=gamma_threshold, kernel=kernel, rng=rng,
+        rank_energy_threshold=rank_energy_threshold, rank_max=rank_max,
     )
     n_hf_spent = surrogate.gp.n_train
     return surrogate, n_hf_spent
 
 
-def _init_pretrained_state_from_surrogate(
-    problem: Problem, *, surrogate: PODGPSurrogate, seed: int, theta0: FloatArray | None = None
-) -> _ChunkState:
-    """Chunk-ready state for `pretrained`'s frozen sampling phase, from a surrogate
-    shared across replicates (deep-copied so each replicate's `model.log` is
-    independent even though the weights are identical)."""
-    model = ActiveMCMCModel(
-        lf_model=copy.deepcopy(surrogate), hf_model=problem.hf_forward, gamma_threshold=0.0, frozen=True
-    )
-    posterior = _posterior(problem, model.coarse, surrogate=True)
-    proposal = make_proposal(problem)
-
-    rng = set_seed(seed)
-    if theta0 is None:
-        theta0 = np.asarray(problem.prior.rvs(random_state=rng), dtype=float)
-    return _ChunkState(posterior=posterior, proposal=proposal, theta_current=theta0, model=model)
-
-
-def _make_online_active_sync_hook(
+def _make_adaptive_surrogate_mcmc_sync_hook(
     n_seed: int,
 ) -> Any:
     """Builds a `run_until_rhat_converged` `post_round_hook` for
-    `online_active_synced`: pools every replicate's individually-collected HF points
+    `adaptive_surrogate_mcmc`: pools every replicate's individually-collected HF points
     (past the shared `n_seed`-sized offline design, deduplicated) into one set each
     round and refits every replicate's surrogate on it -- still no DA correction, so
     this isolates inter-replicate disagreement from the separate correctness problem
@@ -447,9 +393,10 @@ def _make_online_active_sync_hook(
     """
 
     def _history(s: PODGPSurrogate) -> tuple[FloatArray, FloatArray]:
-        # Every online_active surrogate reaching this hook was deep-copied from
-        # seed_surrogate (see _init_online_active_state), which build_initial_surrogate
-        # always seeds with non-None X_history/Y_history -- these are never None here.
+        # Every adaptive_surrogate_mcmc surrogate reaching this hook was deep-copied
+        # from seed_surrogate (see _init_adaptive_surrogate_mcmc_state), which
+        # build_initial_surrogate always seeds with non-None X_history/Y_history --
+        # these are never None here.
         assert s.X_history is not None and s.Y_history is not None
         return s.X_history, s.Y_history
 
@@ -483,7 +430,7 @@ def _make_online_active_sync_hook(
     return sync
 
 
-def _init_online_active_state(
+def _init_adaptive_surrogate_mcmc_state(
     problem: Problem,
     *,
     surrogate: PODGPSurrogate,
@@ -505,7 +452,7 @@ def _init_online_active_state(
     return _ChunkState(posterior=posterior, proposal=proposal, theta_current=theta0, model=model)
 
 
-def _init_adaptive_da_production_state(
+def _init_adaptive_stm_production_state(
     problem: Problem,
     *,
     surrogate: PODGPSurrogate,
@@ -516,7 +463,7 @@ def _init_adaptive_da_production_state(
     online_learning: OnlineLearningConfig = DEFAULT_ONLINE_LEARNING,
     max_subchain: int = 10_000,
 ) -> tuple[_ChunkState, dict[str, Any], MCMCChain]:
-    """Runs `adaptive_da`'s adaptive phase to its own `has_converged()` completion
+    """Runs `adaptive_stm`'s adaptive phase to its own `has_converged()` completion
     (unmonitored by cross-chain R-hat, since the target is non-stationary during
     adaptation), then freezes and returns a chunk-ready state for the same
     round-based, R-hat-monitored production loop the other methods use. `adapt_meta`
@@ -578,10 +525,10 @@ def _init_adaptive_da_production_state(
     return state, adapt_meta, adapt_result.chain
 
 
-def _init_adaptive_da_production_state_from_frozen(
+def _init_adaptive_stm_production_state_from_frozen(
     problem: Problem, *, frozen_model: ActiveMCMCModel, frozen_rate: int, theta0: FloatArray
 ) -> _ChunkState:
-    """Chunk-ready production state for `adaptive_da`, from a frozen model/rate
+    """Chunk-ready production state for `adaptive_stm`, from a frozen model/rate
     shared across replicates (deep-copied so each replicate's `model.log` is
     independent). `theta0` is typically the shared adaptive phase's last state."""
     model_copy = copy.deepcopy(frozen_model)

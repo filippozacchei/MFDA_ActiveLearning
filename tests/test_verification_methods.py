@@ -11,9 +11,8 @@ from scipy.stats import multivariate_normal
 from gp_active_mcmc.verification.design import build_initial_surrogate
 from gp_active_mcmc.verification.methods import (
     _SEED_OFFSETS,
-    run_adaptive_da,
+    run_adaptive_stm,
     run_hf_only,
-    run_online_active,
     run_pretrained,
     run_training_cost_comparison,
 )
@@ -75,7 +74,7 @@ def test_run_pretrained_returns_trained_surrogate_and_hf_count() -> None:
     seed_Y = np.asarray([problem.hf_forward(x) for x in seed_X], dtype=float)
 
     chain, n_hf_spent, surrogate = run_pretrained(
-        problem, seed_X=seed_X, seed_Y=seed_Y, gamma_threshold=1e6, pod_rank=2, kernel="rbf",
+        problem, seed_X=seed_X, seed_Y=seed_Y, gamma_threshold=1e6, kernel="rbf",
         iterations=10, seed=4,
     )
     assert n_hf_spent == 6  # gamma_threshold trivially satisfied -> no extra HF points
@@ -84,25 +83,12 @@ def test_run_pretrained_returns_trained_surrogate_and_hf_count() -> None:
 
 
 @_IGNORE_SUBSAMPLING_RATE_DEPRECATION
-def test_run_online_active_returns_updated_surrogate_copy() -> None:
-    problem = _make_problem()
-    rng = np.random.default_rng(5)
-    surrogate, _X, _Y = build_initial_surrogate(problem, rng, n_init=6, pod_rank=2, kernel="rbf")
-
-    chain, updated = run_online_active(
-        problem, surrogate=surrogate, gamma_threshold=1e6, iterations=15, seed=6,
-    )
-    assert chain.n_steps == 16
-    assert updated is not surrogate  # _surrogate_for_online_learning deep-copies
-
-
-@_IGNORE_SUBSAMPLING_RATE_DEPRECATION
-def test_run_adaptive_da_returns_chain_metadata_and_surrogate() -> None:
+def test_run_adaptive_stm_returns_chain_metadata_and_surrogate() -> None:
     problem = _make_problem()
     rng = np.random.default_rng(7)
-    surrogate, _X, _Y = build_initial_surrogate(problem, rng, n_init=6, pod_rank=2, kernel="rbf")
+    surrogate, _X, _Y = build_initial_surrogate(problem, rng, n_init=6, kernel="rbf")
 
-    chain, meta, updated = run_adaptive_da(
+    chain, meta, updated = run_adaptive_stm(
         problem, surrogate=surrogate, gamma_threshold=1e6, n_coarse_evals=30, max_adapt_coarse_evals=30, seed=8,
     )
     assert meta["phase"] in {"adapt_only", "adapt_then_production"}
@@ -121,11 +107,11 @@ def test_run_training_cost_comparison_return_type() -> None:
     rng = np.random.default_rng(9)
     seed_X = np.asarray([problem.prior.rvs(random_state=rng) for _ in range(6)], dtype=float)
     seed_Y = np.asarray([problem.hf_forward(x) for x in seed_X], dtype=float)
-    seed_surrogate, _X, _Y = build_initial_surrogate(problem, rng, n_init=6, pod_rank=2, kernel="rbf")
+    seed_surrogate, _X, _Y = build_initial_surrogate(problem, rng, n_init=6, kernel="rbf")
 
     result = run_training_cost_comparison(
         problem, seed_X=seed_X, seed_Y=seed_Y, seed_surrogate=seed_surrogate, gamma_threshold=1e6,
-        pod_rank=2, kernel="rbf", max_adapt_coarse_evals=20, seed_base=1000,
+        kernel="rbf", max_adapt_coarse_evals=20, seed_base=1000,
     )
     assert isinstance(result, tuple)
     assert len(result) == 2

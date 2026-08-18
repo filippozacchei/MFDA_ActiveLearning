@@ -193,31 +193,7 @@ def run_until_rhat_converged(
     verbose: bool = True,
     post_round_hook: Callable[[list[_ChunkState], list[int]], tuple[list[_ChunkState], list[int]]] | None = None,
 ) -> dict[str, Any]:
-    """Runs `len(init_fns)` independent replicate chains (each built by its own
-    zero-arg `init_fns` factory) in synchronized rounds, each round advancing every
-    chain by one `config.chunk_size`-coarse-eval chunk in parallel (`joblib`),
-    stopping once `find_burn_in_via_rhat` reports convergence across the accumulated
-    chains, `config.max_total_coarse_evals` is reached, or `max_hf_evals` (an
-    additional cap on `max(hf_evals_per_chain)`, for methods whose coarse-eval-to-HF
-    ratio isn't fixed) is reached -- whichever comes first.
-
-    `post_round_hook`, if given, is called with `(states, hf_evals_per_chain)` after
-    every round and before the convergence check; its return value replaces both going
-    forward. `config.burn_in_fraction`, if given, replaces the default ~50-candidate
-    burn-in search with a single fixed candidate re-evaluated each round
-    (``int(burn_in_fraction * current_chain_length)``), and `config.patience` then
-    requires that many consecutive *rounds* (not candidates) to pass.
-
-    Returns
-    -------
-    result
-        Dict with `chains`, `rounds_run`, `coarse_evals_per_chain` (true coarse-eval
-        cost, not `chain.n_steps` whenever `subsampling_rate > 1`),
-        `total_coarse_evals`, `hf_evals_per_chain`/`total_hf_evals`, `stop_reason`
-        (`"converged"`/`"max_coarse_evals"`/`"max_hf_evals"`), `final_states`, and the
-        usual `find_burn_in_via_rhat` fields (`burn_in`, `rhat`, `ess_bulk`,
-        `converged`). Raises `ValueError` if `init_fns` is empty or any positive-only
-        budget argument isn't positive.
+    """Runs `len(init_fns)` independent replicate chains.
     """
     _validate_round_run_inputs(
         init_fns,
