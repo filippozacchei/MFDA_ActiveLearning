@@ -1,0 +1,12 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(python3 -c ' *)",
+      "Bash(python3 -m py_compile examples/toy_problem/msd_methods.py)",
+      "Bash(top -l 1 -n 5 -o cpu)",
+      "Bash(vm_stat)",
+      "Bash(pkill -f \"jupyter-nbconvert.*msd_benchmark_test_run\")",
+      "Bash(kill 87578)"
+    ]
+  }
+}

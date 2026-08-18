@@ -124,6 +124,7 @@ module = [
   "tinyDA",
   "sklearn.*",
   "GPy",
+  "joblib",
   "dolfinx.*",
   "ufl.*",
   "petsc4py.*",

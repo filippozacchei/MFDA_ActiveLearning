@@ -1,10 +1,8 @@
-# examples/navier_stokes/utils/outlet.py
 from __future__ import annotations
 
 import numpy as np
 from dolfinx.geometry import bb_tree, compute_colliding_cells, compute_collisions_points
-
-from .ns_types import OutletProfile
+from ns_types import OutletProfile
 
 """Outlet sampling utilities (QoI extraction).
 

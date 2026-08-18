@@ -28,7 +28,7 @@ class PredictMeanVar(Protocol):
     model, or any wrapper that exposes the same interface.
     """
 
-    def predict(self, theta: ArrayLike) -> FloatArray:
+    def predict(self, theta: ArrayLike) -> tuple[FloatArray, FloatArray]:
         """Predict mean and marginal variance in observation space.
 
         Parameters

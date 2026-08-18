@@ -214,3 +214,12 @@ def test_podgp_update_increases_training_size() -> None:
     n_before = gp.n_train
     surr.update(X[0], Y[0])
     assert gp.n_train == n_before + 1
+
+
+def test_podgp_adaptive_rank_defaults_true() -> None:
+    # Regression test: adaptive rank re-derivation is the methodological default --
+    # a rank fixed at construction time is the opt-in exception, not the default.
+    X, Y = _make_dataset()
+    pod = POD(rank=5, randomized=False).fit(Y)
+    gp = MultiOutputGP(X, pod.transform(Y), kernel="matern52", ard=True, update_every=0, n_retrain_max=0)
+    assert PODGPSurrogate(pod=pod, gp=gp).adaptive_rank is True

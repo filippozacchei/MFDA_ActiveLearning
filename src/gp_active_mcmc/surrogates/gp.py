@@ -129,6 +129,18 @@ class SingleOutputGP:
         Set `update_every<=0` to disable re-optimisation.
     n_retrain_max
         Maximum number of hyperparameter re-optimisations triggered by updates.
+    max_iters
+        Passed through to every `GPy` `.optimize()` call. GPy's own default is 1000;
+        this is trained on noiseless data (the surrogate's targets are deterministic
+        forward-model outputs, not noisy observations) with a free `Gaussian_noise`
+        variance initialised near zero, which is a known GP pathology -- the
+        log-marginal-likelihood surface near that boundary can be very flat/
+        ill-conditioned, occasionally taking far longer per fit than the typical case
+        (observed: 15-30x some fits' wall-time, without a correspondingly larger
+        training set) while barely changing the fitted hyperparameters. Capping this
+        below GPy's default bounds that worst case; it should be a near-no-op on fits
+        that already converge well under the cap, which is the common case for these
+        low-dimensional (2 input) kernels.
 
     Notes
     -----
@@ -152,7 +164,8 @@ class SingleOutputGP:
         ard: bool = True,
         noise_variance: float = 1e-6,
         update_every: int = 10,
-        n_retrain_max: int = 20,
+        n_retrain_max: int = 1,
+        max_iters: int = 200,
     ) -> None:
         X = _as_2d_float(X_train, name="X_train")
         y = _as_2d_targets(y_train, name="y_train")
@@ -172,12 +185,25 @@ class SingleOutputGP:
 
         self._gp.Gaussian_noise.variance = float(noise_variance)
         self._gp.Gaussian_noise.unfix()
-        self._gp.optimize()
+        self._max_iters = int(max_iters)
+        self._gp.optimize(max_iters=self._max_iters)
 
         self._update_every = int(update_every)
         self._n_retrain_max = int(n_retrain_max)
         self._retrain_count = 0
         self._counter = 0
+
+        # Public, re-usable copies of the construction settings above (the private
+        # `_`-prefixed attributes are the ones this class's own logic reads; these
+        # exist so a caller that only has a fitted `SingleOutputGP`/`MultiOutputGP` in
+        # hand -- e.g. `PODGPSurrogate.refit_pod` -- can build a *new* one with
+        # identical settings, without having to separately remember/re-pass them).
+        self.kernel = kernel
+        self.ard = ard
+        self.noise_variance = float(noise_variance)
+        self.update_every = int(update_every)
+        self.n_retrain_max = int(n_retrain_max)
+        self.max_iters = int(max_iters)
 
     @property
     def n_train(self) -> int:
@@ -203,7 +229,7 @@ class SingleOutputGP:
         if self._retrain_count >= self._n_retrain_max:
             return
         if self._counter % self._update_every == 0:
-            self._gp.optimize()
+            self._gp.optimize(max_iters=self._max_iters)
             self._retrain_count += 1
 
     def predict(self, X: ArrayLike) -> tuple[FloatArray, FloatArray]:
@@ -305,8 +331,9 @@ class MultiOutputGP:
         Training inputs of shape ``(n_train, n_dim)``.
     Y_train
         Training targets of shape ``(n_train, n_out)`` (or ``(n_train,)`` for `n_out=1`).
-    kernel, ard, noise_variance, update_every, n_retrain_max
-        Passed to each `SingleOutputGP`.
+    kernel, ard, noise_variance, update_every, n_retrain_max, max_iters
+        Passed to each `SingleOutputGP` -- see its docstring, in particular for why
+        `max_iters` defaults well below GPy's own default.
 
     Notes
     -----
@@ -335,7 +362,8 @@ class MultiOutputGP:
         ard: bool = True,
         noise_variance: float = 1e-6,
         update_every: int = 10,
-        n_retrain_max: int = 20,
+        n_retrain_max: int = 0,
+        max_iters: int = 200,
     ) -> None:
         X = _as_2d_float(X_train, name="X_train")
         Y = _as_2d_targets(Y_train, name="Y_train")
@@ -352,14 +380,26 @@ class MultiOutputGP:
                 noise_variance=noise_variance,
                 update_every=update_every,
                 n_retrain_max=n_retrain_max,
+                max_iters=max_iters,
             )
             for j in range(self.n_out)
         ]
+
+        # See `SingleOutputGP`'s equivalent block: public, re-usable copies of the
+        # construction settings so a fitted `MultiOutputGP` can be used as a template
+        # for building a fresh one later (`PODGPSurrogate.refit_pod`).
+        self.kernel = kernel
+        self.ard = ard
+        self.noise_variance = float(noise_variance)
+        self.update_every = int(update_every)
+        self.n_retrain_max = int(n_retrain_max)
+        self.max_iters = int(max_iters)
 
     @property
     def n_train(self) -> int:
         """Number of training points stored (shared across outputs)."""
         return self._gps[0].n_train
+
 
     def predict(self, X: ArrayLike) -> tuple[FloatArray, FloatArray]:
         """Predict mean and marginal variance for all outputs.

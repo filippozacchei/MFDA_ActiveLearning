@@ -1,4 +1,3 @@
-# examples/navier_stokes/utils/mf_ipcs.py
 from __future__ import annotations
 
 from dataclasses import dataclass
@@ -6,6 +5,7 @@ from dataclasses import dataclass
 import numpy as np
 import tqdm.autonotebook
 from basix.ufl import element
+from bfs_mesh import build_bfs_mesh
 from dolfinx.fem import (
     Constant,
     Function,
@@ -22,6 +22,8 @@ from dolfinx.fem.petsc import (
     set_bc,
 )
 from mpi4py import MPI
+from ns_types import BFSGeometry, BoundaryMarkers, MeshOptions, OutletProfile
+from outlet import sample_outlet_u_x
 from petsc4py import PETSc
 from ufl import (
     TestFunction,
@@ -34,10 +36,6 @@ from ufl import (
     lhs,
     nabla_grad,
 )
-
-from .bfs_mesh import build_bfs_mesh
-from .ns_types import BFSGeometry, BoundaryMarkers, MeshOptions, OutletProfile
-from .outlet import sample_outlet_u_x
 
 """Navier-Stokes solver for the backward-facing step (BFS).
 
@@ -311,7 +309,7 @@ def solve_ipcs_bfs(
         apply_lifting(b1, [a1], [bcu])
         b1.ghostUpdate(addv=PETSc.InsertMode.ADD_VALUES, mode=PETSc.ScatterMode.REVERSE)
         set_bc(b1, bcu)
-        solver1.solve(b1, u_s.x.petsc_vec)
+        solver1.solve(b1, u_s.vector)
         u_s.x.scatter_forward()
 
         # --- Step 2: solve for pressure increment phi ---------------------
@@ -321,11 +319,11 @@ def solve_ipcs_bfs(
         apply_lifting(b2, [a2], [bcp])
         b2.ghostUpdate(addv=PETSc.InsertMode.ADD_VALUES, mode=PETSc.ScatterMode.REVERSE)
         set_bc(b2, bcp)
-        solver2.solve(b2, phi.x.petsc_vec)
+        solver2.solve(b2, phi.vector)
         phi.x.scatter_forward()
 
         # Update pressure: p <- p + phi
-        p_.x.petsc_vec.axpy(1.0, phi.x.petsc_vec)
+        p_.vector.axpy(1.0, phi.vector)
         p_.x.scatter_forward()
 
         # --- Step 3: corrected velocity u_ --------------------------------
@@ -333,7 +331,7 @@ def solve_ipcs_bfs(
             loc.set(0.0)
         assemble_vector(b3, L3)
         b3.ghostUpdate(addv=PETSc.InsertMode.ADD_VALUES, mode=PETSc.ScatterMode.REVERSE)
-        solver3.solve(b3, u_.x.petsc_vec)
+        solver3.solve(b3, u_.vector)
         u_.x.scatter_forward()
 
         if store_velocity_frames and (step % frame_stride == 0):
@@ -343,9 +341,9 @@ def solve_ipcs_bfs(
 
         # Rotate velocity history: u_nm1 <- u_n <- u_
         with (
-            u_.x.petsc_vec.localForm() as lu,
-            u_n.x.petsc_vec.localForm() as lun,
-            u_nm1.x.petsc_vec.localForm() as lunm1,
+            u_.vector.localForm() as lu,
+            u_n.vector.localForm() as lun,
+            u_nm1.vector.localForm() as lunm1,
         ):
             lun.copy(lunm1)
             lu.copy(lun)

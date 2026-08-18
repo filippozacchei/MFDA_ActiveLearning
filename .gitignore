@@ -2,6 +2,10 @@
 *.pyc
 *.pyo
 *.pyd
+*.png
+*.pdf
+*.joblib
+.matplotlib/
 .build/
 dist/
 *.egg-info/*

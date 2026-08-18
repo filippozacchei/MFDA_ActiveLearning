@@ -1,4 +1,3 @@
-# examples/navier_stokes/utils/outlet.py
 from __future__ import annotations
 
 import numpy as np
