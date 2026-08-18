@@ -1,4 +1,3 @@
-# examples/navier_stokes/utils/bfs_mesh.py
 from __future__ import annotations
 
 from dataclasses import dataclass
@@ -7,8 +6,7 @@ import gmsh
 import numpy as np
 from dolfinx.io import gmshio
 from mpi4py import MPI
-
-from .ns_types import BFSGeometry, BoundaryMarkers, MeshOptions
+from ns_types import BFSGeometry, BoundaryMarkers, MeshOptions
 
 """Mesh generation for the backward-facing step (BFS) benchmark.
 

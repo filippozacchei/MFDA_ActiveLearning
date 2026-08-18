@@ -1,4 +1,3 @@
-# examples/navier_stokes/utils/mf_ipcs.py
 from __future__ import annotations
 
 from dataclasses import dataclass
@@ -6,6 +5,7 @@ from dataclasses import dataclass
 import numpy as np
 import tqdm.autonotebook
 from basix.ufl import element
+from bfs_mesh import build_bfs_mesh
 from dolfinx.fem import (
     Constant,
     Function,
@@ -22,6 +22,8 @@ from dolfinx.fem.petsc import (
     set_bc,
 )
 from mpi4py import MPI
+from ns_types import BFSGeometry, BoundaryMarkers, MeshOptions, OutletProfile
+from outlet import sample_outlet_u_x
 from petsc4py import PETSc
 from ufl import (
     TestFunction,
@@ -34,10 +36,6 @@ from ufl import (
     lhs,
     nabla_grad,
 )
-
-from .bfs_mesh import build_bfs_mesh
-from .ns_types import BFSGeometry, BoundaryMarkers, MeshOptions, OutletProfile
-from .outlet import sample_outlet_u_x
 
 """Navier-Stokes solver for the backward-facing step (BFS).
 

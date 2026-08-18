@@ -242,22 +242,11 @@ def run_adaptive_stm(
         max_adapt_coarse_evals=max_adapt_coarse_evals,
         initial_parameters=theta0,
         chain_key="chain_coarse_0",  # adaptive phase: diagnostic only, discarded as burn-in
-        production_chain_key="chain_fine_0",  # production phase: the actual HF-corrected posterior
-        # Also pull the production phase's intra-block low-fidelity trajectory, purely
-        # for trace plots -- `chain_fine_0` alone (the actual posterior) only exposes
-        # one state per DA block, hiding every cheap coarse step in between.
+        production_chain_key="chain_fine_0",  # production phase: the actual HF-corrected poste
         production_diagnostic_chain_key="chain_coarse_0",
         config=ChunkedMCMCConfig(chain_key="chain_coarse_0", chunk_size=100),
     )
     return result.chain, result.metadata, cast(PODGPSurrogate, model.lf_model)
-
-
-# --- Training-cost comparison: adaptive_stm's online, MCMC-path-guided active
-# learning vs. pretrained's offline, global greedy-max-variance active learning --
-# how much HF budget each needs for a trustworthy surrogate. Training only, no
-# downstream MCMC: a DA-corrected posterior targets the truth regardless of how its
-# surrogate was trained, so a posterior-accuracy comparison wouldn't say anything
-# about training strategy specifically. ---
 
 
 def run_training_cost_comparison(
@@ -313,14 +302,6 @@ def run_training_cost_comparison(
         else np.zeros(adapt_chain.n_steps, dtype=bool)
     )
     subchain_hist = adapt_chain.extras.subchain_length
-    # adapt_meta["adapt_metadata"]["coarse_evals_used"] is present in both of
-    # sample_adaptive_then_frozen_chain's metadata shapes ("adapt_only" and
-    # "adapt_then_production") and is always the adaptive phase's own coarse-eval count
-    # (confirmed against gp_active_mcmc/inference/sampling.py: the top-level
-    # "adapt_coarse_evals_used" key, on the branch where it exists at all, is set to
-    # exactly this same value) -- the quantity this comparison wants, since it measures
-    # training cost for the adaptive phase specifically (see the module-level comment
-    # above on why no production phase runs on either side of this comparison).
     coarse_evals_used = adapt_meta["adapt_metadata"]["coarse_evals_used"]
     metrics: dict[str, Any] = {
         "n_init": n_init,
@@ -393,10 +374,6 @@ def _make_adaptive_surrogate_mcmc_sync_hook(
     """
 
     def _history(s: PODGPSurrogate) -> tuple[FloatArray, FloatArray]:
-        # Every adaptive_surrogate_mcmc surrogate reaching this hook was deep-copied
-        # from seed_surrogate (see _init_adaptive_surrogate_mcmc_state), which
-        # build_initial_surrogate always seeds with non-None X_history/Y_history --
-        # these are never None here.
         assert s.X_history is not None and s.Y_history is not None
         return s.X_history, s.Y_history
 
@@ -463,13 +440,8 @@ def _init_adaptive_stm_production_state(
     online_learning: OnlineLearningConfig = DEFAULT_ONLINE_LEARNING,
     max_subchain: int = 10_000,
 ) -> tuple[_ChunkState, dict[str, Any], MCMCChain]:
-    """Runs `adaptive_stm`'s adaptive phase to its own `has_converged()` completion
-    (unmonitored by cross-chain R-hat, since the target is non-stationary during
-    adaptation), then freezes and returns a chunk-ready state for the same
-    round-based, R-hat-monitored production loop the other methods use. `adapt_meta`
-    carries `n_adapt_samples`/`adapt_coarse_evals_used` for cost accounting;
-    `adapt_chain` lets callers prepend it to the production trace for a
-    full-resolution plot."""
+    """Runs `adaptive_stm`'s adaptive phase to its own `has_converged()` completion.
+    """
     state_hook = AdaptiveSubchainState(subchain_length=10)
     control = AdaptiveSubchainControl(
         update_every=5,

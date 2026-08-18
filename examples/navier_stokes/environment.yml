@@ -1,0 +1,30 @@
+# Conda environment for examples/navier_stokes/ only.
+#
+# dolfinx (FEniCSx) doesn't reliably pip-install -- no generic wheels for the full
+# stack (dolfinx + mpi4py + petsc4py + basix + ufl), especially on macOS. conda-forge
+# is the supported distribution channel, so this example gets its own environment
+# rather than trying to add it to the repo's main .venv (which everything else --
+# toy_problem, tests, docs -- uses via plain pip).
+#
+# Setup:
+#   conda env create -f examples/navier_stokes/environment.yml
+#   conda activate gp-mcmc-ns
+#   pip install -e .            # from the repo root: installs gp_active_mcmc itself
+#
+# Then run examples/navier_stokes/*.py with this environment active (or point your
+# IDE's Python interpreter at it just for files under examples/navier_stokes/).
+name: gp-mcmc-ns
+channels:
+  - conda-forge
+dependencies:
+  - python=3.11
+  - fenics-dolfinx
+  - pyvista
+  - gmsh
+  - matplotlib
+  - pandas
+  - tqdm
+  - joblib
+  - pillow
+  - ipykernel
+  - pip
