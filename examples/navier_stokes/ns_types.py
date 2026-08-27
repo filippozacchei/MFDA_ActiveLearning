@@ -103,13 +103,13 @@ class MeshOptions:
     can interpret them according to gmsh/dolfinx conventions.
     """
 
-    lc_min: float = 1e-3
-    lc_max: float = 1e-2
+    lc_min: float = 2.5e-2 #1e-3
+    lc_max: float = 2.5e-2 #1e-2
     gdim: int = 2
     order: int = 1
     recombine: bool = False
     algorithm: int = 8
-    optimize: str | None = "Netgen"
+    optimize: str | None = None
 
     def __post_init__(self) -> None:
         if self.lc_min <= 0 or self.lc_max <= 0:

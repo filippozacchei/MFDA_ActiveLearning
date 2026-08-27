@@ -32,8 +32,8 @@ from scipy.stats import multivariate_normal
 from sklearn.model_selection import train_test_split
 
 # Local Navier-Stokes utilities (example-specific; not part of gp_active_mcmc)
-from examples.navier_stokes.resample import resample_profile
-from examples.navier_stokes.solver_hf import forward_model as hf_solver
+from resample import resample_profile
+from solver_hf import forward_model as hf_solver
 from gp_active_mcmc.diagnostics.pod import plot_pod_energy
 from gp_active_mcmc.diagnostics.surrogate import plot_prediction_at_theta
 from gp_active_mcmc.surrogates import POD, MultiOutputGP, PODGPSurrogate
@@ -51,7 +51,7 @@ SEED = 7
 rng = set_seed(SEED)
 
 # QoI
-T = 100  # outlet profile length after resampling
+T = 150  # outlet profile length after resampling
 
 # Dataset size (tune based on HF cost)
 N_SNAPSHOTS = 50
@@ -59,7 +59,7 @@ TEST_SIZE = 0.5
 RANDOM_STATE = 0
 
 # POD/GP
-POD_RANK = 5
+POD_RANK = 2
 GP_KERNEL = "matern52"
 USE_ARD = True
 N_RETRAIN_MAX = 0
@@ -73,7 +73,7 @@ U_IN_DEFAULT = 1.5
 
 # Input bounds (support of the sampling distribution)
 H1_MIN, H1_MAX = 0.05, 0.15
-U_MIN, U_MAX = 0.25, 1.25
+U_MIN, U_MAX = 0.5, 1.5
 L_MIN, L_MAX = 0.3, 0.5
 
 # %% [markdown]

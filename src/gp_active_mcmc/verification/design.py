@@ -167,7 +167,11 @@ def active_learning_offline_design(
     pod = POD(rank=pod_rank).fit(seed_Y)
     A = pod.transform(seed_Y)
     gp = MultiOutputGP(X_train=seed_X, Y_train=A, kernel=kernel, ard=True, noise_variance=1e-6)
-    surrogate = PODGPSurrogate(pod=pod, gp=gp)
+    # X_history/Y_history seeded and kept in sync below (mirroring build_initial_surrogate)
+    # purely as a record of every point this offline design actually acquired -- nothing
+    # here reads it back the way refit_pod() does; it's for callers wanting to know, e.g.,
+    # where in parameter space this design explored, without re-deriving it from the GP.
+    surrogate = PODGPSurrogate(pod=pod, gp=gp, X_history=seed_X.copy(), Y_history=seed_Y.copy())
 
     n_current = seed_X.shape[0]
     while n_current < max_total_budget:
@@ -198,6 +202,6 @@ def active_learning_offline_design(
         pod = POD(rank=pod_rank).fit(Y_final)
         A_final = pod.transform(Y_final)
         gp = MultiOutputGP(X_train=X_final, Y_train=A_final, kernel=kernel, ard=True, noise_variance=1e-6)
-        surrogate = PODGPSurrogate(pod=pod, gp=gp)
+        surrogate = PODGPSurrogate(pod=pod, gp=gp, X_history=X_final.copy(), Y_history=Y_final.copy())
 
     return surrogate

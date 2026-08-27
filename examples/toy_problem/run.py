@@ -79,6 +79,19 @@ def _jsonl_path(tag: str) -> Path:
     return RESULTS_DIR / f"sweep_convergence_driven{suffix}.jsonl"
 
 
+def _surrogate_stats(surrogates: list[Any]) -> dict[str, list[int]]:
+    """POD rank and refit count for each of `surrogates`' replicates, after this
+    seed's runs -- `pod_rank` is `surrogate.pod.rank` post-refit (`refit_pod` always
+    replaces `.pod` wholesale, so this is never stale), `pod_refit_count` is
+    `surrogate._pod_refit_count` (successful, non-no-op `refit_pod()` calls only;
+    stops incrementing once `pod_refit_max` is spent). One list entry per replicate,
+    not a single number, since replicates can diverge once unsynced."""
+    return {
+        "pod_rank": [int(s.pod.rank) for s in surrogates],
+        "pod_refit_count": [int(s._pod_refit_count) for s in surrogates],
+    }
+
+
 def _save_figures(
     problem: Any,
     *,
@@ -220,6 +233,12 @@ def run_one_seed(
         "burn_in_fraction": convergence.burn_in_fraction,
         "training_cost": training_cost,
         "posterior": posterior,
+        "surrogate_stats": {
+            "seed_pod_rank": int(seed_surrogate.pod.rank),
+            "pretrained_pod_rank": int(offline_surrogate.pod.rank) if offline_surrogate is not None else None,
+            "adaptive_surrogate_mcmc": _surrogate_stats(surrogates_by_method["adaptive_surrogate_mcmc"]),
+            "adaptive_stm": _surrogate_stats(surrogates_by_method["adaptive_stm"]),
+        },
     }
 
     _save_artifact(

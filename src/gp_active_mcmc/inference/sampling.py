@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import copy
+import warnings
 from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Any
@@ -14,6 +15,23 @@ from gp_active_mcmc.utils.mcmc import extract_samples
 
 FloatArray = NDArray[np.float64]
 IntArray = NDArray[np.int_]
+
+
+def _tda_sample(**kwargs: Any) -> Any:
+    """Thin wrapper around `tda.sample` that silences one specific, spurious warning:
+    newer `tinyDA` releases deprecate the `subsampling_rate` kwarg in favour of
+    `subchain_length`, but this package's whole public API (`subsampling_rate` on
+    every `sample_*` function here, `_ChunkState.subsampling_rate`, ...) is built
+    around the `subsampling_rate` name deliberately and consistently -- there is no
+    caller-visible bug this warning could ever be pointing at, only a naming
+    preference in a dependency this package hasn't (yet) chased. Scoped to just this
+    one call (not a global `warnings.filterwarnings`) so it can't mask an unrelated
+    warning anywhere else."""
+    with warnings.catch_warnings():
+        warnings.filterwarnings(
+            "ignore", message=r".*subsampling_rate has been deprecated.*", category=UserWarning,
+        )
+        return tda.sample(**kwargs)
 
 
 @dataclass(frozen=True, slots=True)
@@ -254,7 +272,7 @@ def sample_active_chain(
     if subsampling_rate <= 0:
         raise ValueError("subsampling_rate must be positive.")
 
-    chain_obj = tda.sample(
+    chain_obj = _tda_sample(
         posteriors=posterior,
         proposal=copy.deepcopy(proposal),
         iterations=int(iterations),
@@ -432,7 +450,7 @@ def sample_adaptive_active_chain(
             iterations = 1
             subsampling_rate = coarse_budget
 
-        chain_obj = tda.sample(
+        chain_obj = _tda_sample(
             posteriors=posterior,
             proposal=proposal_work,
             iterations=int(iterations),

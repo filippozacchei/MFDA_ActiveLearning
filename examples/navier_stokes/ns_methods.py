@@ -41,9 +41,11 @@ from pathlib import Path
 from typing import Any
 
 import numpy as np
-from numpy.typing import NDArray
+from numpy.typing import ArrayLike, NDArray
 from resample import resample_profile
-from scipy.stats import multivariate_normal
+from scipy.stats import (
+    multivariate_normal,  # noqa: F401 - kept for the commented-out Gaussian toggle in make_prior
+)
 from solver_hf import forward_model as hf_solver
 
 from gp_active_mcmc.surrogates.gp import KernelName
@@ -71,6 +73,7 @@ from gp_active_mcmc.verification import (
     run_adaptive_stm,
     run_convergence_driven_comparison,
     run_hf_only,
+    run_hf_only_reference,
     run_pretrained,
     run_training_cost_comparison,
     run_until_rhat_converged,
@@ -117,6 +120,7 @@ __all__ = [
     "run_adaptive_stm",
     "run_convergence_driven_comparison",
     "run_hf_only",
+    "run_hf_only_reference",
     "run_pretrained",
     "run_training_cost_comparison",
     "run_until_rhat_converged",
@@ -149,15 +153,15 @@ L_UP = 0.10
 # explicit arguments rather than defaulting to any problem's numbers). Illustrative,
 # not tuned by a real sweep -- see module docstring.
 # ---------------------------------------------------------------------------
-T = 100  # outlet-profile length after resample_profile
+T = 150  # outlet-profile length after resample_profile
 KERNEL: KernelName = "matern52"
-GAMMA_THRESHOLD = 0.001  # 0.1 * the default sigma_obs below, matching MSD's convention
-MAX_ADAPT_COARSE_EVALS = 150
-MAX_SUBCHAIN = 20
-N_INIT = 15
-POD_REFIT_EVERY = 15
+GAMMA_THRESHOLD = 0.01  # 0.1 * the default sigma_obs below, matching MSD's convention
+MAX_ADAPT_COARSE_EVALS = 50000
+MAX_SUBCHAIN = 2000
+N_INIT = 100
+POD_REFIT_EVERY = 25
 POD_REFIT_MAX: int | None = None
-RANK_ENERGY_THRESHOLD = 0.999
+RANK_ENERGY_THRESHOLD = 0.99
 RANK_MAX: int | None = None
 
 # ---------------------------------------------------------------------------
@@ -178,6 +182,48 @@ class Problem:
     hf_forward: Any
     param_names: tuple[str, ...] = PARAM_NAMES
 
+class IndependentUniformPrior:
+    """Independent uniform prior over a bounded box.
+
+    Matches the subset of the scipy.stats frozen-distribution interface used
+    elsewhere in this codebase (`rvs`, `pdf`, `logpdf`, plus `mean`/`cov` for scaling
+    the MCMC proposal covariance), so it is a drop-in replacement for
+    `scipy.stats.multivariate_normal` wherever `prior` is used.
+    """
+
+    def __init__(self, low: ArrayLike, high: ArrayLike):
+        self.low = np.asarray(low, dtype=float)
+        self.high = np.asarray(high, dtype=float)
+        if self.low.shape != self.high.shape or self.low.ndim != 1:
+            raise ValueError("low and high must be 1D arrays of the same shape.")
+        if np.any(self.high <= self.low):
+            raise ValueError("high must be strictly greater than low in every dimension.")
+        self.dim = int(self.low.shape[0])
+        self._log_density = float(-np.sum(np.log(self.high - self.low)))
+
+    @property
+    def mean(self) -> np.ndarray:
+        return 0.5 * (self.low + self.high)
+
+    @property
+    def cov(self) -> np.ndarray:
+        var = (self.high - self.low) ** 2 / 12.0
+        return np.diag(var)
+
+    def rvs(self, size: int | None = None, random_state: np.random.Generator | None = None) -> np.ndarray:
+        rng = random_state if isinstance(random_state, np.random.Generator) else np.random.default_rng(random_state)
+        if size is None:
+            return rng.uniform(self.low, self.high)
+        return rng.uniform(self.low, self.high, size=(size, self.dim))
+
+    def logpdf(self, x: ArrayLike) -> float:
+        x = np.asarray(x, dtype=float)
+        if np.any(x < self.low) or np.any(x > self.high):
+            return float("-inf")
+        return self._log_density
+
+    def pdf(self, x: ArrayLike) -> float:
+        return float(np.exp(self.logpdf(x)))
 
 def make_prior() -> Any:
     """Gaussian prior over `theta = [h1, U_in, L_down]`, centered on the bounds'
@@ -185,8 +231,9 @@ def make_prior() -> Any:
     informative, not enforced (unlike MSD's `IndependentUniformPrior`): draws outside
     `[H1_MIN, H1_MAX]` etc. are possible but unlikely.
     """
+    # return IndependentUniformPrior(low=[H1_MIN, U_MIN, L_MIN], high=[H1_MAX, U_MAX, L_MAX])
     mean = np.array([0.5 * (H1_MIN + H1_MAX), 0.5 * (U_MIN + U_MAX), 0.5 * (L_MIN + L_MAX)])
-    sigma = np.array([0.25 * (H1_MAX - H1_MIN), 0.25 * (U_MAX - U_MIN), 0.25 * (L_MAX - L_MIN)])
+    sigma = np.array([0.125 * (H1_MAX - H1_MIN), 0.125 * (U_MAX - U_MIN), 0.125 * (L_MAX - L_MIN)])
     return multivariate_normal(mean=mean, cov=np.diag(sigma**2))
 
 
@@ -194,19 +241,32 @@ def make_forward_model(*, T: int) -> Any:
     """Wraps `solver_hf.forward_model` (fixed `h2`/`L_up`) into the `theta -> y`
     callable `gp_active_mcmc.verification.Problem.hf_forward` expects: resamples the
     solver's raw `(y, u_x)` outlet profile to a fixed-length vector via
-    `resample_profile`."""
+    `resample_profile`.
+
+    Catches `ValueError` from `hf_solver`'s own physical-validity checks (`h1 < h2`,
+    `L_up`/`L_down > 0`, `U_in > 0`) and returns a very poor but finite profile instead
+    of propagating it. This matters because `tinyDA.Posterior.create_link` always calls
+    the model before ever looking at the prior density -- even a hard-bounded prior
+    (`IndependentUniformPrior`) can't stop a random-walk MH proposal from landing
+    outside the physically valid region, so without this the whole chain crashes on
+    the first such proposal instead of the MH acceptance ratio just rejecting it, the
+    same problem MSD's `msd_forward` already handles by clamping its own inputs.
+    """
 
     def f(theta: FloatArray) -> FloatArray:
         th = np.asarray(theta, dtype=float).ravel()
         if th.shape[0] != 3:
             raise ValueError("Expected theta = [h1, U_in, L_down].")
-        y, u = hf_solver(float(th[0]), U_in=float(th[1]), h2=H2, L_up=L_UP, L_down=float(th[2]))
+        try:
+            y, u = hf_solver(float(th[0]), U_in=float(th[1]), h2=H2, L_up=L_UP, L_down=float(th[2]))
+        except ValueError:
+            return np.full(T, 1e6)
         return resample_profile(y, u, T=T)
 
     return f
 
 
-def build_problem(*, problem_seed: int, sigma_obs: float = 0.01) -> Problem:
+def build_problem(*, problem_seed: int, sigma_obs: float = 0.1) -> Problem:
     rng = set_seed(problem_seed)
     prior = make_prior()
     hf_forward = make_forward_model(T=T)

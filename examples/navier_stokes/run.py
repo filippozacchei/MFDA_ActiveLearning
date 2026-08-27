@@ -54,6 +54,7 @@ from ns_methods import (
     build_problem,
     prepare_trace_data,
     run_convergence_driven_comparison,
+    run_hf_only_reference,
     run_training_cost_comparison,
 )
 from ns_plots import plot_posterior_scatter, plot_surrogate_comparison, plot_traces
@@ -92,6 +93,56 @@ def _jsonl_path(tag: str) -> Path:
     return RESULTS_DIR / f"sweep_convergence_driven{suffix}.jsonl"
 
 
+def _hf_only_cache_path(problem_seed: int, tag: str) -> Path:
+    return RESULTS_DIR / "hf_only_cache" / (tag or "default") / f"seed_{problem_seed}.joblib"
+
+
+def _hf_only_cache_key(*, n_chains: int, sigma_obs: float, convergence: ConvergenceConfig) -> Any:
+    """Everything `run_hf_only_reference`'s result actually depends on (see its own
+    docstring) -- a cache is only reused when this matches exactly."""
+    return (n_chains, sigma_obs, convergence)
+
+
+def _load_cached_hf_only(
+    problem_seed: int, *, tag: str, n_chains: int, sigma_obs: float, convergence: ConvergenceConfig,
+) -> tuple[dict[str, Any], list[Any]] | None:
+    """A previously-cached `hf_only` reference for this seed, if the cache exists and
+    was computed under the exact same n_chains/sigma_obs/convergence -- `hf_only` is by
+    far the most expensive part of a run here (every step a real, uncached FEM solve,
+    no surrogate at all) and its result depends on nothing else in the comparison, so
+    it's safe to reuse across repeat runs of the same seed while iterating on/debugging
+    the other methods. Returns None (recompute) on a missing, corrupt, or
+    config-mismatched cache file -- never raises."""
+    path = _hf_only_cache_path(problem_seed, tag)
+    if not path.exists():
+        return None
+    try:
+        cached = joblib.load(path)
+    except Exception:  # noqa: BLE001 - a corrupt cache file should never block a run
+        return None
+    if cached.get("key") != _hf_only_cache_key(n_chains=n_chains, sigma_obs=sigma_obs, convergence=convergence):
+        return None
+    return cached["hf_run"], cached["hf_chains"]
+
+
+def _save_hf_only_cache(
+    problem_seed: int, *, tag: str, n_chains: int, sigma_obs: float, convergence: ConvergenceConfig,
+    hf_run: dict[str, Any], hf_chains: list[Any],
+) -> None:
+    path = _hf_only_cache_path(problem_seed, tag)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    try:
+        joblib.dump(
+            {
+                "key": _hf_only_cache_key(n_chains=n_chains, sigma_obs=sigma_obs, convergence=convergence),
+                "hf_run": hf_run, "hf_chains": hf_chains,
+            },
+            path, compress=3,
+        )
+    except Exception:  # noqa: BLE001 - a caching failure should never block the actual run
+        print(f"[seed {problem_seed}] WARNING: failed to cache hf_only:\n{traceback.format_exc()}")
+
+
 def _save_figures(
     problem: Any,
     *,
@@ -109,7 +160,7 @@ def _save_figures(
         "adaptive_surrogate_mcmc": surrogates_by_method["adaptive_surrogate_mcmc"][0],
         "adaptive_stm": surrogates_by_method["adaptive_stm"][0],
     }
-    surrogate_methods = ("adaptive_surrogate_mcmc", "adaptive_stm")
+    surrogate_methods =  ("adaptive_surrogate_mcmc", "adaptive_stm")
     if offline_surrogate is not None:
         surrogates_for_plot["pretrained"] = offline_surrogate
         surrogate_methods = ("pretrained", *surrogate_methods)
@@ -192,6 +243,26 @@ def run_one_seed(
     )
     seed_base = problem_seed * SEED_STRIDE
 
+    # hf_only is by far the most expensive part of this run (every step a real,
+    # uncached FEM solve) and depends on nothing computed above -- reuse a cached
+    # result for this exact (n_chains, sigma_obs, convergence) if one exists, and cache
+    # a freshly-computed one immediately, before anything downstream gets a chance to
+    # fail and take the whole seed down with it.
+    cached_hf_only = _load_cached_hf_only(
+        problem_seed, tag=tag, n_chains=n_chains, sigma_obs=sigma_obs, convergence=convergence,
+    )
+    if cached_hf_only is not None:
+        print(f"[seed {problem_seed}] hf_only: reusing cached reference ({n_chains} chains)")
+        hf_only_reference = cached_hf_only
+    else:
+        hf_only_reference = run_hf_only_reference(
+            problem, n_chains=n_chains, convergence=convergence, seed_base=seed_base,
+        )
+        _save_hf_only_cache(
+            problem_seed, tag=tag, n_chains=n_chains, sigma_obs=sigma_obs, convergence=convergence,
+            hf_run=hf_only_reference[0], hf_chains=hf_only_reference[1],
+        )
+
     if skip_training_cost:
         training_cost, offline_surrogate = None, None
     else:
@@ -210,6 +281,7 @@ def run_one_seed(
         adaptive_stm_adapt_coarse_evals=adaptive_stm_adapt_coarse_evals,
         convergence=convergence, seed_base=seed_base,
         online_learning=online_learning, max_subchain=max_subchain,
+        methods=("adaptive_surrogate_mcmc", "adaptive_stm"), hf_only_reference=hf_only_reference,
     )
 
     _save_figures(
@@ -279,7 +351,7 @@ def _build_parser() -> argparse.ArgumentParser:
     )
 
     problem = parser.add_argument_group("problem / methods")
-    problem.add_argument("--sigma-obs", type=float, default=0.01, help="Observation-noise standard deviation.")
+    problem.add_argument("--sigma-obs", type=float, default=0.1, help="Observation-noise standard deviation.")
     problem.add_argument(
         "--gamma-threshold", type=float, default=GAMMA_THRESHOLD, help="Surrogate-trust threshold."
     )
@@ -308,7 +380,7 @@ def _build_parser() -> argparse.ArgumentParser:
         "--chunk-size", type=int, default=50, help="Coarse evals advanced per round before re-checking convergence."
     )
     convergence.add_argument(
-        "--max-total-coarse-evals", type=int, default=2_000, help="Safety cap on coarse-eval cost per method."
+        "--max-total-coarse-evals", type=int, default=200_000, help="Safety cap on coarse-eval cost per method."
     )
     convergence.add_argument("--rhat-threshold", type=float, default=1.01, help="R-hat convergence threshold.")
     convergence.add_argument("--min-ess", type=float, default=400.0, help="Minimum bulk-ESS to declare convergence.")

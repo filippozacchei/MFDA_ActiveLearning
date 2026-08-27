@@ -1,9 +1,11 @@
 from __future__ import annotations
 
 from collections.abc import Callable
+from typing import Any
 
 import numpy as np
 from numpy.typing import ArrayLike
+from scipy.stats import multivariate_normal
 
 
 class IndependentUniformPrior:
@@ -112,7 +114,7 @@ def make_timeline(T: int = 300, t_end: float = 4.0) -> np.ndarray:
     return np.linspace(0.0, t_end, T)
 
 
-def make_prior() -> IndependentUniformPrior:
+def make_prior() -> Any:
     """Wide, independent uniform prior on (k, c).
 
     Wide and uniform on purpose: with a small offline design, a narrow (or Gaussian)
@@ -134,7 +136,15 @@ def make_prior() -> IndependentUniformPrior:
     well, without removing the "wide range of possible shapes" difficulty the wide box
     is there to create.
     """
-    return IndependentUniformPrior(low=[10.0, 0.1], high=[100.0, 2.0])
+    # return IndependentUniformPrior(low=[10.0, 0.1], high=[100.0, 2.0])
+
+    # Gaussian alternative, same nominal range as the uniform box above (mean = box
+    # midpoint, sigma = 0.25 * box width per dimension, so +-2 sigma roughly spans the
+    # original [10, 100] x [0.1, 2.0] box) -- matches the convention already used for
+    # examples/navier_stokes's Gaussian prior. Trades away the "even offline-design
+    # coverage everywhere" property the docstring above argues for (draws cluster near
+    # the mean instead), so treat this as an experiment, not a replacement.
+    return multivariate_normal(mean=[50.0, 1.0], cov=np.diag([20**2, 0.25**2]))
 
 
 def make_observation(

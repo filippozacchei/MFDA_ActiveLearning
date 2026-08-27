@@ -17,6 +17,7 @@ from gp_active_mcmc.verification.design import (
 from gp_active_mcmc.verification.harness import (
     print_convergence_driven_table,
     run_convergence_driven_comparison,
+    run_hf_only_reference,
 )
 from gp_active_mcmc.verification.methods import (
     run_adaptive_stm,
@@ -66,6 +67,7 @@ __all__ = [
     "run_adaptive_stm",
     "run_convergence_driven_comparison",
     "run_hf_only",
+    "run_hf_only_reference",
     "run_pretrained",
     "run_training_cost_comparison",
     "run_until_rhat_converged",

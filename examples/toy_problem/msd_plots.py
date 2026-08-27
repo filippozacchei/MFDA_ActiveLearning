@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import numpy as np
 from matplotlib.figure import Figure
+from scipy.stats import gaussian_kde
 
 METHOD_COLORS = {
     "hf_only": "0.35",
@@ -25,12 +26,11 @@ METHOD_COLORS = {
     "adaptive_surrogate_mcmc": "tab:green",
     "adaptive_stm": "tab:blue",
 }
-METHOD_MARKERS = {"pretrained": "s", "adaptive_surrogate_mcmc": "D", "adaptive_stm": "o"}
 METHOD_LABELS = {
-    "hf_only": "MH with HF",
-    "pretrained": "Pretrained (offline)",
-    "adaptive_surrogate_mcmc": "Adaptive surrogate MCMC (Riccius)",
-    "adaptive_stm": "Adaptive STM (ours)",
+    "hf_only": "MH",
+    "pretrained": "Offline Active Learning",
+    "adaptive_surrogate_mcmc": "Adaptive Surrogate MCMC",
+    "adaptive_stm": "Adaptive Surrogate Transition Method",
 }
 SURROGATE_METHODS = ("pretrained", "adaptive_surrogate_mcmc", "adaptive_stm")
 POSTERIOR_METHODS = ("adaptive_surrogate_mcmc", "adaptive_stm")
@@ -86,33 +86,75 @@ def plot_surrogate_comparison(
     return fig
 
 
+def _hpd_contour(ax, samples: np.ndarray, *, color: str, probs: tuple[float, ...], grid_n: int = 100, **kwargs):
+    """Overlays highest-posterior-density contours at `probs` (e.g. `(0.5, 0.9)` for
+    the 50%/90% credible regions) on a 2-D KDE of `samples`, using the standard
+    density-at-samples-quantile trick: the level enclosing probability mass `p` is the
+    `(1 - p)`-quantile of the KDE evaluated at the samples themselves. Silently skips
+    fewer than 10 samples (KDE is unreliable/singular that thin).
+    """
+    if samples.shape[0] < 10:
+        return None
+    kde = gaussian_kde(samples.T)
+    levels = np.quantile(kde(samples.T), 1.0 - np.asarray(sorted(probs, reverse=True)))
+    if np.unique(levels).size < levels.size:  # degenerate (e.g. near-constant density): nothing meaningful to draw
+        return None
+
+    pad_x = 0.15 * np.ptp(samples[:, 0]) or 1e-3
+    pad_y = 0.15 * np.ptp(samples[:, 1]) or 1e-3
+    xs = np.linspace(samples[:, 0].min() - pad_x, samples[:, 0].max() + pad_x, grid_n)
+    ys = np.linspace(samples[:, 1].min() - pad_y, samples[:, 1].max() + pad_y, grid_n)
+    xx, yy = np.meshgrid(xs, ys)
+    zz = kde(np.vstack([xx.ravel(), yy.ravel()])).reshape(xx.shape)
+    return ax.contour(xx, yy, zz, levels=levels, colors=color, **kwargs)
+
+
 def plot_posterior_scatter(
     problem, chains_by_method, burn_ins: dict[str, int], *,
     methods: tuple[str, ...] = POSTERIOR_METHODS, title_suffix: str = "",
+    contour_probs: tuple[float, ...] = (0.25, 0.5, 0.75), scatter_thin: int = 100,
 ) -> Figure:
-    """Pooled posterior scatter: `hf_only` (grey hexbin, the ground truth for this
-    problem instance) vs. `methods` (default `adaptive_surrogate_mcmc`/`adaptive_stm`),
-    each pooled across its replicate chains at its own R-hat-validated burn-in.
+    """Pooled posterior comparison as two side-by-side panels sharing one legend:
+    raw-sample scatter (left) and `contour_probs`-level (default 3: 25%/50%/75%)
+    highest-posterior-density contours (right). Both panels include `hf_only`
+    ("MH with HF", the ground truth for this problem instance) alongside `methods`
+    (default `adaptive_surrogate_mcmc`/`adaptive_stm`), each pooled across *every*
+    replicate chain in `chains_by_method[name]` (all `n_chains`, not just one) at its
+    own R-hat-validated burn-in.
+
+    `scatter_thin`: the scatter panel plots only every `scatter_thin`-th pooled point
+    (default every 100th) -- pooling `n_chains` replicates' full post-burn-in samples
+    otherwise overplots into a solid blob. The contour panel always uses the full,
+    unthinned pool (a KDE wants the data, not a decluttered view of it).
     """
     import matplotlib.pyplot as plt
 
-    fig, ax = plt.subplots(figsize=(6.5, 5.5))
-    ref_post = np.concatenate([c.burn_in(burn_ins["hf_only"]).samples for c in chains_by_method["hf_only"]], axis=0)
-    ax.hexbin(ref_post[:, 0], ref_post[:, 1], gridsize=40, cmap="Greys", mincnt=1, alpha=0.55, zorder=1)
+    all_names = ("hf_only", *methods)
+    pooled_by_name = {
+        name: np.concatenate([c.burn_in(burn_ins[name]).samples for c in chains_by_method[name]], axis=0)
+        for name in all_names
+    }
 
-    for name in methods:
-        pooled = np.concatenate(
-            [c.burn_in(burn_ins[name]).samples for c in chains_by_method[name]], axis=0
+    fig, (ax_s, ax_c) = plt.subplots(1, 2, figsize=(12, 5.5), sharex=True, sharey=True)
+
+    for name in all_names:
+        pooled = pooled_by_name[name]
+        thinned = pooled[::scatter_thin]
+        ax_s.scatter(
+            thinned[:, 0], thinned[:, 1], s=10, alpha=0.3, color=METHOD_COLORS[name], marker="o",
+            linewidths=0, label=METHOD_LABELS[name], zorder=3,
         )
-        ax.scatter(
-            pooled[:, 0], pooled[:, 1], s=16, alpha=0.35, facecolors="none", edgecolors=METHOD_COLORS[name],
-            marker=METHOD_MARKERS[name], linewidths=0.8, label=METHOD_LABELS[name], zorder=3,
-        )
-    ax.scatter(*problem.theta_true, s=180, c="k", marker="*", zorder=5, label=r"$\theta_{\mathrm{true}}$")
-    ax.set_xlabel("k")
-    ax.set_ylabel("c")
-    ax.set_title(f"Posterior comparison{title_suffix}")
-    ax.legend(fontsize=9)
+        _hpd_contour(ax_c, pooled, color=METHOD_COLORS[name], probs=contour_probs, linewidths=1.2, zorder=3)
+
+    for ax, title in ((ax_s, "Posterior samples"), (ax_c, f"{len(contour_probs)}-level HPD contours")):
+        ax.scatter(*problem.theta_true, s=180, c="k", marker="*", zorder=5, label=r"$\theta_{\mathrm{true}}$")
+        ax.set_xlabel("k")
+        ax.set_title(title)
+    ax_s.set_ylabel("c")
+
+    handles, labels = ax_s.get_legend_handles_labels()
+    fig.legend(handles, labels, loc="upper center", ncol=len(all_names) + 1, fontsize=9, bbox_to_anchor=(0.5, 1.04))
+    fig.suptitle(f"Posterior comparison{title_suffix}", y=1.14)
     fig.tight_layout()
     return fig
 

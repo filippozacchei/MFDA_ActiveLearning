@@ -4,9 +4,9 @@ from pathlib import Path
 
 import numpy as np
 
-from examples.navier_stokes.animation import FieldSampleGrid, make_velocity_animation
-from examples.navier_stokes.ns_types import BFSGeometry
-from examples.navier_stokes.solver_hf import MFTimeConfig, solve_ipcs_bfs
+from animation import FieldSampleGrid, make_velocity_animation
+from ns_types import BFSGeometry
+from solver_hf import MFTimeConfig, solve_ipcs_bfs
 
 
 def main() -> None:
@@ -23,7 +23,8 @@ def main() -> None:
         time=time,
         outlet_ny=150,
         store_velocity_frames=True,
-        frame_stride=10,  # record every 5 steps
+        frame_stride=100,  # record every 5 steps
+        linear_solver='direct'
     )
 
     # Plot window: slightly padded rectangle around the domain
@@ -32,7 +33,7 @@ def main() -> None:
         y=np.linspace(0.0, H, 120),
     )
 
-    out = Path("examples/navier_stokes/outputs/velocity.gif")
+    out = Path("results/velocity.gif")
     make_velocity_animation(
         mesh=mesh,
         frames=frames,

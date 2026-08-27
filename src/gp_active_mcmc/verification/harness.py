@@ -34,6 +34,7 @@ FloatArray = NDArray[np.float64]
 __all__ = [
     "print_convergence_driven_table",
     "run_convergence_driven_comparison",
+    "run_hf_only_reference",
     "run_until_rhat_converged",
 ]
 
@@ -166,6 +167,54 @@ def _run_method_and_summarize(
     return run, chains, final_states
 
 
+def run_hf_only_reference(
+    problem: Problem,
+    *,
+    n_chains: int,
+    convergence: ConvergenceConfig,
+    seed_base: int = 0,
+    theta0: FloatArray | None = None,
+) -> tuple[dict[str, Any], list[MCMCChain]]:
+    """Runs the `hf_only` reference alone: `n_chains` replicate MH chains, every step a
+    real HF call (no surrogate at all), monitored to R-hat/ESS convergence exactly like
+    `run_convergence_driven_comparison`'s own `hf_only` block -- because it *is* that
+    block, factored out so it can be run, cached, and reused standalone.
+
+    By a wide margin the most expensive part of a comparison run when `problem.hf_forward`
+    is itself expensive (e.g. a real PDE solve): unlike every other method, it has no
+    surrogate to make any step cheap. Its result depends on nothing else in the
+    comparison -- not `gamma_threshold`, not `online_learning`, not any other method's
+    outcome -- only on `problem`, `n_chains`, `convergence`, and `seed_base`/`theta0`. A
+    caller re-running the same seed (e.g. while debugging a *different* method) can
+    therefore compute this once, cache the returned `(hf_run, hf_chains)`, and pass it
+    to `run_convergence_driven_comparison`'s `hf_only_reference` parameter on subsequent
+    runs instead of recomputing it -- as long as `n_chains`/`convergence`/`seed_base`
+    haven't changed (`run_convergence_driven_comparison` checks this itself).
+
+    Returns
+    -------
+    hf_run, hf_chains
+        `hf_run`: this run's summary dict (rounds, coarse evals, R-hat, pooled summary,
+        ...), in the exact shape `run_convergence_driven_comparison`'s own `results["hf_only"]`
+        has. `hf_chains`: one `MCMCChain` per replicate.
+    """
+    if theta0 is None:
+        theta0 = np.asarray(problem.prior.rvs(random_state=set_seed(999 + seed_base)), dtype=float)
+    param_names = problem.param_names
+    theta0_fixed = theta0
+
+    def _make_hf_only_init(i: int) -> Callable[[], _ChunkState]:
+        return lambda: _init_hf_only_state(
+            problem, seed=seed_base + _SEED_OFFSETS["hf_only"] + i, theta0=theta0_fixed
+        )
+
+    hf_init_fns: list[Callable[[], _ChunkState]] = [_make_hf_only_init(i) for i in range(n_chains)]
+    hf_run, hf_chains, _hf_states = _run_method_and_summarize(
+        "hf_only", hf_init_fns, convergence=convergence, param_names=param_names, problem=problem, n_offline_hf=0,
+    )
+    return hf_run, hf_chains
+
+
 def run_convergence_driven_comparison(
     problem: Problem,
     *,
@@ -181,8 +230,16 @@ def run_convergence_driven_comparison(
     methods: tuple[str, ...] = ("hf_only", "adaptive_surrogate_mcmc", "adaptive_stm"),
     online_learning: OnlineLearningConfig = DEFAULT_ONLINE_LEARNING,
     max_subchain: int = 10_000,
+    hf_only_reference: tuple[dict[str, Any], list[MCMCChain]] | None = None,
 ) -> tuple[dict[str, Any], dict[str, list[MCMCChain]], dict[str, list[PODGPSurrogate]]]:
     """Runs each method to R-hat/ESS convergence (or `convergence.max_total_coarse_evals`).
+
+    `hf_only_reference`: an already-computed `(hf_run, hf_chains)` pair from a prior
+    `run_hf_only_reference` call (e.g. loaded from a cache), reused as-is instead of
+    recomputing `hf_only` -- see that function's docstring for when this is safe. Only
+    used if its chain count matches `n_chains`; a mismatch is treated as a stale/wrong
+    cache and silently ignored (`hf_only` is recomputed instead), rather than risking a
+    result computed under a different replicate count.
     """
     n_init = int(seed_X.shape[0])
     param_names = problem.param_names
@@ -193,9 +250,6 @@ def run_convergence_driven_comparison(
     chains_by_method: dict[str, list[MCMCChain]] = {}
     surrogates_by_method: dict[str, list[PODGPSurrogate]] = {}
 
-    def _make_hf_only_init(i: int) -> Callable[[], _ChunkState]:
-        return lambda: _init_hf_only_state(problem, seed=seed_base + _SEED_OFFSETS["hf_only"] + i, theta0=theta0)
-
     def _make_state_init(state: _ChunkState) -> Callable[[], _ChunkState]:
         return lambda: state
 
@@ -205,10 +259,12 @@ def run_convergence_driven_comparison(
             seed=seed_base + seed_offset + i, theta0=theta0, online_learning=online_learning,
         )
 
-    hf_init_fns: list[Callable[[], _ChunkState]] = [_make_hf_only_init(i) for i in range(n_chains)]
-    hf_run, hf_chains, _hf_states = _run_method_and_summarize(
-        "hf_only", hf_init_fns, convergence=convergence, param_names=param_names, problem=problem, n_offline_hf=0,
-    )
+    if hf_only_reference is not None and len(hf_only_reference[1]) == n_chains:
+        hf_run, hf_chains = hf_only_reference
+    else:
+        hf_run, hf_chains = run_hf_only_reference(
+            problem, n_chains=n_chains, convergence=convergence, seed_base=seed_base, theta0=theta0,
+        )
     chains_by_method["hf_only"] = hf_chains
     results["hf_only"] = hf_run
     hf_reference = _reference_from_run(hf_run)

@@ -130,12 +130,12 @@ PARAM_NAMES = ("k", "c")
 
 KERNEL = "matern52"
 GAMMA_THRESHOLD = 0.01
-MAX_ADAPT_COARSE_EVALS = 700
+MAX_ADAPT_COARSE_EVALS = 1000
 MAX_SUBCHAIN = 25
 N_INIT = 25
 POD_REFIT_EVERY = 25
 POD_REFIT_MAX: int | None = None
-RANK_ENERGY_THRESHOLD = 0.999
+RANK_ENERGY_THRESHOLD = 0.95
 RANK_MAX: int | None = None
 
 # ---------------------------------------------------------------------------
