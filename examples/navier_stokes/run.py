@@ -25,6 +25,7 @@ import json
 import os
 import time
 import traceback
+from dataclasses import replace
 from pathlib import Path
 from typing import Any
 
@@ -57,7 +58,12 @@ from ns_methods import (
     run_hf_only_reference,
     run_training_cost_comparison,
 )
-from ns_plots import plot_posterior_scatter, plot_surrogate_comparison, plot_traces
+from ns_plots import (
+    plot_posterior_scatter,
+    plot_surrogate_comparison,
+    plot_traces,
+    plot_training_points_scatter,
+)
 
 from gp_active_mcmc.utils.rng import set_seed
 
@@ -99,7 +105,8 @@ def _hf_only_cache_path(problem_seed: int, tag: str) -> Path:
 
 def _hf_only_cache_key(*, n_chains: int, sigma_obs: float, convergence: ConvergenceConfig) -> Any:
     """Everything `run_hf_only_reference`'s result actually depends on (see its own
-    docstring) -- a cache is only reused when this matches exactly."""
+    docstring) -- a cache is only reused when this matches, subject to
+    `_load_cached_hf_only`'s relaxed handling of `max_total_coarse_evals`."""
     return (n_chains, sigma_obs, convergence)
 
 
@@ -107,12 +114,23 @@ def _load_cached_hf_only(
     problem_seed: int, *, tag: str, n_chains: int, sigma_obs: float, convergence: ConvergenceConfig,
 ) -> tuple[dict[str, Any], list[Any]] | None:
     """A previously-cached `hf_only` reference for this seed, if the cache exists and
-    was computed under the exact same n_chains/sigma_obs/convergence -- `hf_only` is by
+    was computed under a compatible n_chains/sigma_obs/convergence -- `hf_only` is by
     far the most expensive part of a run here (every step a real, uncached FEM solve,
     no surrogate at all) and its result depends on nothing else in the comparison, so
     it's safe to reuse across repeat runs of the same seed while iterating on/debugging
     the other methods. Returns None (recompute) on a missing, corrupt, or
-    config-mismatched cache file -- never raises."""
+    config-mismatched cache file -- never raises.
+
+    `max_total_coarse_evals` gets a relaxed check instead of requiring an exact match:
+    a cache computed under a *different* cap is still reused if the cached run (a)
+    genuinely converged (`stop_reason == "converged"`, not budget-capped) and (b) its
+    actual `total_coarse_evals` already fits under the *new* cap too -- in that case the
+    cap never bound either run, so both would produce the exact same chains regardless
+    of which cap was configured. Every other convergence field (chunk_size,
+    rhat_threshold, min_ess, patience, n_jobs, parallel_backend, burn_in_fraction) still
+    has to match exactly, since those can change the actual round mechanics, not just
+    when to stop.
+    """
     path = _hf_only_cache_path(problem_seed, tag)
     if not path.exists():
         return None
@@ -120,8 +138,28 @@ def _load_cached_hf_only(
         cached = joblib.load(path)
     except Exception:  # noqa: BLE001 - a corrupt cache file should never block a run
         return None
-    if cached.get("key") != _hf_only_cache_key(n_chains=n_chains, sigma_obs=sigma_obs, convergence=convergence):
+
+    cached_key = cached.get("key")
+    if not (isinstance(cached_key, tuple) and len(cached_key) == 3):
         return None
+    cached_n_chains, cached_sigma_obs, cached_convergence = cached_key
+    if cached_n_chains != n_chains or cached_sigma_obs != sigma_obs:
+        return None
+
+    if cached_convergence != convergence:
+        if not isinstance(cached_convergence, ConvergenceConfig):
+            return None
+        # Only a max_total_coarse_evals difference is forgivable, and only if the
+        # cached run's actual cost already fits under the new cap without having
+        # needed the cap to stop.
+        if replace(cached_convergence, max_total_coarse_evals=convergence.max_total_coarse_evals) != convergence:
+            return None
+        hf_run = cached.get("hf_run") or {}
+        if hf_run.get("stop_reason") != "converged":
+            return None
+        if hf_run.get("total_coarse_evals", float("inf")) > convergence.max_total_coarse_evals:
+            return None
+
     return cached["hf_run"], cached["hf_chains"]
 
 
@@ -156,11 +194,14 @@ def _save_figures(
 ) -> None:
     """Saves this seed's four figures (surrogate comparison, posterior scatter, full
     and post-burn-in traces) under `figures/[tag/]`."""
-    surrogates_for_plot = {
-        "adaptive_surrogate_mcmc": surrogates_by_method["adaptive_surrogate_mcmc"][0],
-        "adaptive_stm": surrogates_by_method["adaptive_stm"][0],
+    # Full per-chain surrogate lists -- plot_surrogate_comparison/plot_training_points_scatter
+    # both overlay every chain's own surrogate, so agreement (or disagreement) between
+    # independently-trained replicates is visible at a glance.
+    surrogates_for_plot: dict[str, Any] = {
+        "adaptive_surrogate_mcmc": surrogates_by_method["adaptive_surrogate_mcmc"],
+        "adaptive_stm": surrogates_by_method["adaptive_stm"],
     }
-    surrogate_methods =  ("adaptive_surrogate_mcmc", "adaptive_stm")
+    surrogate_methods = ("adaptive_surrogate_mcmc", "adaptive_stm")
     if offline_surrogate is not None:
         surrogates_for_plot["pretrained"] = offline_surrogate
         surrogate_methods = ("pretrained", *surrogate_methods)
@@ -173,6 +214,11 @@ def _save_figures(
         problem, seed_surrogate, surrogates_for_plot, methods=surrogate_methods, title_suffix=title_suffix
     )
     fig_surrogate.savefig(figures_dir / f"surrogate_comparison_seed_{problem_seed}.png", bbox_inches="tight")
+
+    fig_training_points = plot_training_points_scatter(
+        problem, seed_surrogate, surrogates_for_plot, methods=surrogate_methods, title_suffix=title_suffix
+    )
+    fig_training_points.savefig(figures_dir / f"training_points_seed_{problem_seed}.png", bbox_inches="tight")
 
     posterior_methods = ("adaptive_surrogate_mcmc", "adaptive_stm")
     burn_ins = {name: posterior[name]["burn_in"] or 0 for name in ("hf_only", *posterior_methods)}
@@ -193,6 +239,7 @@ def _save_figures(
     import matplotlib.pyplot as plt
 
     plt.close(fig_surrogate)
+    plt.close(fig_training_points)
     plt.close(fig_posterior)
     plt.close(fig_trace_full)
     plt.close(fig_trace_post)
@@ -380,7 +427,7 @@ def _build_parser() -> argparse.ArgumentParser:
         "--chunk-size", type=int, default=50, help="Coarse evals advanced per round before re-checking convergence."
     )
     convergence.add_argument(
-        "--max-total-coarse-evals", type=int, default=200_000, help="Safety cap on coarse-eval cost per method."
+        "--max-total-coarse-evals", type=int, default=30_000, help="Safety cap on coarse-eval cost per method."
     )
     convergence.add_argument("--rhat-threshold", type=float, default=1.01, help="R-hat convergence threshold.")
     convergence.add_argument("--min-ess", type=float, default=400.0, help="Minimum bulk-ESS to declare convergence.")

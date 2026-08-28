@@ -135,7 +135,7 @@ MAX_SUBCHAIN = 25
 N_INIT = 25
 POD_REFIT_EVERY = 25
 POD_REFIT_MAX: int | None = None
-RANK_ENERGY_THRESHOLD = 0.95
+RANK_ENERGY_THRESHOLD = 0.99
 RANK_MAX: int | None = None
 
 # ---------------------------------------------------------------------------

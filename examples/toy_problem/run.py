@@ -43,7 +43,12 @@ from msd_methods import (
     run_convergence_driven_comparison,
     run_training_cost_comparison,
 )
-from msd_plots import plot_posterior_scatter, plot_surrogate_comparison, plot_traces
+from msd_plots import (
+    plot_posterior_scatter,
+    plot_surrogate_comparison,
+    plot_traces,
+    plot_training_points_scatter,
+)
 
 from gp_active_mcmc.utils.rng import set_seed
 
@@ -105,9 +110,12 @@ def _save_figures(
 ) -> None:
     """Saves this seed's four figures (surrogate comparison, posterior scatter, full
     and post-burn-in traces) under `figures/[tag/]`."""
-    surrogates_for_plot = {
-        "adaptive_surrogate_mcmc": surrogates_by_method["adaptive_surrogate_mcmc"][0],
-        "adaptive_stm": surrogates_by_method["adaptive_stm"][0],
+    # Full per-chain surrogate lists -- plot_surrogate_comparison/plot_training_points_scatter
+    # both overlay every chain's own surrogate, so agreement (or disagreement) between
+    # independently-trained replicates is visible at a glance.
+    surrogates_for_plot: dict[str, Any] = {
+        "adaptive_surrogate_mcmc": surrogates_by_method["adaptive_surrogate_mcmc"],
+        "adaptive_stm": surrogates_by_method["adaptive_stm"],
     }
     surrogate_methods = ("adaptive_surrogate_mcmc", "adaptive_stm")
     if offline_surrogate is not None:
@@ -122,6 +130,11 @@ def _save_figures(
         problem, seed_surrogate, surrogates_for_plot, methods=surrogate_methods, title_suffix=title_suffix
     )
     fig_surrogate.savefig(figures_dir / f"surrogate_comparison_seed_{problem_seed}.png", bbox_inches="tight")
+
+    fig_training_points = plot_training_points_scatter(
+        problem, seed_surrogate, surrogates_for_plot, methods=surrogate_methods, title_suffix=title_suffix
+    )
+    fig_training_points.savefig(figures_dir / f"training_points_seed_{problem_seed}.png", bbox_inches="tight")
 
     posterior_methods = ("adaptive_surrogate_mcmc", "adaptive_stm")
     burn_ins = {name: posterior[name]["burn_in"] or 0 for name in ("hf_only", *posterior_methods)}
@@ -142,6 +155,7 @@ def _save_figures(
     import matplotlib.pyplot as plt
 
     plt.close(fig_surrogate)
+    plt.close(fig_training_points)
     plt.close(fig_posterior)
     plt.close(fig_trace_full)
     plt.close(fig_trace_post)

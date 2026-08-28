@@ -17,17 +17,20 @@ from gp_active_mcmc.inference.proposal import AdaptiveMetropolisShared
 
 
 def _manual_gaussian_loglike(y: np.ndarray, m: np.ndarray, C: np.ndarray) -> float:
-    """Reference implementation using the closed-form MVN log-likelihood."""
+    """Reference implementation using the closed-form MVN log-likelihood, including the
+    -0.5*log|C| normalizing term (up to the theta-independent -(n/2)*log(2*pi) constant
+    ActiveGPLogLike also omits -- see its docstring for why that one's fine to drop but
+    the log-determinant term isn't, given C varies with theta)."""
     y = np.asarray(y, dtype=float).ravel()
     m = np.asarray(m, dtype=float).ravel()
     C = np.asarray(C, dtype=float)
 
-    sign, _ = np.linalg.slogdet(C)
+    sign, logdet = np.linalg.slogdet(C)
     if sign <= 0:
         raise ValueError("Covariance must be positive definite.")
     diff = y - m
     quad = float(diff @ np.linalg.solve(C, diff))
-    return float(-0.5 * quad)
+    return float(-0.5 * quad - 0.5 * logdet)
 
 
 def test_likelihood_mean_only_uses_obs_cov() -> None:
@@ -153,6 +156,60 @@ def test_deepcopy_clones_instance_when_disabled() -> None:
     assert prop2.nested["a"] is not prop.nested["a"]
     assert prop2.nested["b"] is not prop.nested["b"]
     np.testing.assert_allclose(prop2.nested["b"], prop.nested["b"])
+
+
+def test_setup_proposal_preserves_am_recursor_across_repeated_calls() -> None:
+    """Regression test: `tinyDA.Chain`/`DAChain` call `setup_proposal` unconditionally
+    at construction, and this library's chunked round-based harness constructs a new
+    one every round on the *same* (never-deep-copied) proposal object -- so
+    `setup_proposal` fires every round too. The base `AdaptiveMetropolis.setup_proposal`
+    unconditionally rebuilds `AM_recursor` from scratch each call; left unguarded, the
+    Haario covariance-shape estimate would never accumulate past one round's samples,
+    undermining `share_across_deepcopy`'s "adaptation continues across chunks" contract
+    via a path `__deepcopy__` alone doesn't cover."""
+    prop = AdaptiveMetropolisShared(C0=np.eye(2), period=100, adaptive=True, sd=1)
+    prop.setup_proposal(parameters=np.array([1.0, 2.0]))
+    recursor_after_first = prop.AM_recursor
+
+    # Feed it a few updates, as `adapt()` would during real sampling.
+    prop.AM_recursor.update(np.array([1.1, 2.1]))
+    prop.AM_recursor.update(np.array([0.9, 1.9]))
+    t_before_second_setup = prop.AM_recursor.t
+
+    # A second setup_proposal call -- as happens every round in the chunked harness --
+    # must NOT discard the accumulated moments.
+    prop.setup_proposal(parameters=np.array([1.05, 2.05]))
+
+    assert prop.AM_recursor is recursor_after_first
+    assert prop.AM_recursor.t == t_before_second_setup
+
+
+def test_adapt_preserves_acceptance_window_across_chain_resets() -> None:
+    """Regression test: `tinyDA.Chain`/`DAChain` pass their own `accepted`/
+    `accepted_coarse` list into `adapt()` -- a list that starts fresh (`[]`) every time
+    a `Chain`/`DAChain` is constructed, i.e. every round in this library's chunked
+    harness. Without tracking the window here instead, `GaussianRandomWalk.adapt`'s
+    `kwargs["accepted"][-period:]` slice would draw on far fewer than `period` real
+    outcomes right after a round boundary."""
+    prop = AdaptiveMetropolisShared(C0=np.eye(2), period=10, adaptive=True, sd=1)
+    prop.setup_proposal(parameters=np.array([1.0, 2.0]))
+
+    # Round 1: a Chain-owned `accepted` list that grows to 5 entries, then gets
+    # discarded (as happens when the next round constructs a fresh Chain).
+    round1_accepted: list[bool] = []
+    for outcome in [True, False, True, True, False]:
+        round1_accepted.append(outcome)
+        prop.adapt(parameters=np.zeros(2), parameters_previous=np.zeros(2), accepted=round1_accepted)
+
+    # Round 2: a brand-new list, as a freshly-constructed Chain would pass.
+    round2_accepted: list[bool] = []
+    for outcome in [False, True, True, False, True]:
+        round2_accepted.append(outcome)
+        prop.adapt(parameters=np.zeros(2), parameters_previous=np.zeros(2), accepted=round2_accepted)
+
+    # 10 calls total, period=10 -- the internal window must hold all 10 real outcomes,
+    # not just round 2's 5 (what kwargs["accepted"] alone would have offered).
+    assert list(prop._recent_accepted) == [True, False, True, True, False, False, True, True, False, True]
 
 
 class DummySurrogate:

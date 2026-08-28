@@ -30,6 +30,17 @@ class ActiveGPLogLike(tda.AdaptiveGaussianLogLike):  # type: ignore[misc]
     variance corresponds to a broader effective noise model and therefore a less
     concentrated likelihood.
 
+    Unlike every likelihood class it builds on (`tinyDA.AdaptiveGaussianLogLike` and its
+    own base), `loglike` here does NOT omit the Gaussian normalizing constant
+    `-0.5*log|C_total|`. Those classes use a fixed covariance, so that constant is the
+    same at every evaluated point and cancels in any Metropolis/delayed-acceptance ratio
+    -- omitting it is a legitimate optimisation there. `C_total` here is not fixed: the
+    surrogate's predictive variance varies with theta, so the constant varies too and
+    would NOT cancel between the current/proposed states in tinyDA's DA acceptance
+    ratios (`DAChain._get_state_independent_acceptance`) if it were left out --
+    inflating the covariance without renormalising would silently bias every acceptance
+    probability this likelihood feeds into.
+
     Notes
     -----
     **Accepted prediction formats**
@@ -120,4 +131,18 @@ class ActiveGPLogLike(tda.AdaptiveGaussianLogLike):  # type: ignore[misc]
         self.cov_inverse = np.linalg.inv(total_cov)
 
         val = super().loglike(mean)
+        # `AdaptiveGaussianLogLike.loglike` (and every other tinyDA likelihood class)
+        # deliberately omits the Gaussian normalizing constant -0.5*log|cov| -- correct
+        # for a *fixed* covariance, where it's the same at every evaluated point and
+        # cancels exactly in every Metropolis/delayed-acceptance ratio tinyDA computes
+        # from these (by-design unnormalised) log-densities. `total_cov` here is NOT
+        # fixed: it's inflated by the surrogate's own predictive variance, which varies
+        # with theta -- so the omitted term does *not* cancel between theta and theta'
+        # here, and skipping it silently biases every acceptance ratio this likelihood
+        # feeds into (both the coarse-only step and delayed-acceptance's fine
+        # correction). Restore it explicitly.
+        sign, logdet = np.linalg.slogdet(total_cov)
+        if sign <= 0:
+            raise ValueError("total_cov must be positive definite (got a non-positive determinant).")
+        val -= 0.5 * logdet
         return float(cast(float, val))

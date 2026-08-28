@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import copy
+from collections import deque
 from typing import Any
 
 import tinyDA as tda
@@ -99,3 +100,69 @@ class AdaptiveMetropolisShared(tda.AdaptiveMetropolis):  # type: ignore[misc]
         for k, v in self.__dict__.items():
             setattr(new_obj, k, copy.deepcopy(v, memo))
         return new_obj
+
+    def setup_proposal(self, **kwargs: Any) -> None:
+        """Initialise adaptive state, but only on this object's first call.
+
+        `tinyDA.AdaptiveMetropolis.setup_proposal` (what `super()` resolves to)
+        unconditionally rebuilds `self.AM_recursor` from scratch every time it's
+        called -- a fresh `RecursiveSampleMoments` seeded with just the current
+        `parameters` and a zero covariance, discarding whatever shape the running
+        covariance estimate had already learned. That's fine for a proposal used in one
+        continuous `tinyDA.Chain`/`DAChain`, which calls `setup_proposal` exactly once
+        at construction -- but this library's chunked round-based harness
+        (`rounds.py`'s `_run_chunk`) constructs a *new* `Chain`/`DAChain` every round,
+        which means `setup_proposal` -- and this reset -- fires every round too, on the
+        very same (never-deep-copied) proposal object each time. Left unguarded, the
+        Haario covariance-shape estimate would never accumulate past one round's worth
+        of samples before being thrown away, no matter how many rounds actually ran --
+        undermining the entire point of `share_across_deepcopy`'s "adaptation continues
+        across chunks as if there were a single proposal" contract (`__deepcopy__`
+        above only protects that contract against the *deepcopy* reset path; this is
+        the other, more common one in practice, since a chunk's proposal object is
+        typically reused directly, never deep-copied, across its own rounds).
+
+        Guarding on `AM_recursor` already existing makes `setup_proposal` a no-op for
+        every call after the first on a given object -- exactly the semantics
+        `share_across_deepcopy=True` already describes, just extended to cover this
+        second reset path. `self.scaling`/`self.t`/`self.k` (the global-scaling
+        adaptation `GaussianRandomWalk.adapt` tracks) live on this object and were
+        never touched by `setup_proposal` itself -- but see `adapt` below for a
+        related reset this same round-reconstruction pattern causes on *its* input.
+        """
+        if hasattr(self, "AM_recursor"):
+            return
+        super().setup_proposal(**kwargs)
+
+    def adapt(self, **kwargs: Any) -> None:
+        """Adapt the proposal, substituting a proposal-owned rolling window of recent
+        accept/reject outcomes for `kwargs["accepted"]` before delegating.
+
+        `GaussianRandomWalk.adapt` (reached via `super()`) computes its
+        acceptance-rate-driven scaling update from `kwargs["accepted"][-self.period:]`.
+        `kwargs["accepted"]` is `tinyDA.Chain`/`DAChain`'s own `accepted`/
+        `accepted_coarse` list -- and, like `AM_recursor` above, it starts fresh (`[]`)
+        every time a `Chain`/`DAChain` is constructed, i.e. every round in this
+        library's chunked harness. Whenever a period boundary falls early in a new
+        round, that slice draws on far fewer than `self.period` real outcomes, feeding
+        a noisier-than-intended acceptance-rate estimate into the scaling update --
+        the same class of bug as `setup_proposal`'s, just hitting the scalar `scaling`
+        adaptation instead of the covariance-shape one.
+
+        Maintaining the window here instead -- `self._recent_accepted`, capped at
+        `self.period` and appended to (never replaced) every call -- keeps it
+        continuous across round boundaries the same way `setup_proposal` now keeps
+        `AM_recursor` continuous. Only engages when `self.adaptive` (matching
+        `GaussianRandomWalk.adapt`'s own gating -- `self.period` isn't even set
+        otherwise) and when the caller actually passed `accepted` (both
+        `Chain.sample`/`DAChain._sample_coarse` always do, appending the latest
+        outcome immediately before calling `adapt`, so `accepted[-1]` is always the
+        one new decision this call is reporting).
+        """
+        accepted = kwargs.get("accepted")
+        if self.adaptive and accepted:
+            if not hasattr(self, "_recent_accepted"):
+                self._recent_accepted: deque[bool] = deque(maxlen=self.period)
+            self._recent_accepted.append(bool(accepted[-1]))
+            kwargs = dict(kwargs, accepted=list(self._recent_accepted))
+        super().adapt(**kwargs)

@@ -9,6 +9,7 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Any, cast
 
+import joblib
 import numpy as np
 from numpy.typing import NDArray
 
@@ -215,6 +216,47 @@ def run_hf_only_reference(
     return hf_run, hf_chains
 
 
+def _init_adaptive_stm_production_states_independent(
+    problem: Problem,
+    *,
+    surrogate: PODGPSurrogate,
+    gamma_threshold: float,
+    max_adapt_coarse_evals: int,
+    seed_base: int,
+    n_chains: int,
+    theta0: FloatArray,
+    online_learning: OnlineLearningConfig,
+    max_subchain: int,
+    n_jobs: int | None,
+    parallel_backend: str | None,
+) -> list[tuple[_ChunkState, dict[str, Any], MCMCChain]]:
+    """Runs `n_chains` independent `adaptive_stm` adaptive phases -- own seed, own
+    `AdaptiveSubchain` state, own surrogate, own freeze point -- instead of one phase
+    shared and deep-copied across replicates. The decentralized counterpart to
+    `run_convergence_driven_comparison`'s `shared_adaptive_stm_phase=True` path.
+    Parallelized like `run_until_rhat_converged`'s rounds (same `n_jobs`/
+    `parallel_backend` semantics), since this repeats the (potentially expensive)
+    adaptive phase once per replicate instead of once total.
+    """
+    effective_n_jobs = 1 if n_jobs is None else n_jobs
+    parallel_kwargs: dict[str, Any] = {"n_jobs": effective_n_jobs}
+    if parallel_backend is not None and effective_n_jobs != 1:
+        parallel_kwargs["backend"] = parallel_backend
+
+    def _one_adaptive_phase(i: int) -> tuple[_ChunkState, dict[str, Any], MCMCChain]:
+        return _init_adaptive_stm_production_state(
+            problem, surrogate=surrogate, gamma_threshold=gamma_threshold,
+            max_adapt_coarse_evals=max_adapt_coarse_evals, seed=seed_base + i, theta0=theta0,
+            online_learning=online_learning, max_subchain=max_subchain,
+        )
+
+    with joblib.Parallel(**parallel_kwargs) as parallel:
+        results: list[tuple[_ChunkState, dict[str, Any], MCMCChain]] = parallel(
+            joblib.delayed(_one_adaptive_phase)(i) for i in range(n_chains)
+        )
+    return results
+
+
 def run_convergence_driven_comparison(
     problem: Problem,
     *,
@@ -231,6 +273,8 @@ def run_convergence_driven_comparison(
     online_learning: OnlineLearningConfig = DEFAULT_ONLINE_LEARNING,
     max_subchain: int = 10_000,
     hf_only_reference: tuple[dict[str, Any], list[MCMCChain]] | None = None,
+    sync_adaptive_surrogate_mcmc: bool = False,
+    shared_adaptive_stm_phase: bool = False,
 ) -> tuple[dict[str, Any], dict[str, list[MCMCChain]], dict[str, list[PODGPSurrogate]]]:
     """Runs each method to R-hat/ESS convergence (or `convergence.max_total_coarse_evals`).
 
@@ -240,6 +284,30 @@ def run_convergence_driven_comparison(
     used if its chain count matches `n_chains`; a mismatch is treated as a stale/wrong
     cache and silently ignored (`hf_only` is recomputed instead), rather than risking a
     result computed under a different replicate count.
+
+    By default (`sync_adaptive_surrogate_mcmc=False`, `shared_adaptive_stm_phase=False`)
+    every replicate of every surrogate-based method learns fully on its own: its own HF
+    points, its own `PODGPSurrogate.refit_pod()` cadence, its own `adaptive_stm` freeze
+    point -- chains only ever meet at the R-hat check `run_until_rhat_converged` does
+    each round. This is what makes `adaptive_surrogate_mcmc` vs. `adaptive_stm` vs.
+    `hf_only` an apples-to-apples test of whether independently-trained surrogates
+    converge to the same posterior, rather than one method benefiting from
+    cross-replicate pooling the other doesn't get.
+
+    `sync_adaptive_surrogate_mcmc=True` restores the old behavior: every round, pool
+    every replicate's acquired HF points and refit every replicate's surrogate on the
+    pooled set (`_make_adaptive_surrogate_mcmc_sync_hook`) -- kept as an opt-in ablation,
+    not the default, since it gives that method continuous access to `n_chains`x the
+    training data the others never get.
+
+    `shared_adaptive_stm_phase=True` restores the old `adaptive_stm` behavior: one
+    adaptive phase (`_init_adaptive_stm_production_state`) is run once and its frozen
+    surrogate/rate is deep-copied into every production replicate, instead of each
+    replicate running (and paying for) its own independent adaptive phase. This was the
+    more centralized of the two methods' old defaults -- all `n_chains` production
+    chains started from bit-identical surrogate weights trained on a single chain's
+    worth of exploration -- so it's kept opt-in too, for symmetry with
+    `sync_adaptive_surrogate_mcmc`.
     """
     n_init = int(seed_X.shape[0])
     param_names = problem.param_names
@@ -270,17 +338,21 @@ def run_convergence_driven_comparison(
     hf_reference = _reference_from_run(hf_run)
 
     if "adaptive_surrogate_mcmc" in methods:
-        sync_hook = _make_adaptive_surrogate_mcmc_sync_hook(n_init)
-        synced_init_fns: list[Callable[[], _ChunkState]] = [
+        # Default: no post_round_hook -- each replicate's surrogate refits on its own
+        # PODGPSurrogate.pod_refit_every/pod_refit_max cadence, from its own HF history
+        # only. sync_adaptive_surrogate_mcmc=True opts back into the old pooled-refit
+        # ablation (see docstring above).
+        sync_hook = _make_adaptive_surrogate_mcmc_sync_hook(n_init) if sync_adaptive_surrogate_mcmc else None
+        asm_init_fns: list[Callable[[], _ChunkState]] = [
             _make_adaptive_surrogate_mcmc_init(_SEED_OFFSETS["adaptive_surrogate_mcmc"], i) for i in range(n_chains)
         ]
-        asm_run, synced_chains, synced_final_states = _run_method_and_summarize(
-            "adaptive_surrogate_mcmc", synced_init_fns, convergence=convergence, param_names=param_names,
+        asm_run, asm_chains, asm_final_states = _run_method_and_summarize(
+            "adaptive_surrogate_mcmc", asm_init_fns, convergence=convergence, param_names=param_names,
             problem=problem, n_offline_hf=n_init, reference=hf_reference, max_hf_evals=max_adapt_coarse_evals,
             post_round_hook=sync_hook,
         )
-        chains_by_method["adaptive_surrogate_mcmc"] = synced_chains
-        surrogates_by_method["adaptive_surrogate_mcmc"] = _state_surrogates(synced_final_states)
+        chains_by_method["adaptive_surrogate_mcmc"] = asm_chains
+        surrogates_by_method["adaptive_surrogate_mcmc"] = _state_surrogates(asm_final_states)
         results["adaptive_surrogate_mcmc"] = asm_run
 
     if "adaptive_stm" not in methods:
@@ -289,36 +361,68 @@ def run_convergence_driven_comparison(
     # Manual sequence: n_coarse_eval_units below needs the run's own
     # coarse_evals_per_chain, which _run_method_and_summarize can't provide.
     adaptive_stm_ceiling = max_adapt_coarse_evals if adaptive_stm_adapt_coarse_evals is None else adaptive_stm_adapt_coarse_evals
-    print(f"--- adaptive_stm: running 1 shared adaptive phase (coarse-eval ceiling={adaptive_stm_ceiling}) ---")
-    shared_state, shared_adapt_meta, shared_adapt_chain = _init_adaptive_stm_production_state(
-        problem, surrogate=seed_surrogate, gamma_threshold=gamma_threshold,
-        max_adapt_coarse_evals=adaptive_stm_ceiling, seed=seed_base + _SEED_OFFSETS["adaptive_stm"], theta0=theta0,
-        online_learning=online_learning, max_subchain=max_subchain,
-    )
-    assert shared_state.model is not None  # always set by _init_adaptive_stm_production_state
-    shared_frozen_model = shared_state.model
-    frozen_rate = shared_state.subsampling_rate
-    theta_last = shared_state.theta_current
-    print(f"--- adaptive_stm: adaptive phase done (frozen_rate={frozen_rate}), starting {n_chains} production chains ---")
-    adaptive_stm_inits = [
-        _init_adaptive_stm_production_state_from_frozen(
-            problem, frozen_model=shared_frozen_model, frozen_rate=frozen_rate, theta0=theta_last
+
+    if shared_adaptive_stm_phase:
+        print(f"--- adaptive_stm: running 1 shared adaptive phase (coarse-eval ceiling={adaptive_stm_ceiling}) ---")
+        shared_state, shared_adapt_meta, shared_adapt_chain = _init_adaptive_stm_production_state(
+            problem, surrogate=seed_surrogate, gamma_threshold=gamma_threshold,
+            max_adapt_coarse_evals=adaptive_stm_ceiling, seed=seed_base + _SEED_OFFSETS["adaptive_stm"], theta0=theta0,
+            online_learning=online_learning, max_subchain=max_subchain,
         )
-        for _ in range(n_chains)
-    ]
-    adaptive_stm_metas = [shared_adapt_meta] * n_chains
-    adaptive_stm_adapt_chains = [shared_adapt_chain] * n_chains
-    adaptive_stm_init_fns: list[Callable[[], _ChunkState]] = [_make_state_init(s) for s in adaptive_stm_inits]
+        assert shared_state.model is not None  # always set by _init_adaptive_stm_production_state
+        shared_frozen_model = shared_state.model
+        frozen_rate = shared_state.subsampling_rate
+        theta_last = shared_state.theta_current
+        print(f"--- adaptive_stm: adaptive phase done (frozen_rate={frozen_rate}), starting {n_chains} production chains ---")
+        adaptive_stm_states = [
+            _init_adaptive_stm_production_state_from_frozen(
+                problem, frozen_model=shared_frozen_model, frozen_rate=frozen_rate, theta0=theta_last
+            )
+            for _ in range(n_chains)
+        ]
+        adaptive_stm_metas = [shared_adapt_meta] * n_chains
+        adaptive_stm_adapt_chains = [shared_adapt_chain] * n_chains
+    else:
+        print(f"--- adaptive_stm: running {n_chains} independent adaptive phases (coarse-eval ceiling={adaptive_stm_ceiling}) ---")
+        per_chain = _init_adaptive_stm_production_states_independent(
+            problem, surrogate=seed_surrogate, gamma_threshold=gamma_threshold,
+            max_adapt_coarse_evals=adaptive_stm_ceiling, seed_base=seed_base + _SEED_OFFSETS["adaptive_stm"],
+            n_chains=n_chains, theta0=theta0, online_learning=online_learning, max_subchain=max_subchain,
+            n_jobs=convergence.n_jobs, parallel_backend=convergence.parallel_backend,
+        )
+        adaptive_stm_states = [state for state, _meta, _chain in per_chain]
+        adaptive_stm_metas = [meta for _state, meta, _chain in per_chain]
+        adaptive_stm_adapt_chains = [chain for _state, _meta, chain in per_chain]
+        frozen_rates = [s.subsampling_rate for s in adaptive_stm_states]
+        print(f"--- adaptive_stm: adaptive phases done (frozen_rates={frozen_rates}), starting production ---")
+
+    adaptive_stm_init_fns: list[Callable[[], _ChunkState]] = [_make_state_init(s) for s in adaptive_stm_states]
     adaptive_stm_run = _run_monitored_replicates(
         adaptive_stm_init_fns, label="adaptive_stm", config=convergence, param_names=param_names
     )
-    adaptive_stm_chains, _adaptive_stm_states = _take_monitored_outputs(adaptive_stm_run)
+    adaptive_stm_chains, adaptive_stm_final_states = _take_monitored_outputs(adaptive_stm_run)
     chains_by_method["adaptive_stm"] = adaptive_stm_chains
-    surrogates_by_method["adaptive_stm"] = [cast(PODGPSurrogate, shared_frozen_model.lf_model)]
-    adaptive_stm_production_coarse_evals = [
-        (int(shared_adapt_meta["adapt_coarse_evals_used"]) if i == 0 else 0) + production_cost
-        for i, production_cost in enumerate(adaptive_stm_run["coarse_evals_per_chain"])
-    ]
+
+    if shared_adaptive_stm_phase:
+        # Every replicate's frozen surrogate is a deep copy of the same trained
+        # weights (production never updates a frozen model) -- one is representative.
+        surrogates_by_method["adaptive_stm"] = _state_surrogates(adaptive_stm_states[:1])
+        # The adapt-phase cost was paid once, shared across all n_chains -- count it
+        # on chain 0 only, not once per chain.
+        adaptive_stm_production_coarse_evals = [
+            (int(adaptive_stm_metas[0]["adapt_coarse_evals_used"]) if i == 0 else 0) + production_cost
+            for i, production_cost in enumerate(adaptive_stm_run["coarse_evals_per_chain"])
+        ]
+    else:
+        surrogates_by_method["adaptive_stm"] = _state_surrogates(adaptive_stm_final_states)
+        # Each replicate paid for its own adapt phase -- add it in per chain.
+        adaptive_stm_production_coarse_evals = [
+            int(meta["adapt_coarse_evals_used"]) + production_cost
+            for meta, production_cost in zip(
+                adaptive_stm_metas, adaptive_stm_run["coarse_evals_per_chain"], strict=True
+            )
+        ]
+
     _attach_pooled_summary(
         adaptive_stm_run,
         adaptive_stm_chains,
