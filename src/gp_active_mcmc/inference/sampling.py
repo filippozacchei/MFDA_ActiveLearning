@@ -4,6 +4,7 @@ import copy
 import warnings
 from collections.abc import Callable
 from dataclasses import dataclass
+from itertools import compress
 from typing import Any
 
 import numpy as np
@@ -15,6 +16,144 @@ from gp_active_mcmc.utils.mcmc import extract_samples
 
 FloatArray = NDArray[np.float64]
 IntArray = NDArray[np.int_]
+
+
+class ResumableTdaChain:
+    """Wraps a live `tinyDA.Chain`/`DAChain`, letting repeated `advance()` calls
+    continue sampling on the *same* object instead of reconstructing a fresh one every
+    time -- the sampler-level half of avoiding the "every chunk silently resets state"
+    class of bugs [`AdaptiveMetropolisShared`][gp_active_mcmc.inference.proposal.AdaptiveMetropolisShared]
+    fixes on the proposal side (see its docstring for the first two instances of this).
+
+    Why this exists
+    ----------------
+    This library's chunked/round-based harness (`gp_active_mcmc.verification.rounds`'s
+    `_run_chunk`, and this module's own `sample_adaptive_active_chain`) re-enters
+    `tinyDA` in a loop instead of one long call, because the coarse-to-fine
+    subsampling rate can change between chunks and/or a caller wants to check
+    convergence between chunks. The naive way to do that is to call `tinyDA.sample(...)`
+    fresh every chunk -- but `tinyDA.Chain.__init__`/`DAChain.__init__` unconditionally
+    evaluate the model once more at `initial_parameters` to bootstrap `chain[0]` (and,
+    for DA, `chain_fine[0]` too, via a `fine()` call). Reconstructing every chunk means
+    paying for that bootstrap evaluation every chunk, not just once:
+
+    - it wastes one real model evaluation per chunk (harmless but wasteful for a
+      single-posterior or frozen-DA chain, since `coarse()`/`fine()` on an
+      already-accepted point just repeats a known answer), and
+    - for a DA chain with an `AdaptiveSubchain` hook attached (the adaptive phase, the
+      only place this library builds a non-frozen `ActiveMCMCModel` with a two-level
+      posterior), that bootstrap `fine()` call also invokes `on_fine_call` -- feeding
+      one spurious "trivially good" LF/HF residual into the hook's growth-rate
+      decision every chunk, since a replayed already-accepted point always agrees with
+      itself.
+
+    `Chain.sample(iterations)`/`DAChain.sample(iterations)` (as opposed to `__init__`)
+    only ever evaluate freshly *proposed* points -- never the current position -- so
+    holding one persistent object and calling `.sample()` on it repeatedly avoids all
+    of the above at the root, for however many chunks a chain's lifetime spans, while
+    still letting the subsampling rate change between chunks (`subsampling_rate`'s
+    setter mutates the live object's `subchain_length` directly).
+
+    Only supports the chain shapes this package actually builds: a single posterior
+    (`chain_key="chain_0"`) or a two-level `[coarse, fine]` DA posterior (`chain_key`
+    one of `"chain_coarse_0"`/`"chain_fine_0"`), always one chain (`n_chains=1`,
+    matching every call site in this package -- replicate-level parallelism happens at
+    this package's own `joblib` layer, not `tinyDA`'s).
+    """
+
+    def __init__(
+        self,
+        *,
+        posterior: tda.Posterior | list[tda.Posterior],
+        proposal: tda.Proposal,
+        initial_parameters: ArrayLike,
+        subsampling_rate: int,
+        store_coarse_chain: bool = True,
+    ) -> None:
+        self._is_da = isinstance(posterior, list)
+        self._store_coarse_chain = bool(store_coarse_chain)
+        # tda.sample() itself deep-copies the proposal once per chain before use (see
+        # tinyDA/sampler.py's `sample()`); replicated here for parity with that
+        # behaviour. A no-op identity-copy under every proposal this package actually
+        # builds (`AdaptiveMetropolisShared(share_across_deepcopy=True)`).
+        proposal_work = copy.deepcopy(proposal)
+        theta0 = np.asarray(initial_parameters, dtype=float)
+        if self._is_da:
+            coarse_posterior, fine_posterior = posterior
+            self._chain_obj: Any = tda.DAChain(
+                posterior_coarse=coarse_posterior,
+                posterior_fine=fine_posterior,
+                proposal=proposal_work,
+                subchain_length=int(subsampling_rate),
+                randomize_subchain_length=False,
+                initial_parameters=theta0,
+                adaptive_error_model=None,
+                store_coarse_chain=self._store_coarse_chain,
+            )
+        else:
+            self._chain_obj = tda.Chain(posterior, proposal_work, theta0)
+        self._cursors: dict[str, int] = {}
+
+    @property
+    def subsampling_rate(self) -> int:
+        """The DA subchain length currently in force (always 1 for a single-posterior
+        chain, which has no such concept)."""
+        return int(self._chain_obj.subchain_length) if self._is_da else 1
+
+    @subsampling_rate.setter
+    def subsampling_rate(self, value: int) -> None:
+        """Change the DA subchain length for *subsequent* `advance()` calls -- a plain,
+        undecorated attribute on the live `tinyDA.DAChain`, read fresh every outer
+        iteration of its own `sample()` loop, so mutating it directly between
+        `advance()` calls is exactly what changing the rate between chunks means. A
+        no-op for a single-posterior chain, which has no subsampling rate to change."""
+        if self._is_da:
+            self._chain_obj.subchain_length = int(value)
+
+    def advance(self, iterations: int) -> None:
+        """Run `iterations` more outer steps, appending to the chain's own history
+        (never re-evaluating the current position -- see the class docstring)."""
+        self._chain_obj.sample(int(iterations), progressbar=False)
+
+    def is_first_advance(self, chain_key: str) -> bool:
+        """Whether `new_since_last(chain_key)` has not yet been called for this key --
+        i.e. whether its *next* call will include the one-time bootstrap sample from
+        `__init__`. A caller that separately tracks HF usage via a model-owned log
+        (e.g. `rounds.py`'s `_run_chunk`, via `model.log.used_hf`) needs this: the
+        bootstrap's own model evaluation already logged an entry before any
+        `advance()` ever ran, so that entry must be *kept* (not reset away) for
+        exactly the one round whose `new_since_last` result will include the
+        bootstrap sample -- otherwise `used_hf` ends up one entry short of `samples`
+        on the first round only."""
+        return chain_key not in self._cursors
+
+    def new_since_last(self, chain_key: str) -> FloatArray:
+        """Parameter samples (shape `(n_new, n_dim)`) appended to `chain_key` since the
+        last call to this method (or since construction, on the first call) -- the
+        one-time bootstrap link from `__init__` is included only in the very first
+        call's result, exactly like a freshly-extracted `tinyDA.sample()` result would
+        include it."""
+        full = self._chain_list(chain_key)
+        cursor = self._cursors.get(chain_key, 0)
+        self._cursors[chain_key] = len(full)
+        new_links = full[cursor:]
+        return np.asarray([link.parameters for link in new_links], dtype=float)
+
+    def _chain_list(self, chain_key: str) -> list[Any]:
+        """The current, cumulative list of `Link`s for `chain_key`, mirroring the same
+        minimal `{chain_key: ...}` mapping `tinyDA.sample()`'s own
+        `_sample_sequential`/`_sample_sequential_da`/`_get_result_da` build from a
+        `Chain`/`DAChain`'s public attributes -- read directly off the live object here
+        instead of re-derived by reconstructing it."""
+        if chain_key == "chain_0":
+            return self._chain_obj.chain  # type: ignore[no-any-return]
+        if chain_key == "chain_fine_0":
+            return self._chain_obj.chain_fine  # type: ignore[no-any-return]
+        if chain_key == "chain_coarse_0":
+            if not self._store_coarse_chain:
+                return []
+            return list(compress(self._chain_obj.chain_coarse, self._chain_obj.is_coarse))
+        raise ValueError(f"Unsupported chain_key for resumable sampling: {chain_key!r}")
 
 
 def _tda_sample(**kwargs: Any) -> Any:
@@ -423,7 +562,11 @@ def sample_adaptive_active_chain(
     if n_chains != 1:
         raise ValueError("chunked adaptive sampling currently supports n_chains=1 only.")
 
-    proposal_work = copy.deepcopy(proposal)
+    # `force_sequential` no longer has anything to control: tda.sample()'s own
+    # sequential/ray-parallel dispatch only matters for n_chains > 1, and this
+    # function already requires n_chains == 1 (checked above). Kept in the signature
+    # for backwards compatibility with existing callers.
+    resumable: ResumableTdaChain | None = None
     theta_current = np.asarray(initial_parameters, dtype=float).copy()
 
     coarse_done = 0
@@ -450,19 +593,24 @@ def sample_adaptive_active_chain(
             iterations = 1
             subsampling_rate = coarse_budget
 
-        chain_obj = _tda_sample(
-            posteriors=posterior,
-            proposal=proposal_work,
-            iterations=int(iterations),
-            n_chains=1,
-            force_sequential=bool(force_sequential),
-            initial_parameters=theta_current,
-            store_coarse_chain=bool(store_coarse_chain),
-            subsampling_rate=int(subsampling_rate),
-            adaptive_error_model=None,
-        )
+        # Hold one persistent Chain/DAChain across every chunk instead of
+        # reconstructing (see ResumableTdaChain's docstring for why): the subsampling
+        # rate can still change chunk to chunk -- that's the whole reason this
+        # function chunks in the first place -- via the setter on subsequent chunks,
+        # rather than via reconstruction.
+        if resumable is None:
+            resumable = ResumableTdaChain(
+                posterior=posterior,
+                proposal=proposal,
+                initial_parameters=theta_current,
+                subsampling_rate=subsampling_rate,
+                store_coarse_chain=store_coarse_chain,
+            )
+        else:
+            resumable.subsampling_rate = subsampling_rate
+        resumable.advance(iterations)
 
-        theta_block = extract_samples(chain=chain_obj, chain_key=chain_key)
+        theta_block = resumable.new_since_last(chain_key)
         blocks.append(theta_block)
 
         used_hf_all = _extract_used_hf(model)

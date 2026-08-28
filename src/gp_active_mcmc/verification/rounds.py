@@ -8,11 +8,9 @@ from typing import Any
 
 import joblib
 import numpy as np
-import tinyDA as tda
 from numpy.typing import NDArray
 
-from gp_active_mcmc.inference import MCMCChain, sample_active_chain
-from gp_active_mcmc.utils.mcmc import extract_samples
+from gp_active_mcmc.inference import MCMCChain
 from gp_active_mcmc.verification.methods import _ChunkState, _suppress_tinyda_output
 from gp_active_mcmc.verification.metrics import find_burn_in_via_rhat
 
@@ -43,51 +41,80 @@ def _reset_model_log(model: Any | None) -> None:
         model.log.used_hf.clear()
 
 
+def _extract_used_hf_array(model: Any) -> NDArray[np.bool_]:
+    """Read `model.log.used_hf` as a boolean array. Pairs with `_reset_model_log`
+    (reset before a round's `advance()`, read after) -- see `_run_chunk`."""
+    return np.asarray(model.log.used_hf, dtype=bool)
+
+
 def _run_chunk(state: _ChunkState, chunk_size: int) -> tuple[_ChunkState, MCMCChain, int]:
-    """Advance one replicate by one chunk of coarse-evaluation budget."""
+    """Advance one replicate by one chunk of coarse-evaluation budget.
+
+    Advances `state.chain_obj` -- a persistent `ResumableTdaChain` built once by the
+    `_init_*_state` factory that created this replicate's state and carried forward
+    round to round via `dataclasses.replace` (which this function uses to return the
+    next round's state, and which leaves fields it doesn't override, `chain_obj`
+    included, referencing the exact same object) -- instead of reconstructing a
+    `tinyDA` chain fresh every round. See `ResumableTdaChain`'s docstring for why that
+    distinction matters (proposal/model state that would otherwise be silently reset
+    every round).
+    """
+    if state.chain_obj is None:
+        raise ValueError("_ChunkState.chain_obj must be set (see the _init_*_state factories in methods.py).")
+
     iterations = max(1, chunk_size // state.subsampling_rate)
     coarse_evals_spent = iterations * state.subsampling_rate
 
     with _suppress_tinyda_output():
         if state.model is None:
-            chain_obj = tda.sample(
-                posteriors=state.posterior,
-                proposal=state.proposal,
-                iterations=int(iterations),
-                n_chains=1,
-                force_sequential=True,
-                initial_parameters=state.theta_current,
-                adaptive_error_model=None,
-            )
-            samples = extract_samples(chain=chain_obj, chain_key=state.chain_key)
+            state.chain_obj.advance(iterations)
+            samples = state.chain_obj.new_since_last(state.chain_key)
             used_hf = np.ones(samples.shape[0], dtype=bool)
-            chain = MCMCChain.from_arrays(samples=samples, used_hf=used_hf)
+        elif state.chain_key == "chain_fine_0":
+            _reset_model_log(state.model)  # hygiene only: used_hf below never reads the log
+            state.chain_obj.advance(iterations)
+            samples = state.chain_obj.new_since_last(state.chain_key)
+            # tinyDA's DA "fine" chain: one row per outer DA iteration, each backed by
+            # exactly one genuine HF correction by construction of delayed acceptance.
+            # model.log.used_hf instead counts per-*coarse*-step calls (subsampling_rate
+            # of them per fine row), so it does NOT align 1:1 with samples here the way
+            # it does for a single-posterior chain (the branch below).
+            used_hf = np.ones(samples.shape[0], dtype=bool)
         else:
-            _reset_model_log(state.model)
-            result = sample_active_chain(
-                model=state.model,
-                posterior=state.posterior,
-                proposal=state.proposal,
-                iterations=int(iterations),
-                initial_parameters=state.theta_current,
-                subsampling_rate=state.subsampling_rate,
-                chain_key=state.chain_key,
-            )
-            chain = result.chain
+            # The bootstrap sample from chain_obj's own construction logged one
+            # model evaluation before any advance() ever ran. It's included in
+            # samples only on the round whose new_since_last() call is the very
+            # first for this chain_key -- so the log must NOT be reset before that
+            # one round (its used_hf needs the bootstrap's own entry too), but
+            # should be reset before every later round (whose samples contain only
+            # that round's own new evaluations).
+            if not state.chain_obj.is_first_advance(state.chain_key):
+                _reset_model_log(state.model)
+            state.chain_obj.advance(iterations)
+            samples = state.chain_obj.new_since_last(state.chain_key)
+            used_hf = _extract_used_hf_array(state.model)
+        chain = MCMCChain.from_arrays(samples=samples, used_hf=used_hf)
 
     return replace(state, theta_current=chain.samples[-1]), chain, coarse_evals_spent
 
 
 def _concat_chain_blocks(blocks: list[MCMCChain]) -> MCMCChain:
-    """Concatenate chunk blocks, dropping duplicated block-boundary samples."""
-    sample_parts = [blocks[0].samples] + [b.samples[1:] for b in blocks[1:]]
-    samples = np.vstack(sample_parts)
+    """Concatenate one replicate's per-round chunk blocks into its full chain so far.
+
+    `state.chain_obj` (a `ResumableTdaChain`) is advanced, not reconstructed, each
+    round -- see its docstring -- so the chain's one-time bootstrap sample (`theta0`,
+    evaluated once at `chain_obj`'s own construction) appears only as `blocks[0]`'s
+    first row; every later block contains only genuinely new proposals `advance()`
+    generated, with no block-boundary duplicate left to drop here (unlike the old
+    per-round-reconstruction design, where every block after the first re-evaluated
+    the boundary point as its own first row).
+    """
+    samples = np.vstack([b.samples for b in blocks])
 
     def _used_hf(b: MCMCChain) -> NDArray[np.bool_]:
         return b.extras.used_hf if b.extras.used_hf is not None else np.zeros(b.n_steps, dtype=bool)
 
-    used_hf_parts = [_used_hf(blocks[0])] + [_used_hf(b)[1:] for b in blocks[1:]]
-    used_hf = np.concatenate(used_hf_parts)
+    used_hf = np.concatenate([_used_hf(b) for b in blocks])
     return MCMCChain.from_arrays(samples=samples, used_hf=used_hf)
 
 

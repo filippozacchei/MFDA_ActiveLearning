@@ -28,6 +28,7 @@ from gp_active_mcmc.inference import (
     AdaptiveSubchainState,
     ChunkedMCMCConfig,
     MCMCChain,
+    ResumableTdaChain,
     sample_active_chain,
     sample_adaptive_active_chain,
     sample_adaptive_then_frozen_chain,
@@ -99,6 +100,7 @@ class _ChunkState:
     model: Any | None = None  # ActiveMCMCModel, or None for pure HF-only
     subsampling_rate: int = 1  # DA block size; 1 for single-posterior methods
     chain_key: str = "chain_0"  # tinyDA chain key to extract per chunk
+    chain_obj: ResumableTdaChain | None = None  # persistent tinyDA sampler; see rounds._run_chunk
 
 
 # Per-method seed offsets within one seed_base block -- single source of truth for
@@ -331,7 +333,10 @@ def _init_hf_only_state(problem: Problem, *, seed: int, theta0: FloatArray | Non
     rng = set_seed(seed)
     if theta0 is None:
         theta0 = np.asarray(problem.prior.rvs(random_state=rng), dtype=float)
-    return _ChunkState(posterior=posterior, proposal=proposal, theta_current=theta0, model=None)
+    chain_obj = ResumableTdaChain(
+        posterior=posterior, proposal=proposal, initial_parameters=theta0, subsampling_rate=1,
+    )
+    return _ChunkState(posterior=posterior, proposal=proposal, theta_current=theta0, model=None, chain_obj=chain_obj)
 
 
 def _train_pretrained_surrogate(
@@ -426,7 +431,12 @@ def _init_adaptive_surrogate_mcmc_state(
     rng = set_seed(seed)
     if theta0 is None:
         theta0 = np.asarray(problem.prior.rvs(random_state=rng), dtype=float)
-    return _ChunkState(posterior=posterior, proposal=proposal, theta_current=theta0, model=model)
+    chain_obj = ResumableTdaChain(
+        posterior=posterior, proposal=proposal, initial_parameters=theta0, subsampling_rate=1,
+    )
+    return _ChunkState(
+        posterior=posterior, proposal=proposal, theta_current=theta0, model=model, chain_obj=chain_obj
+    )
 
 
 def _init_adaptive_stm_production_state(
@@ -486,13 +496,19 @@ def _init_adaptive_stm_production_state(
     frozen_rate = int(hook.state.subchain_length)
     theta_last = adapt_result.chain.samples[-1]
 
+    production_posterior = _da_posteriors(problem, frozen_model)
+    chain_obj = ResumableTdaChain(
+        posterior=production_posterior, proposal=proposal, initial_parameters=theta_last,
+        subsampling_rate=frozen_rate,
+    )
     state = _ChunkState(
-        posterior=_da_posteriors(problem, frozen_model),
+        posterior=production_posterior,
         proposal=proposal,
         theta_current=theta_last,
         model=frozen_model,
         subsampling_rate=frozen_rate,
         chain_key="chain_fine_0",
+        chain_obj=chain_obj,
     )
     return state, adapt_meta, adapt_result.chain
 
@@ -505,11 +521,16 @@ def _init_adaptive_stm_production_state_from_frozen(
     independent). `theta0` is typically the shared adaptive phase's last state."""
     model_copy = copy.deepcopy(frozen_model)
     proposal = make_proposal(problem)
+    posterior = _da_posteriors(problem, model_copy)
+    chain_obj = ResumableTdaChain(
+        posterior=posterior, proposal=proposal, initial_parameters=theta0, subsampling_rate=frozen_rate,
+    )
     return _ChunkState(
-        posterior=_da_posteriors(problem, model_copy),
+        posterior=posterior,
         proposal=proposal,
         theta_current=theta0,
         model=model_copy,
         subsampling_rate=frozen_rate,
         chain_key="chain_fine_0",
+        chain_obj=chain_obj,
     )

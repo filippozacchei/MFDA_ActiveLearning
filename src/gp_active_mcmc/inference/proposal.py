@@ -41,6 +41,23 @@ class AdaptiveMetropolisShared(tda.AdaptiveMetropolis):  # type: ignore[misc]
         - True (default): ``copy.deepcopy(proposal)`` returns the same instance
           (proposal state is shared).
         - False: deepcopies produce independent clones with a deep-copied internal state.
+    min_scaling
+        Lower bound enforced on `self.scaling` after every `adapt()` call (see `adapt`'s
+        docstring for the mechanism this protects against). `0.0` opts out, restoring
+        plain `tinyDA.GaussianRandomWalk`/`AdaptiveMetropolis` behaviour, where `scaling`
+        has no floor at all. Default `0.05` was chosen empirically, not just picked as
+        "small": a floor of `1e-3` was tried first and, reproducing an actually-observed
+        stuck chain, was *not* enough -- by the time `scaling` reaches that range the
+        proposal step is already too small in absolute terms to cross whatever region
+        made the surrogate posterior wrong there, so the chain stayed stuck even pinned
+        at that floor. `0.05` (roughly the un-adapted `scaling=1` proposal shrunk by up
+        to 20x, still comparable to this package's own default `C0` scale factor in
+        `make_proposal`) was verified directly to let that same reproduced chain escape
+        and re-converge, with `scaling` then self-correcting back upward on its own once
+        real acceptances resumed. It costs some efficiency in the legitimate case where a
+        posterior's true width needs `scaling` below `0.05` to hit the target acceptance
+        rate (MCMC correctness is unaffected either way, just mixing efficiency) -- pass
+        a smaller value, or `0.0`, if that tradeoff doesn't fit a particular use case.
 
     Notes
     -----
@@ -70,10 +87,12 @@ class AdaptiveMetropolisShared(tda.AdaptiveMetropolis):  # type: ignore[misc]
         self,
         *args: Any,
         share_across_deepcopy: bool = True,
+        min_scaling: float = 0.0,
         **kwargs: Any,
     ) -> None:
         super().__init__(*args, **kwargs)
         self._share_across_deepcopy = bool(share_across_deepcopy)
+        self.min_scaling = float(min_scaling)
 
     def __deepcopy__(self, memo: dict[int, object]) -> AdaptiveMetropolisShared:
         """Deep-copy the proposal according to `share_across_deepcopy`.
@@ -158,6 +177,29 @@ class AdaptiveMetropolisShared(tda.AdaptiveMetropolis):  # type: ignore[misc]
         `Chain.sample`/`DAChain._sample_coarse` always do, appending the latest
         outcome immediately before calling `adapt`, so `accepted[-1]` is always the
         one new decision this call is reporting).
+
+        After delegating, also enforces `min_scaling` as a floor on `self.scaling`.
+        `GaussianRandomWalk.adapt`'s update is
+        `scaling = exp(log(scaling) + gamma**-k * (acceptance_rate - alpha_star))`:
+        every period of 0% acceptance multiplies `scaling` by `exp(-gamma**-k * alpha_star)`,
+        strictly less than 1, with no opposite pull unless acceptance recovers above
+        `alpha_star`. Diminishing adaptation (`gamma**-k -> 0` as `k -> inf`) bounds the
+        *total* possible shrinkage from repeated bad luck, but only asymptotically: with
+        this proposal's usual `gamma=1.01`, the bound is already reached to within a
+        rounding error after a few hundred periods, and by then `scaling` can be many
+        orders of magnitude below anything that generates a proposal meaningfully
+        different from the current point -- confirmed directly (`gamma=1.01`, 100
+        straight 0%-acceptance periods: `scaling` collapses from `1` to `~2.7e-7`,
+        matching this formula's closed form to 2 significant figures). Once `scaling` is
+        that small, the random-walk step is small enough that acceptance can stay
+        pinned near 0% indefinitely too -- confirmed the surrogate's local posterior
+        surface can be confidently *wrong* (not merely uncertain) over a region much
+        larger than a `~1e-7`-scaled step even at a perfectly healthy, non-degenerate
+        fit -- so nothing in the unmodified algorithm ever pulls `scaling` back up: a
+        chain that hits one unlucky stretch is trapped for the rest of the run. The
+        floor below breaks that trap by guaranteeing the chain can always still propose
+        a materially different point, without changing how `scaling` adapts anywhere
+        above `min_scaling`.
         """
         accepted = kwargs.get("accepted")
         if self.adaptive and accepted:
@@ -166,3 +208,5 @@ class AdaptiveMetropolisShared(tda.AdaptiveMetropolis):  # type: ignore[misc]
             self._recent_accepted.append(bool(accepted[-1]))
             kwargs = dict(kwargs, accepted=list(self._recent_accepted))
         super().adapt(**kwargs)
+        if self.adaptive and self.min_scaling > 0.0:
+            self.scaling = max(self.scaling, self.min_scaling)  # type: ignore[has-type]

@@ -14,6 +14,7 @@ from gp_active_mcmc.inference.model import ActiveMCMCModel, AdaptiveHook, Evalua
 from gp_active_mcmc.inference.proposal import AdaptiveMetropolisShared
 from gp_active_mcmc.inference.sampling import (
     ChunkedMCMCConfig,
+    ResumableTdaChain,
     sample_active_chain,
     sample_adaptive_active_chain,
     sample_adaptive_then_frozen_chain,
@@ -32,6 +33,7 @@ __all__ = [
     "CoarseOutput",
     "EvaluationLog",
     "MCMCChain",
+    "ResumableTdaChain",
     "SamplingResult",
     "sample_active_chain",
     "sample_adaptive_active_chain",

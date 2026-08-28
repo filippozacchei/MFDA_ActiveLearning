@@ -325,7 +325,7 @@ def _build_parser() -> argparse.ArgumentParser:
     convergence = parser.add_argument_group("convergence loop")
     convergence.add_argument("--n-chains", type=int, default=5, help="Replicate chains per method.")
     convergence.add_argument(
-        "--chunk-size", type=int, default=100, help="Coarse evals advanced per round before re-checking convergence."
+        "--chunk-size", type=int, default=50, help="Coarse evals advanced per round before re-checking convergence."
     )
     convergence.add_argument(
         "--max-total-coarse-evals", type=int, default=10_000, help="Safety cap on coarse-eval cost per method."
