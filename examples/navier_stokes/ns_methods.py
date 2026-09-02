@@ -180,6 +180,7 @@ class Problem:
     y_obs: FloatArray
     sigma_obs: float
     hf_forward: Any
+    scale: float
     param_names: tuple[str, ...] = PARAM_NAMES
 
 class IndependentUniformPrior:
@@ -266,7 +267,7 @@ def make_forward_model(*, T: int) -> Any:
     return f
 
 
-def build_problem(*, problem_seed: int, sigma_obs: float = 0.1) -> Problem:
+def build_problem(*, problem_seed: int, sigma_obs: float = 1.0) -> Problem:
     rng = set_seed(problem_seed)
     prior = make_prior()
     hf_forward = make_forward_model(T=T)
@@ -274,5 +275,6 @@ def build_problem(*, problem_seed: int, sigma_obs: float = 0.1) -> Problem:
     theta_true = np.asarray(prior.rvs(random_state=rng), dtype=float)
     y_clean = hf_forward(theta_true)
     y_obs = y_clean + sigma_obs * rng.standard_normal(size=T)
+    scale = 1.0
 
-    return Problem(prior=prior, theta_true=theta_true, y_obs=y_obs, sigma_obs=sigma_obs, hf_forward=hf_forward)
+    return Problem(prior=prior, theta_true=theta_true, y_obs=y_obs, sigma_obs=sigma_obs, hf_forward=hf_forward, scale=scale)

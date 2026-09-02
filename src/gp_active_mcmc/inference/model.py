@@ -268,6 +268,17 @@ class ActiveMCMCModel:
     adaptive: AdaptiveHook | None = None
     frozen: bool = False
 
+    # Memoizes the most recent `coarse`/`fine` call so a repeat at the identical `theta`
+    # can skip real work instead of redoing it -- see the guards inside `coarse`/`fine`
+    # for why this repeat happens routinely (every chunk boundary in this library's
+    # chunked round loops) and what it costs when left unguarded. `compare=False` /
+    # `repr=False`: these are a cache, not part of this model's value -- comparing two
+    # `ActiveMCMCModel`s or printing one shouldn't depend on, or dump, cached arrays.
+    _last_coarse_theta: FloatArray | None = field(default=None, repr=False, compare=False)
+    _last_coarse_output: FloatArray | CoarseOutput | None = field(default=None, repr=False, compare=False)
+    _last_fine_theta: FloatArray | None = field(default=None, repr=False, compare=False)
+    _last_fine_output: FloatArray | None = field(default=None, repr=False, compare=False)
+
     def __post_init__(self) -> None:
         if self.gamma_threshold < 0.0:
             raise ValueError("gamma_threshold must be non-negative.")
@@ -336,6 +347,19 @@ class ActiveMCMCModel:
         if self.adaptive is not None:
             self.adaptive.on_coarse_call()
 
+        if self._last_coarse_theta is not None and np.array_equal(th, self._last_coarse_theta):
+            # Repeat of the most recently evaluated point -- see `fine`'s matching guard
+            # for why this happens routinely and what it's protecting against. Cheaper
+            # here than in `fine` (no HF call at stake unless this repeat would again
+            # trigger the HF fallback below, which a point the surrogate was *just*
+            # queried at is unlikely to need), but still worth skipping: it avoids a
+            # spurious `lf_model.update()` call -- teaching the surrogate a duplicate
+            # training point -- whenever the fallback does trigger.
+            # `coarse` only ever returns a bare `y_hf` array (HF fallback) or a
+            # `CoarseOutput` (LF used); the log entry mirrors which one this was.
+            self.log.append(not isinstance(self._last_coarse_output, CoarseOutput))
+            return self._last_coarse_output  # type: ignore[return-value]
+
         y_mean, y_var = self.lf_model.predict(th)
         mean = _as_1d_float(y_mean, name="y_mean")
         var = _as_1d_float(y_var, name="y_var")
@@ -347,17 +371,22 @@ class ActiveMCMCModel:
 
         if self.frozen:
             self.log.append(False)
-            return CoarseOutput(mean, var)
+            out: FloatArray | CoarseOutput = CoarseOutput(mean, var)
+            self._last_coarse_theta, self._last_coarse_output = th.copy(), out
+            return out
 
         avg_var = float(np.mean(var))
         if avg_var > self.gamma_threshold**2:
             y_hf = _as_1d_float(self.hf_model(th), name="y_hf")
             self.lf_model.update(th, y_hf)
             self.log.append(True)
+            self._last_coarse_theta, self._last_coarse_output = th.copy(), y_hf
             return y_hf
 
         self.log.append(False)
-        return CoarseOutput(mean, var)
+        out = CoarseOutput(mean, var)
+        self._last_coarse_theta, self._last_coarse_output = th.copy(), out
+        return out
 
     def fine(self, theta: ArrayLike, *, replace_last: bool = True) -> FloatArray:
         """Evaluate the coupled model in HF (fine) mode and update the surrogate.
@@ -391,15 +420,58 @@ class ActiveMCMCModel:
         """
         th = _as_1d_theta(theta)
 
-        y_hf = _as_1d_float(self.hf_model(th), name="y_hf")
+        if self._last_fine_theta is not None and np.array_equal(th, self._last_fine_theta):
+            # This library's chunked round loops (`rounds.py`'s `_run_chunk`, and
+            # `sample_adaptive_active_chain`'s own chunking) re-enter tinyDA by
+            # constructing a fresh `Chain`/`DAChain` every chunk. `tinyDA.DAChain.__init__`
+            # always re-evaluates *both* posteriors at the chain's starting point to seed
+            # its first link -- even though that point is exactly where the previous
+            # chunk already ended, so nothing new is learned there. Left unguarded, that
+            # costs: one real, wasted HF call every chunk boundary; a spurious duplicate
+            # training point taught to the surrogate (`lf_model.update` on a `theta`
+            # already in its training set); and, whenever an adaptive policy is attached,
+            # one non-informative repeat fed into it (`AdaptiveSubchain.on_fine_call`)
+            # that can skew its subchain-length decisions -- exactly the phase where that
+            # policy is trying to build an accurate picture of LF-HF discrepancy.
+            #
+            # NOTE: that last point cuts both ways in practice. Re-scoring the surrogate
+            # at a point it was *just* trained on tends to look artificially good (a GP
+            # fits its own training points almost exactly), so the "spurious" repeat was
+            # quietly making `AdaptiveSubchain.has_converged()`'s streak easier to build
+            # up -- skipping it makes the adapt phase more honest but can also make it
+            # need a larger `max_adapt_coarse_evals` to reach the same declared
+            # convergence than before this guard existed. Budget accordingly.
+            #
+            # Reusing the cached HF output from that identical, immediately-preceding
+            # call avoids all three costs above. This only catches the common case where
+            # the chain's last step was accepted (so the truly most recent `fine()` call
+            # *is* this theta) -- a rejected last step means the most recent call was for
+            # a different, since-discarded proposal, which this cache simply won't match;
+            # that's a missed optimization, never an incorrect one, since a cache hit
+            # only ever returns output `fine` itself already produced for this exact
+            # `theta`.
+            assert self._last_fine_output is not None  # set together with _last_fine_theta below
+            y_hf = self._last_fine_output
+        else:
+            y_hf = _as_1d_float(self.hf_model(th), name="y_hf")
 
-        if self.adaptive is not None:
-            lf_mean, _ = self.lf_model.predict(th)
-            lf_mean = _as_1d_float(lf_mean, name="lf_mean_before_update")
-            self.adaptive.on_fine_call(y_hf=y_hf, y_lf=lf_mean)
+            if self.adaptive is not None:
+                lf_mean, _ = self.lf_model.predict(th)
+                lf_mean = _as_1d_float(lf_mean, name="lf_mean_before_update")
+                self.adaptive.on_fine_call(y_hf=y_hf, y_lf=lf_mean)
 
-        if not self.frozen:
-            self.lf_model.update(th, y_hf)
+            if not self.frozen:
+                self.lf_model.update(th, y_hf)
+                # `coarse`'s cache holds a surrogate *prediction*, which this update can
+                # change at any theta (including whatever's currently cached there) --
+                # unlike `fine`'s own cache above, which holds the real, deterministic HF
+                # output and stays valid no matter what the surrogate does. Invalidate it
+                # rather than risk `coarse` handing out a prediction from before the
+                # surrogate just learned this exact point.
+                self._last_coarse_theta = None
+                self._last_coarse_output = None
+
+            self._last_fine_theta, self._last_fine_output = th.copy(), y_hf
 
         if replace_last:
             self.log.replace_last(True)

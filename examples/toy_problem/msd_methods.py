@@ -151,7 +151,9 @@ class Problem:
     y_obs: np.ndarray
     sigma_obs: float
     hf_forward: Any
+    scale: float
     param_names: tuple[str, ...] = PARAM_NAMES
+    
 
 
 def build_problem(*, problem_seed: int, sigma_obs: float = 0.1) -> Problem:
@@ -162,5 +164,6 @@ def build_problem(*, problem_seed: int, sigma_obs: float = 0.1) -> Problem:
 
     theta_true = prior.rvs(random_state=rng)
     y_obs = make_observation(rng, theta_true, t, sigma_obs)
+    scale = 1.0
 
-    return Problem(t=t, prior=prior, theta_true=theta_true, y_obs=y_obs, sigma_obs=sigma_obs, hf_forward=hf_forward)
+    return Problem(t=t, prior=prior, theta_true=theta_true, y_obs=y_obs, sigma_obs=sigma_obs, hf_forward=hf_forward, scale=scale)

@@ -150,7 +150,7 @@ def active_learning_offline_design(
     candidate_pool_size: int = 500,
     batch_size: int = 25,
     max_total_budget: int = 600,
-    n_validation: int = 100,
+    n_validation: int = 10000,
     rank_energy_threshold: float = 0.999,
     rank_max: int | None = None,
 ) -> PODGPSurrogate:

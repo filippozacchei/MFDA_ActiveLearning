@@ -328,7 +328,7 @@ def _build_parser() -> argparse.ArgumentParser:
         "--chunk-size", type=int, default=100, help="Coarse evals advanced per round before re-checking convergence."
     )
     convergence.add_argument(
-        "--max-total-coarse-evals", type=int, default=10_000, help="Safety cap on coarse-eval cost per method."
+        "--max-total-coarse-evals", type=int, default=15_000, help="Safety cap on coarse-eval cost per method."
     )
     convergence.add_argument("--rhat-threshold", type=float, default=1.01, help="R-hat convergence threshold.")
     convergence.add_argument("--min-ess", type=float, default=400.0, help="Minimum bulk-ESS to declare convergence.")

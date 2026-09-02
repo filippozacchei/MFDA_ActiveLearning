@@ -28,3 +28,4 @@ class Problem(Protocol):
     sigma_obs: float  # observation-noise standard deviation (i.i.d. Gaussian noise)
     hf_forward: HighFidelityModel  # high-fidelity forward model, theta -> y
     param_names: tuple[str, ...]  # one name per dim of theta_true, e.g. ("k", "c")
+    scale: float # proposal scale
