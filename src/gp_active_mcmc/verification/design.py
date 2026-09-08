@@ -153,12 +153,21 @@ def active_learning_offline_design(
     n_validation: int = 10000,
     rank_energy_threshold: float = 0.999,
     rank_max: int | None = None,
+    pod_refit_every: int | None = None,
+    pod_refit_max: int | None = None,
 ) -> PODGPSurrogate:
     """Greedy max-predictive-variance acquisition, purely offline (no MCMC path).
-    """
-    X_all = [seed_X.copy()]
-    Y_all = [seed_Y.copy()]
 
+    Refitting is delegated entirely to `PODGPSurrogate.update()`/`.refit_pod()` -- the
+    same mechanism the *online* path (`_surrogate_for_online_learning`) uses -- instead
+    of this function doing its own from-scratch POD+GP rebuild. `pod_refit_every`
+    defaults to `batch_size` (refit once per acquired batch, matching this function's
+    own prior unconditional-every-batch behaviour exactly) and `pod_refit_max` defaults
+    to `None` (unbounded, also matching prior behaviour); pass `online_learning`'s
+    values explicitly (as `run_training_cost_comparison` does) to make the offline
+    design's refit cadence actually match what the online adaptive phase uses for the
+    same comparison, rather than merely being *capable* of matching it.
+    """
     val_grid = np.asarray(problem.prior.rvs(size=n_validation, random_state=rng), dtype=float)
 
     pod_rank = _adaptive_pod_rank(
@@ -167,11 +176,12 @@ def active_learning_offline_design(
     pod = POD(rank=pod_rank).fit(seed_Y)
     A = pod.transform(seed_Y)
     gp = MultiOutputGP(X_train=seed_X, Y_train=A, kernel=kernel, ard=True, noise_variance=1e-6)
-    # X_history/Y_history seeded and kept in sync below (mirroring build_initial_surrogate)
-    # purely as a record of every point this offline design actually acquired -- nothing
-    # here reads it back the way refit_pod() does; it's for callers wanting to know, e.g.,
-    # where in parameter space this design explored, without re-deriving it from the GP.
-    surrogate = PODGPSurrogate(pod=pod, gp=gp, X_history=seed_X.copy(), Y_history=seed_Y.copy())
+    surrogate = PODGPSurrogate(
+        pod=pod, gp=gp, X_history=seed_X.copy(), Y_history=seed_Y.copy(),
+        pod_refit_every=batch_size if pod_refit_every is None else pod_refit_every,
+        pod_refit_max=pod_refit_max,
+        rank_energy_threshold=rank_energy_threshold, rank_max=rank_max,
+    )
 
     n_current = seed_X.shape[0]
     while n_current < max_total_budget:
@@ -180,28 +190,18 @@ def active_learning_offline_design(
             break
 
         b = min(batch_size, max_total_budget - n_current)
-        batch_X = []
-        batch_Y = []
         for _ in range(b):
             pool = np.asarray(problem.prior.rvs(size=candidate_pool_size, random_state=rng), dtype=float)
             _mean, var = surrogate.predict(pool)
             score = var.mean(axis=1)
             theta_new = pool[int(np.argmax(score))]
-            batch_X.append(theta_new)
-            batch_Y.append(problem.hf_forward(theta_new))
+            y_new = problem.hf_forward(theta_new)
+            # Updating immediately (rather than after the whole batch, as the old
+            # from-scratch-rebuild version effectively did) also means later picks
+            # within this same batch see this point's effect on predictive variance,
+            # instead of every pick in a batch scoring against the same stale surrogate.
+            surrogate.update(theta_new, y_new)
 
-        X_all.append(np.asarray(batch_X))
-        Y_all.append(np.asarray(batch_Y))
         n_current += b
-
-        X_final = np.vstack(X_all)
-        Y_final = np.vstack(Y_all)
-        pod_rank = _adaptive_pod_rank(
-            Y_final, n_current=n_current, energy_threshold=rank_energy_threshold, r_max_cap=rank_max,
-        )
-        pod = POD(rank=pod_rank).fit(Y_final)
-        A_final = pod.transform(Y_final)
-        gp = MultiOutputGP(X_train=X_final, Y_train=A_final, kernel=kernel, ard=True, noise_variance=1e-6)
-        surrogate = PODGPSurrogate(pod=pod, gp=gp, X_history=X_final.copy(), Y_history=Y_final.copy())
 
     return surrogate

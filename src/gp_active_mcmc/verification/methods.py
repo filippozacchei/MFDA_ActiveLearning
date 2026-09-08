@@ -279,12 +279,11 @@ def run_training_cost_comparison(
     n_init = int(seed_X.shape[0])
 
     t0 = time.time()
-    # Offline side reuses online_learning's rank-derivation tuning: there's one
-    # adaptive-rank policy in this package, not a separate one per method.
     offline_surrogate, offline_n_hf_total = _train_pretrained_surrogate(
         problem, seed_X=seed_X, seed_Y=seed_Y, gamma_threshold=gamma_threshold, kernel=kernel,
         seed=seed_base + _SEED_OFFSETS["training_cost_offline"],
         rank_energy_threshold=online_learning.rank_energy_threshold, rank_max=online_learning.rank_max,
+        pod_refit_every=online_learning.pod_refit_every, pod_refit_max=online_learning.pod_refit_max,
     )
     offline_wall_time = time.time() - t0
 
@@ -344,14 +343,21 @@ def _train_pretrained_surrogate(
     seed: int,
     rank_energy_threshold: float = 0.999,
     rank_max: int | None = None,
+    pod_refit_every: int | None = None,
+    pod_refit_max: int | None = None,
 ) -> tuple[PODGPSurrogate, int]:
     """Trains `pretrained`'s offline design once -- a fixed upfront cost shared by
-    every replicate, not part of the monitored round loop. Returns the trained
-    surrogate and the HF evaluations spent training it."""
+    every replicate, not part of the monitored round loop. `pod_refit_every`/
+    `pod_refit_max` default to `active_learning_offline_design`'s own defaults (refit
+    every batch, unbounded); `run_training_cost_comparison` passes `online_learning`'s
+    values instead, so the offline design's refit cadence matches the online adaptive
+    phase it's being compared against. Returns the trained surrogate and the HF
+    evaluations spent training it."""
     rng = set_seed(seed)
     surrogate = active_learning_offline_design(
         problem, seed_X, seed_Y, gamma_threshold=gamma_threshold, kernel=kernel, rng=rng,
         rank_energy_threshold=rank_energy_threshold, rank_max=rank_max,
+        pod_refit_every=pod_refit_every, pod_refit_max=pod_refit_max,
     )
     n_hf_spent = surrogate.gp.n_train
     return surrogate, n_hf_spent

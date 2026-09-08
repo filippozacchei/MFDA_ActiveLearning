@@ -156,7 +156,7 @@ L_UP = 0.10
 T = 150  # outlet-profile length after resample_profile
 KERNEL: KernelName = "matern52"
 GAMMA_THRESHOLD = 0.01  # 0.1 * the default sigma_obs below, matching MSD's convention
-MAX_ADAPT_COARSE_EVALS = 1000
+MAX_ADAPT_COARSE_EVALS = 2000
 MAX_SUBCHAIN = 25
 N_INIT = 25
 POD_REFIT_EVERY = 25
@@ -180,7 +180,6 @@ class Problem:
     y_obs: FloatArray
     sigma_obs: float
     hf_forward: Any
-    scale: float
     param_names: tuple[str, ...] = PARAM_NAMES
 
 class IndependentUniformPrior:
@@ -267,7 +266,7 @@ def make_forward_model(*, T: int) -> Any:
     return f
 
 
-def build_problem(*, problem_seed: int, sigma_obs: float = 1.0) -> Problem:
+def build_problem(*, problem_seed: int, sigma_obs: float = 0.1) -> Problem:
     rng = set_seed(problem_seed)
     prior = make_prior()
     hf_forward = make_forward_model(T=T)
@@ -275,6 +274,5 @@ def build_problem(*, problem_seed: int, sigma_obs: float = 1.0) -> Problem:
     theta_true = np.asarray(prior.rvs(random_state=rng), dtype=float)
     y_clean = hf_forward(theta_true)
     y_obs = y_clean + sigma_obs * rng.standard_normal(size=T)
-    scale = 1.0
 
-    return Problem(prior=prior, theta_true=theta_true, y_obs=y_obs, sigma_obs=sigma_obs, hf_forward=hf_forward, scale=scale)
+    return Problem(prior=prior, theta_true=theta_true, y_obs=y_obs, sigma_obs=sigma_obs, hf_forward=hf_forward)

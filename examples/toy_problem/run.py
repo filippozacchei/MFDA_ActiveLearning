@@ -190,6 +190,7 @@ def run_one_seed(
     tag: str,
     n_init: int = N_INIT,
     skip_training_cost: bool = False,
+    only_training_cost: bool = False,
     online_learning: OnlineLearningConfig = DEFAULT_ONLINE_LEARNING,
     adaptive_stm_adapt_coarse_evals: int | None = None,
     max_subchain: int = MAX_SUBCHAIN,
@@ -198,7 +199,10 @@ def run_one_seed(
     instance, saves its figures and full artifact bundle, and returns its `.jsonl`
     row. `skip_training_cost` skips the slow half (`pretrained`'s offline
     greedy-active-learning design in particular) for fast iteration on just the
-    posterior/MCMC comparison."""
+    posterior/MCMC comparison. `only_training_cost` is the mirror: skips the
+    posterior/MCMC comparison (and figure/artifact saving, which needs its output)
+    entirely, for fast iteration on just the training-cost numbers -- mutually
+    exclusive with `skip_training_cost` (enforced by the CLI, not here)."""
     problem = build_problem(problem_seed=problem_seed, sigma_obs=sigma_obs)
     seed_surrogate, seed_X, seed_Y = build_initial_surrogate(
         problem, set_seed(1_000 + problem_seed), n_init=n_init, kernel=KERNEL,
@@ -215,6 +219,28 @@ def run_one_seed(
             max_adapt_coarse_evals=max_adapt_coarse_evals, seed_base=seed_base,
             online_learning=online_learning, max_subchain=max_subchain,
         )
+
+    if only_training_cost:
+        return {
+            "seed": problem_seed,
+            "n_init": n_init,
+            "sigma_obs": sigma_obs,
+            "gamma_threshold": gamma_threshold,
+            "max_adapt_coarse_evals": max_adapt_coarse_evals,
+            "adaptive_stm_adapt_coarse_evals": adaptive_stm_adapt_coarse_evals,
+            "rank_energy_threshold": online_learning.rank_energy_threshold,
+            "rank_max": online_learning.rank_max,
+            "pod_refit_every": online_learning.pod_refit_every,
+            "pod_refit_max": online_learning.pod_refit_max,
+            "max_subchain": max_subchain,
+            "burn_in_fraction": convergence.burn_in_fraction,
+            "training_cost": training_cost,
+            "posterior": None,
+            "surrogate_stats": {
+                "seed_pod_rank": int(seed_surrogate.pod.rank),
+                "pretrained_pod_rank": int(offline_surrogate.pod.rank) if offline_surrogate is not None else None,
+            },
+        }
 
     # methods left at its default (hf_only, adaptive_surrogate_mcmc, adaptive_stm):
     # this sweep always compares exactly those three.
@@ -321,6 +347,12 @@ def _build_parser() -> argparse.ArgumentParser:
         "--skip-training-cost", action="store_true",
         help="Skip the (slow) training-cost comparison and only run the posterior/MCMC comparison.",
     )
+    problem.add_argument(
+        "--only-training-cost", action="store_true",
+        help="Mirror of --skip-training-cost: run only the training-cost comparison and skip the "
+        "(slower) posterior/MCMC comparison entirely, for fast iteration on training-cost settings. "
+        "Mutually exclusive with --skip-training-cost.",
+    )
 
     convergence = parser.add_argument_group("convergence loop")
     convergence.add_argument("--n-chains", type=int, default=5, help="Replicate chains per method.")
@@ -353,6 +385,8 @@ def main() -> None:
     args = _build_parser().parse_args()
     if not 0.0 <= args.burn_in_fraction < 1.0:
         raise SystemExit("--burn-in-fraction must be in [0, 1).")
+    if args.skip_training_cost and args.only_training_cost:
+        raise SystemExit("--skip-training-cost and --only-training-cost are mutually exclusive.")
 
     RESULTS_DIR.mkdir(exist_ok=True)
     jsonl_path = _jsonl_path(args.tag)
@@ -384,6 +418,7 @@ def main() -> None:
                     tag=args.tag,
                     n_init=args.n_init,
                     skip_training_cost=args.skip_training_cost,
+                    only_training_cost=args.only_training_cost,
                     online_learning=online_learning,
                     max_subchain=args.max_subchain,
                 )
@@ -398,12 +433,14 @@ def main() -> None:
                 f"offline_extra_hf={tc['offline']['n_hf_extra']}, online_extra_hf={tc['online']['n_hf_extra']}, "
                 if tc is not None else ""
             )
-            print(
-                f"[seed {i}] done in {dt:.1f}s  ({training_cost_str}"
-                f"posterior: hf_only={row['posterior']['hf_only']['converged']}, "
-                f"adaptive_surrogate_mcmc={row['posterior']['adaptive_surrogate_mcmc']['converged']}, "
-                f"adaptive_stm={row['posterior']['adaptive_stm']['converged']})"
+            post = row["posterior"]
+            posterior_str = (
+                f"posterior: hf_only={post['hf_only']['converged']}, "
+                f"adaptive_surrogate_mcmc={post['adaptive_surrogate_mcmc']['converged']}, "
+                f"adaptive_stm={post['adaptive_stm']['converged']}"
+                if post is not None else "posterior: skipped (--only-training-cost)"
             )
+            print(f"[seed {i}] done in {dt:.1f}s  ({training_cost_str}{posterior_str})")
 
     print(f"\nSaved metrics to {jsonl_path}, figures to {_figures_dir(args.tag)}, artifacts to {_artifacts_dir(args.tag)}")
 
